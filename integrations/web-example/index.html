@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ai-powered — web demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ── App Header ─────────────────────────────────────────────── -->
+    <header class="app-header">
+      <div class="header-title">
+        <h1>ai-powered · web demo</h1>
+        <span class="version-badge" id="lib-version">UMD</span>
+      </div>
+
+      <section class="mode-section">
+        <!-- Mode toggle -->
+        <div class="mode-row">
+          <label for="mode-select">Mode:</label>
+          <select id="mode-select">
+            <option value="proxy">Proxy (recommended)</option>
+            <option value="direct">Direct (dev only)</option>
+          </select>
+        </div>
+
+        <!-- Proxy config -->
+        <div id="proxy-config" class="connection-config">
+          <label for="proxy-url">Proxy URL:</label>
+          <input id="proxy-url" type="text" value="http://localhost:3001"
+                 placeholder="http://localhost:3001" spellcheck="false" />
+          <span class="hint">Run <code>npm run serve</code> to start the proxy server.</span>
+        </div>
+
+        <!-- Direct config (shown only when Direct is selected) -->
+        <div id="direct-config" class="connection-config hidden">
+          <div class="direct-row">
+            <label for="provider-select">Provider:</label>
+            <select id="provider-select">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="venice">Venice</option>
+              <option value="xai">xAI</option>
+            </select>
+            <label for="api-key-input">API Key:</label>
+            <input id="api-key-input" type="password" placeholder="sk-…"
+                   spellcheck="false" autocomplete="off" style="width:220px" />
+          </div>
+          <div class="security-warning" role="alert">
+            ⚠ WARNING: Direct mode exposes your API key in browser DevTools and
+            network traffic. Never use a production key here. Use proxy mode in
+            production environments.
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <!-- ── Modality Tab Bar ───────────────────────────────────────── -->
+    <nav class="tab-bar" role="tablist" aria-label="Modality">
+      <button class="tab-btn active" data-tab="text"       role="tab" aria-selected="true">Text</button>
+      <button class="tab-btn"        data-tab="image"      role="tab" aria-selected="false">Image</button>
+      <button class="tab-btn"        data-tab="audio"      role="tab" aria-selected="false">Audio</button>
+      <button class="tab-btn"        data-tab="video"      role="tab" aria-selected="false">Video</button>
+      <button class="tab-btn"        data-tab="structured" role="tab" aria-selected="false">Structured</button>
+    </nav>
+
+    <main>
+      <!-- ── TEXT TAB ──────────────────────────────────────────────── -->
+      <section class="tab-panel" id="panel-text" role="tabpanel">
+        <div class="session-history-header">
+          <span class="section-label">Session History</span>
+          <button id="btn-session-clear" class="btn-ghost btn-sm">Clear Session</button>
+        </div>
+        <div id="session-history" class="session-history"
+             aria-live="polite" aria-label="Conversation history"></div>
+
+        <div class="input-group">
+          <textarea id="text-prompt" rows="3"
+            placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
+        </div>
+        <div class="btn-row">
+          <button id="btn-text-generate" class="btn-primary">Generate</button>
+          <button id="btn-text-stream"   class="btn-primary">Stream</button>
+        </div>
+        <div id="text-output" class="output-box" aria-live="polite"></div>
+        <div id="text-usage" class="usage-bar"></div>
+      </section>
+
+      <!-- ── IMAGE TAB ─────────────────────────────────────────────── -->
+      <section class="tab-panel hidden" id="panel-image" role="tabpanel">
+        <div class="input-group">
+          <textarea id="image-prompt" rows="2"
+            placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
+        </div>
+        <div class="btn-row">
+          <button id="btn-image-generate" class="btn-primary">Generate Image</button>
+        </div>
+        <div id="image-output" class="output-box image-output" aria-live="polite"></div>
+        <div id="image-usage" class="usage-bar"></div>
+      </section>
+
+      <!-- ── AUDIO TAB ─────────────────────────────────────────────── -->
+      <section class="tab-panel hidden" id="panel-audio" role="tabpanel">
+        <!-- TTS sub-section -->
+        <div class="audio-section">
+          <h2 class="subsection-title">Text → Speech</h2>
+          <div class="input-group">
+            <textarea id="tts-text" rows="2"
+              placeholder="Text to synthesize…">Hello! This demonstrates text-to-speech synthesis.</textarea>
+          </div>
+          <div class="btn-row">
+            <button id="btn-tts-speak" class="btn-primary">Synthesize Speech</button>
+          </div>
+          <div id="tts-output" class="output-box audio-output" aria-live="polite"></div>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Transcription sub-section -->
+        <div class="audio-section">
+          <h2 class="subsection-title">Audio → Text (Transcription)</h2>
+          <div class="input-group file-input-group">
+            <label for="audio-file-input" class="file-label">Choose audio file</label>
+            <input id="audio-file-input" type="file" accept="audio/*" class="file-input" />
+            <span id="audio-filename" class="filename-display">No file selected</span>
+          </div>
+          <div class="btn-row">
+            <button id="btn-transcribe" class="btn-primary" disabled>Transcribe</button>
+          </div>
+          <div id="transcribe-output" class="output-box" aria-live="polite"></div>
+        </div>
+        <div id="audio-usage" class="usage-bar"></div>
+      </section>
+
+      <!-- ── VIDEO TAB ─────────────────────────────────────────────── -->
+      <section class="tab-panel hidden" id="panel-video" role="tabpanel">
+        <div class="proxy-only-note">
+          ℹ Video generation requires proxy mode (server-side rendering).
+        </div>
+        <div class="input-group">
+          <textarea id="video-prompt" rows="2"
+            placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
+        </div>
+        <div class="btn-row">
+          <button id="btn-video-generate" class="btn-primary">Generate Video</button>
+        </div>
+        <div id="video-output" class="output-box video-output" aria-live="polite"></div>
+        <div id="video-usage" class="usage-bar"></div>
+      </section>
+
+      <!-- ── STRUCTURED TAB ────────────────────────────────────────── -->
+      <section class="tab-panel hidden" id="panel-structured" role="tabpanel">
+        <div class="input-group">
+          <textarea id="structured-prompt" rows="4"
+            placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
+        </div>
+        <div class="btn-row">
+          <button id="btn-structured-generate" class="btn-primary">Generate JSON</button>
+        </div>
+        <div id="structured-output" class="output-box json-output" aria-live="polite"></div>
+        <div id="structured-usage" class="usage-bar"></div>
+      </section>
+    </main>
+
+    <!-- ── Footer: session cost tracker ──────────────────────────── -->
+    <footer class="app-footer">
+      <div class="cost-tracker">
+        <span class="cost-label">Session cost:</span>
+        <strong id="cost-total">$0.000000</strong>
+        <span class="cost-sep">·</span>
+        <span class="cost-label">Tokens:</span>
+        <strong id="tokens-total">0</strong>
+        <span class="cost-sep">·</span>
+        <span class="cost-label">Calls:</span>
+        <strong id="calls-total">0</strong>
+      </div>
+      <div class="footer-links">
+        <span class="footer-note">
+          Loads <code>dist-web/ai-powered.umd.js</code> · No build step required
+        </span>
+      </div>
+    </footer>
+
+    <!--
+      UMD bundle must load BEFORE app.js so window.AiPowered is defined.
+      Run `npm run build:web` once to produce dist-web/ai-powered.umd.js.
+    -->
+    <script src="../../dist-web/ai-powered.umd.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+

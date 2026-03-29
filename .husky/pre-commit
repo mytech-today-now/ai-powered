@@ -1,0 +1,61 @@
+#!/usr/bin/env sh
+# Husky pre-commit hook
+# Runs: lint-staged (ESLint + Prettier) then secret-scanning on all staged files.
+# Each violation is reported as FILE:LINE — pattern prefix detected.
+
+# --- 1. lint-staged ---
+npx lint-staged
+
+# --- 2. Secret scanning ---
+# Abort the commit if any staged file contains a known API key prefix.
+# Reports the exact file path and line number of every violation.
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$STAGED_FILES" ]; then
+  exit 0
+fi
+
+# Extended-regex patterns covering all known AI provider key prefixes:
+#   sk-        OpenAI keys
+#   sk-ant-    Anthropic keys
+#   xai-       xAI / Grok keys
+#   ven-       Venice.ai keys
+# Minimum suffix of 20 chars to reduce false positives on short identifiers.
+SECRET_PATTERNS="(sk-ant-|sk-|xai-|ven-)[A-Za-z0-9_-]{20,}"
+
+VIOLATIONS=""
+for FILE in $STAGED_FILES; do
+  # Stream the staged blob through grep; -n emits LINE:CONTENT for every match.
+  # grep -P (Perl regex) is preferred; fall back to grep -E if unavailable.
+  if command -v grep >/dev/null 2>&1 && echo "" | grep -qP "" 2>/dev/null; then
+    MATCHES=$(git show ":$FILE" 2>/dev/null | grep -nP "$SECRET_PATTERNS" 2>/dev/null || true)
+  else
+    MATCHES=$(git show ":$FILE" 2>/dev/null | grep -nE "$SECRET_PATTERNS" 2>/dev/null || true)
+  fi
+
+  if [ -n "$MATCHES" ]; then
+    while IFS= read -r MATCH_LINE; do
+      LINENO=$(printf '%s' "$MATCH_LINE" | cut -d: -f1)
+      VIOLATIONS="${VIOLATIONS}
+  ${FILE}:${LINENO} — potential API key detected"
+    done <<EOF
+$MATCHES
+EOF
+  fi
+done
+
+if [ -n "$VIOLATIONS" ]; then
+  printf '\n'
+  printf '╔══════════════════════════════════════════════════════════════╗\n'
+  printf '║  [ai-powered] SECRET DETECTED — commit aborted              ║\n'
+  printf '╚══════════════════════════════════════════════════════════════╝\n'
+  printf '\n'
+  printf 'Potential API key found in staged file(s):%s\n' "$VIOLATIONS"
+  printf '\n'
+  printf '• Remove the key from the file and regenerate it in your provider dashboard.\n'
+  printf '• Store secrets in .env (already in .gitignore) or $HOME/.ai-powered/config.json\n'
+  printf '• Use '\''git reset HEAD <file>'\'' to unstage the offending file.\n'
+  printf '\n'
+  exit 1
+fi
+

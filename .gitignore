@@ -1,0 +1,42 @@
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
+
+# Augment Extensions
+.augment/extensions.json
+
+# =============================================================================
+# ai-powered package
+# =============================================================================
+
+# --- Dependencies ---
+node_modules/
+
+# --- Build outputs ---
+dist/
+dist-web/
+
+# --- Environment files (NEVER commit credentials) ---
+.env
+.env.local
+.env.*.local
+
+# --- Local ai-powered config (may contain API keys) ---
+.ai-powered/config.json
+.ai-powered/config.json.bak.*
+
+# --- Session and audit logs ---
+ai-powered.jsonl
+ai-powered-audit.jsonl
+logs/
+
+# --- TypeScript cache ---
+*.tsbuildinfo
+
+# --- Test coverage ---
+coverage/
+.nyc_output/
+
+# --- Husky internal ---
+.husky/_/

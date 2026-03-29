@@ -1,0 +1,48 @@
+# OpenSpec project configuration
+# This file marks the repository root for the OpenSpec workflow.
+# The canonical config and all changes live under openspec/.
+
+version: "1.0"
+
+# Path to OpenSpec working directory (default: ./openspec)
+openspecDir: openspec
+
+# Default schema for new changes
+defaultSchema: spec-driven
+
+# Project context injected into every AI artifact prompt
+context: |
+  Repository: ai-powered
+  Language: TypeScript 5+ (ESM, strict mode)
+  Node.js: 20+
+  CLI framework: Commander.js
+  Validation: Zod
+  Logging: Pino
+  Build: tsc (Node) + Vite 5 (browser)
+  Test runner: vitest (mock mode only — AI_MOCK=true in CI)
+  Package: ai-powered v0.1.0 (npm-publishable, multi-modal AI engine)
+  Providers: OpenAI, Anthropic, xAI/Grok, Venice.ai, custom/local, mock
+  Key convention: kebab-case change names, kebab-case capability names
+  Commit style: Conventional Commits (feat/fix/chore/docs/test/refactor)
+
+# Per-artifact guidance
+rules:
+  proposal:
+    - Keep proposals to 1-2 pages; focus on "why" not "how"
+    - Every new capability must be named in kebab-case for specs/ directory mapping
+    - Check openspec/specs/ for existing capability names before listing Modified Capabilities
+  specs:
+    - Each spec file covers exactly one capability area
+    - Every requirement must have at least one WHEN/THEN scenario
+    - Use SHALL/MUST for normative requirements; avoid should/may
+    - Scenarios use exactly 4 hashtags (####); using 3 will fail silently
+  design:
+    - Document each architectural decision with rationale and alternatives considered
+    - Format risks as: [Risk] → Mitigation
+    - Include Open Questions for unresolved decisions
+  tasks:
+    - Break tasks into atomic, independently completable units
+    - Group tasks by capability area matching the specs/ structure
+    - Each task should be completable in ≤ 4 hours
+    - CI tasks must use AI_MOCK=true (no real API credentials)
+

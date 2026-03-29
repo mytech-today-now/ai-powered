@@ -1,0 +1,171 @@
+/**
+ * @file src/ai-powered/server/index.ts
+ *
+ * Express-based local proxy server for all ai-powered modalities.
+ *
+ * Middleware stack (in order):
+ *   1. Pino HTTP request/response logger — structured JSON with masked keys
+ *   2. Helmet — CSP, X-Content-Type-Options: nosniff, X-Frame-Options: DENY,
+ *               Strict-Transport-Security on every response
+ *   3. CORS — configurable origin (default http://localhost:5173)
+ *   4. express-rate-limit — default 60 req/min, returns 429 on exceed
+ *   5. express.json body parser — 10 MB limit
+ *   6. API routes from server/routes.ts (Zod-validated per route)
+ *   7. Centralised error handler:
+ *        BudgetExceededError          → 402
+ *        AllProvidersExhaustedError   → 503
+ *        everything else              → 500
+ *
+ * Start-up log: "ai-powered proxy server listening on :<PORT>"
+ */
+
+import express, { type Request, type Response, type NextFunction } from "express";
+import cors from "cors";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
+import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
+import { getLogger, initLogger } from "../utils.js";
+import { createRouter } from "./routes.js";
+import type { AiConfig } from "../index.js";
+
+// ---------------------------------------------------------------------------
+// Server options
+// ---------------------------------------------------------------------------
+
+export interface ServeOptions {
+  /** TCP port to listen on. Default: 3001 */
+  port?: number;
+  /** Network interface to bind. Default: 127.0.0.1 */
+  host?: string;
+  /** Allowed CORS origin. Default: http://localhost:5173 */
+  corsOrigin?: string;
+  /** Max requests per minute before 429. Default: 60 */
+  rateLimit?: number;
+  /** Force MockProvider for all requests (no API calls). Default: false */
+  mock?: boolean;
+  /** Named config profile to activate. */
+  profile?: string;
+  /** If set, append structured logs to this JSONL file path. */
+  logFile?: string;
+  /** Enable debug-level logging. Default: false */
+  debug?: boolean;
+  /** Deep-merged on top of the resolved config for every request. */
+  configOverrides?: Partial<AiConfig>;
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Build and return the Express application without starting to listen.
+ * Useful for integration tests that call `app.listen()` themselves.
+ */
+export function createServer(opts: ServeOptions = {}): express.Express {
+  // Re-initialise the logger only when the server has its own log-file path or
+  // is explicitly enabling debug mode.  If the CLI preAction hook already
+  // configured the logger, this is a no-op for the common case (no logFile,
+  // debug === false/undefined).
+  if (opts.logFile !== undefined || opts.debug === true) {
+    initLogger({
+      debug: opts.debug ?? false,
+      ...(opts.logFile !== undefined ? { logFile: opts.logFile } : {}),
+    });
+  }
+  const logger = getLogger();
+
+  const app = express();
+  const origin = opts.corsOrigin ?? "http://localhost:5173";
+  const rpm    = opts.rateLimit  ?? 60;
+
+  // 1. Helmet — security headers on every response
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc:  ["'none'"],
+          connectSrc:  ["'self'"],
+          scriptSrc:   ["'none'"],
+          styleSrc:    ["'none'"],
+          frameSrc:    ["'none'"],
+          objectSrc:   ["'none'"],
+          baseUri:     ["'none'"],
+          formAction:  ["'none'"],
+        },
+      },
+      // noSniff, frameguard (DENY), and hsts are enabled by default in helmet.
+    }),
+  );
+
+  // 2. CORS
+  app.use(cors({ origin }));
+
+  // 3. Rate limiter — 429 on exceed
+  app.use(
+    rateLimit({
+      windowMs:       60_000,
+      max:            rpm,
+      standardHeaders: true,
+      legacyHeaders:  false,
+      message:        { error: "Too many requests — rate limit exceeded.", code: "RATE_LIMITED" },
+    }),
+  );
+
+  // 4. Body parser
+  app.use(express.json({ limit: "10mb" }));
+
+  // 5. Pino HTTP request/response logger
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const start = Date.now();
+    res.on("finish", () => {
+      logger.info({
+        method: req.method,
+        url:    req.url,
+        status: res.statusCode,
+        ms:     Date.now() - start,
+      }, "request");
+    });
+    next();
+  });
+
+  // 6. API routes (Zod-validated, all errors propagate to handler below)
+  app.use("/", createRouter(opts));
+
+  // 7. Centralised error handler — maps domain errors to HTTP status codes.
+  //    Express requires exactly 4 parameters for error-handling middleware.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof BudgetExceededError) {
+      logger.warn({ code: "BUDGET_EXCEEDED" }, err.message);
+      res.status(402).json({ error: err.message, code: "BUDGET_EXCEEDED" });
+      return;
+    }
+    if (err instanceof AllProvidersExhaustedError) {
+      logger.error({ code: "ALL_PROVIDERS_EXHAUSTED" }, err.message);
+      res.status(503).json({ error: err.message, code: "ALL_PROVIDERS_EXHAUSTED" });
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ err }, message);
+    res.status(500).json({ error: message });
+  });
+
+  return app;
+}
+
+/**
+ * Start the server, bind to the configured host/port, and log the listening
+ * address.  The returned Promise resolves once the server is listening.
+ */
+export function startServer(opts: ServeOptions = {}): Promise<void> {
+  const port = opts.port ?? 3001;
+  const host = opts.host ?? "127.0.0.1";
+  const app  = createServer(opts);
+  return new Promise((resolve) => {
+    app.listen(port, host, () => {
+      getLogger().info(`ai-powered proxy server listening on :${port}`);
+      resolve();
+    });
+  });
+}
+

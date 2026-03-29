@@ -1,0 +1,120 @@
+{
+  "name": "ai-powered",
+  "version": "0.1.0",
+  "description": "Unified AI client and CLI: multi-modal, multi-provider, browser-safe, fully mock-able",
+  "type": "module",
+  "main": "./dist/ai-powered/index.js",
+  "types": "./dist/ai-powered/index.d.ts",
+  "bin": {
+    "ai-powered": "./dist/ai-powered/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/ai-powered/index.js",
+      "types": "./dist/ai-powered/index.d.ts"
+    },
+    "./web": {
+      "import": "./dist-web/ai-powered.esm.js",
+      "types": "./dist-web/types/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "build:web": "vite build",
+    "dev:web": "vite",
+    "serve": "node dist/ai-powered/cli/index.js serve",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "prepare": "husky"
+  },
+  "files": [
+    "dist",
+    "dist-web",
+    "src",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "VERSION"
+  ],
+  "keywords": [
+    "ai",
+    "openai",
+    "anthropic",
+    "venice",
+    "xai",
+    "grok",
+    "ollama",
+    "cli",
+    "multimodal",
+    "text",
+    "image",
+    "audio",
+    "video",
+    "llm",
+    "typescript",
+    "browser"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mytech-today-now/ai-powered.git"
+  },
+  "homepage": "https://github.com/mytech-today-now/ai-powered#readme",
+  "bugs": {
+    "url": "https://github.com/mytech-today-now/ai-powered/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "@inquirer/prompts": "^7.4.1",
+    "chalk": "^5.4.1",
+    "cli-progress": "^3.12.0",
+    "commander": "^13.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "fs-extra": "^11.3.0",
+    "helmet": "^8.0.0",
+    "lru-cache": "^11.1.0",
+    "openai": "^4.87.4",
+    "ora": "^8.2.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.23.0",
+    "@types/cli-progress": "^3.11.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.13.14",
+    "@typescript-eslint/eslint-plugin": "^8.29.0",
+    "@typescript-eslint/parser": "^8.29.0",
+    "@vitest/coverage-v8": "^3.0.9",
+    "eslint": "^9.23.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0",
+    "msw": "^2.7.5",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.3",
+    "vite-plugin-dts": "^4.5.3",
+    "vitest": "^3.0.9"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ]
+  }
+}
+
