@@ -1,12 +1,12 @@
 {
-  "name": "ai-powered",
+  "name": "@mytech-today-now/ai-powered",
   "version": "0.2.0",
   "description": "Unified AI client and CLI: multi-modal, multi-provider, browser-safe, fully mock-able",
   "type": "module",
   "main": "./dist/ai-powered/index.js",
   "types": "./dist/ai-powered/index.d.ts",
   "bin": {
-    "ai-powered": "./dist/ai-powered/cli/index.js"
+    "ai-powered": "dist/ai-powered/cli/index.js"
   },
   "exports": {
     ".": {
