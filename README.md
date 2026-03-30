@@ -27,15 +27,15 @@ console.log(result.content);
 
 **Key features at a glance:**
 
-| Feature | Detail |
-|---------|--------|
-| **Modalities** | Text · Image · Audio (transcribe + speak) · Video · Structured JSON |
-| **Providers** | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Custom/Ollama · Mock |
-| **Resilience** | Per-provider circuit breakers · automatic provider fallback · configurable retry |
-| **Security** | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings |
-| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing |
-| **Browser** | Vite ESM+UMD bundle · proxy mode (recommended) · direct mode (dev only) |
-| **ESM only** | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1) |
+| Feature           | Detail                                                                                              |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                 |
+| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Custom/Ollama · Mock                                  |
+| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                    |
+| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings |
+| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                             |
+| **Browser**       | Vite ESM+UMD bundle · proxy mode (recommended) · direct mode (dev only)                             |
+| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                      |
 
 ---
 
@@ -60,7 +60,7 @@ console.log(result.content);
 
 - **Node.js ≥ 18** (ESM native support required)
 - **npm ≥ 9** (or pnpm / yarn equivalent)
-- An API key for at least one provider — *or* use `--mock` / `AI_MOCK=true` for zero-cost testing
+- An API key for at least one provider — _or_ use `--mock` / `AI_MOCK=true` for zero-cost testing
 
 > ⚠️ **ESM only.** This package sets `"type": "module"` in `package.json`. You cannot `require()` it.
 > If your project uses CommonJS, use a dynamic `import()` wrapper or migrate to ESM.
@@ -91,30 +91,30 @@ npm run build
 
 Config is loaded from multiple layers and merged in priority order (lowest → highest):
 
-| Layer | Path | Notes |
-|-------|------|-------|
-| Schema defaults | — | Zod defaults apply first |
-| Global config | `~/.ai-powered/config.json` | Shared across all projects |
-| Local config | `./.ai-powered/config.json` | Per-project overrides |
-| Named profile | `config.profiles[name]` | Selected by `profile` key or `AI_PROFILE` |
-| Environment vars | `AI_*`, `OPENAI_API_KEY`, etc. | See table below |
-| CLI flags | `--provider`, `--model`, etc. | Highest precedence |
+| Layer            | Path                           | Notes                                     |
+| ---------------- | ------------------------------ | ----------------------------------------- |
+| Schema defaults  | —                              | Zod defaults apply first                  |
+| Global config    | `~/.ai-powered/config.json`    | Shared across all projects                |
+| Local config     | `./.ai-powered/config.json`    | Per-project overrides                     |
+| Named profile    | `config.profiles[name]`        | Selected by `profile` key or `AI_PROFILE` |
+| Environment vars | `AI_*`, `OPENAI_API_KEY`, etc. | See table below                           |
+| CLI flags        | `--provider`, `--model`, etc.  | Highest precedence                        |
 
 ### Environment variables
 
-| Variable | Config key | Example |
-|----------|-----------|---------|
-| `OPENAI_API_KEY` | `apiKey` (OpenAI) | `sk-…` |
-| `ANTHROPIC_API_KEY` | `apiKey` (Anthropic) | `sk-ant-…` |
-| `XAI_API_KEY` | `apiKey` (xAI) | `xai-…` |
-| `VENICE_API_KEY` | `apiKey` (Venice) | `ven-…` |
-| `AI_CUSTOM_API_KEY` | `apiKey` (custom) | any |
-| `AI_PROVIDER` | `provider` | `openai` |
-| `AI_MODEL` | `model` | `gpt-4o` |
-| `AI_PROFILE` | `profile` | `production` |
-| `AI_MOCK` | `mock` | `true` |
-| `AI_BUDGET_SESSION` | `budgetSession` | `1.00` |
-| `LOG_LEVEL` | `debug` | `debug` |
+| Variable            | Config key           | Example      |
+| ------------------- | -------------------- | ------------ |
+| `OPENAI_API_KEY`    | `apiKey` (OpenAI)    | `sk-…`       |
+| `ANTHROPIC_API_KEY` | `apiKey` (Anthropic) | `sk-ant-…`   |
+| `XAI_API_KEY`       | `apiKey` (xAI)       | `xai-…`      |
+| `VENICE_API_KEY`    | `apiKey` (Venice)    | `ven-…`      |
+| `AI_CUSTOM_API_KEY` | `apiKey` (custom)    | any          |
+| `AI_PROVIDER`       | `provider`           | `openai`     |
+| `AI_MODEL`          | `model`              | `gpt-4o`     |
+| `AI_PROFILE`        | `profile`            | `production` |
+| `AI_MOCK`           | `mock`               | `true`       |
+| `AI_BUDGET_SESSION` | `budgetSession`      | `1.00`       |
+| `LOG_LEVEL`         | `debug`              | `debug`      |
 
 ### Example config file
 
@@ -127,7 +127,7 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
   "systemPrompt": "You are a helpful assistant.",
   "stream": false,
   "fallbackProviders": ["anthropic", "mock"],
-  "budgetSession": 1.00,
+  "budgetSession": 1.0,
   "warnBudget": 0.8,
   "plugins": ["audit-log"],
   "profiles": {
@@ -164,19 +164,19 @@ All examples use `--mock` to avoid real API calls. Remove `--mock` and set your 
 
 ### Global flags
 
-| Flag | Description |
-|------|-------------|
+| Flag                | Description                                                                  |
+| ------------------- | ---------------------------------------------------------------------------- |
 | `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `venice`, `custom`, `mock`) |
-| `--model <id>` | Override model identifier |
-| `--profile <name>` | Use named profile from config |
-| `--mock` | Force mock provider |
-| `--dry-run` | Estimate cost; skip API call |
-| `--quiet` | Print raw content only (no decorators) |
-| `--json` | Print JSON envelope |
-| `--session <id>` | Attach request to a named conversation session |
-| `--log <path>` | Write structured JSONL log to file |
-| `--debug` | Enable verbose debug logging |
-| `--no-color` | Disable ANSI colors (also `NO_COLOR=1`) |
+| `--model <id>`      | Override model identifier                                                    |
+| `--profile <name>`  | Use named profile from config                                                |
+| `--mock`            | Force mock provider                                                          |
+| `--dry-run`         | Estimate cost; skip API call                                                 |
+| `--quiet`           | Print raw content only (no decorators)                                       |
+| `--json`            | Print JSON envelope                                                          |
+| `--session <id>`    | Attach request to a named conversation session                               |
+| `--log <path>`      | Write structured JSONL log to file                                           |
+| `--debug`           | Enable verbose debug logging                                                 |
+| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                      |
 
 ### `text` — Generate text
 
@@ -262,11 +262,27 @@ ai-powered batch text --mock --input input.jsonl --output output.jsonl
 cat output.jsonl
 ```
 
+### `batch` stdin/stdout piping
+
+Pass `-` as `--input` or `--output` to use standard streams:
+
+```bash
+# Read prompts from stdin, write results to stdout
+printf '{"prompt":"Speed of light?"}\n{"prompt":"Who wrote Hamlet?"}\n' \
+  | ai-powered batch text --mock --input - --output -
+
+# Pipe a JSONL file directly into the batch command
+cat prompts.jsonl | ai-powered batch text --input - --output -
+
+# Pipe a video shot list and pretty-print NDJSON results with jq
+cat shots.jsonl | ai-powered batch video --input - --output - | jq .
+```
+
 ### `serve` — Start HTTP proxy server
 
 ```bash
 ai-powered serve --mock --port 3001
-# Exposes: GET /health, GET /config, GET /models, POST /text, POST /stream, POST /image, etc.
+# Exposes: GET /health, GET /config, GET /models, POST /text, POST /stream, POST /image, POST /batch, etc.
 ```
 
 ### `session` — Manage conversation sessions
@@ -315,6 +331,139 @@ ai-powered wizard               # guided provider/model/API key setup with live 
 
 ---
 
+## File Input
+
+The proxy server and web demo support batch file input on the **Video tab**. Drop (or click-to-browse) a `.json`, `.jsonl`, or `.md` shot-list file onto the batch drop zone. The app parses it into shots, shows a pre-flight preview, and then sends every shot to `POST /batch` sequentially. Results appear as live shot cards with play buttons, individual download links, a downloadable HTML results page, and a ZIP export of all video files.
+
+### JSONL format (one shot per line)
+
+**Text**
+
+```jsonl
+{"prompt":"Explain quantum entanglement in one sentence"}
+{"prompt":"What is the half-life of carbon-14?","model":"gpt-4o"}
+```
+
+**Image**
+
+```jsonl
+{"name":"Hero shot","prompt":"A cinematic product photo of a red sports car on wet asphalt, studio lighting"}
+{"name":"Detail shot","prompt":"Close-up of the dashboard with ambient LED lighting","provider":"openai"}
+```
+
+**Video**
+
+```jsonl
+{"name":"Opening","prompt":"Aerial crane shot descending over a gleaming city skyline at dawn, 5 seconds","modality":"video"}
+{"name":"Title card","prompt":"Logo reveal with light-ray particle effect on black background, 3 seconds","modality":"video"}
+```
+
+**Audio / TTS**
+
+```jsonl
+{"name":"Intro VO","prompt":"Welcome to the future of AI-powered video production."}
+{"name":"Outro VO","prompt":"Thank you for watching. Subscribe for more.","model":"tts-1-hd"}
+```
+
+**Structured**
+
+```jsonl
+{
+  "name": "Product info",
+  "prompt": "Extract product name, price, and SKU from: Blue Widget XL, $29.99, SKU-4821",
+  "modality": "structured"
+}
+```
+
+### JSON array format
+
+A `.json` file whose root value is an array is treated identically to JSONL:
+
+```json
+[
+  {
+    "name": "Shot 1",
+    "prompt": "Wide establishing shot of a rooftop at sunrise",
+    "modality": "video"
+  },
+  {
+    "name": "Shot 2",
+    "prompt": "Close-up of solar panels glistening with morning dew",
+    "modality": "video"
+  }
+]
+```
+
+A JSON object with a `shots` or `items` key is also accepted:
+
+```json
+{
+  "shots": [
+    { "name": "Opening", "prompt": "Drone flyover of downtown skyline at golden hour" },
+    { "name": "Cut", "prompt": "Street-level pedestrian traffic timelapse" }
+  ]
+}
+```
+
+### Markdown shot-list format
+
+A `.md` file is parsed as a shot list. Headings become shot names; the following paragraph text becomes the prompt. See [`ai-prompts/roofing-commercial-shot-list2.md`](ai-prompts/roofing-commercial-shot-list2.md) for a full production example.
+
+```markdown
+## Scene 1 — Establishing Shot
+
+Wide crane shot descending over a gleaming city skyline at dawn,
+warm golden light, 5 seconds.
+
+## Scene 2 — Product Detail
+
+Macro close-up of the finished roofing tile surface, water beading
+and rolling off, 3 seconds.
+```
+
+### POST /batch API
+
+The proxy exposes `POST /batch` which accepts an `items` array and streams results as NDJSON:
+
+```bash
+curl -X POST http://localhost:3001/batch \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "items": [
+      { "modality": "video", "name": "Shot 1", "prompt": "Aerial dawn cityscape" },
+      { "modality": "video", "name": "Shot 2", "prompt": "Street-level timelapse" }
+    ]
+  }'
+```
+
+Each response line:
+
+```jsonl
+{"index":0,"name":"Shot 1","modality":"video","prompt":"Aerial dawn cityscape","status":"ok","result":{…}}
+{"index":1,"name":"Shot 2","modality":"video","prompt":"Street-level timelapse","status":"ok","result":{…}}
+```
+
+Per-item errors use `"status":"error"` and include an `"error"` field — they do not abort the remaining items.
+
+### HTML export and base64 trade-off
+
+The **⬇ Download HTML** export produces a self-contained `batch-results.html` file with all
+generated media embedded as base64 data URIs — no external server or file paths required.
+This means the file works completely offline and can be emailed or archived as a single
+artifact.
+
+**Trade-off:** base64 encoding inflates binary data by ~33 %. A batch of ten 10 MB video
+clips will produce a roughly 130 MB HTML file. For large video batches, prefer **⬇ Download ZIP**,
+which packages the raw `.mp4` files together with a lightweight `results.html` that links to
+them by relative path.
+
+| Export          | Best for                               | Approximate size        |
+| --------------- | -------------------------------------- | ----------------------- |
+| HTML (base64)   | Sharing, archiving, offline viewing    | ~1.33× total video size |
+| ZIP (raw files) | Large batches, local playback, editing | ~1× total video size    |
+
+---
+
 ## Library Usage
 
 > **ESM only.** Import from `"ai-powered"` — no `require()`.
@@ -328,10 +477,10 @@ import { getAiClient } from "ai-powered";
 const client = getAiClient({ mock: true });
 
 const result = await client.generateText("Hello, AI!");
-console.log(result.content);    // string
-console.log(result.usage);      // { promptTokens, completionTokens, totalTokens }
-console.log(result.cost);       // { totalUsd, isEstimate }
-console.log(result.latencyMs);  // number
+console.log(result.content); // string
+console.log(result.usage); // { promptTokens, completionTokens, totalTokens }
+console.log(result.cost); // { totalUsd, isEstimate }
+console.log(result.latencyMs); // number
 ```
 
 ### Text generation
@@ -354,8 +503,8 @@ const result = await client.generateText("Explain WebAssembly.");
 
 ```typescript
 const result = await client.generateImage("A serene mountain lake at sunrise");
-console.log(result.url);         // string | undefined
-console.log(result.base64);      // string | undefined
+console.log(result.url); // string | undefined
+console.log(result.base64); // string | undefined
 ```
 
 ### Audio transcription
@@ -389,14 +538,14 @@ console.log(result.url);
 import { z } from "zod";
 
 const CountrySchema = z.object({
-  name:       z.string(),
-  capital:    z.string(),
+  name: z.string(),
+  capital: z.string(),
   population: z.number(),
-  in_europe:  z.boolean(),
+  in_europe: z.boolean(),
 });
 
 const result = await client.generateStructured("Describe France.", CountrySchema);
-console.log(result.data);   // typed as { name, capital, population, in_europe }
+console.log(result.data); // typed as { name, capital, population, in_europe }
 ```
 
 ### Streaming text
@@ -444,9 +593,9 @@ const client = getAiClient(config);
 const client = getAiClient({
   provider: "openai",
   fallbackProviders: ["anthropic", "mock"],
-  fallback: true,                   // default: true
-  circuitBreakerThreshold: 5,       // open circuit after 5 consecutive failures
-  circuitBreakerResetMs: 60_000,    // probe after 60 s
+  fallback: true, // default: true
+  circuitBreakerThreshold: 5, // open circuit after 5 consecutive failures
+  circuitBreakerResetMs: 60_000, // probe after 60 s
 });
 ```
 
@@ -454,14 +603,13 @@ const client = getAiClient({
 
 ```typescript
 const client = getAiClient({
-  budgetSession: 0.50,   // max $0.50 per session
-  warnBudget: 0.8,        // warn at 80% ($0.40)
+  budgetSession: 0.5, // max $0.50 per session
+  warnBudget: 0.8, // warn at 80% ($0.40)
 });
 // BudgetExceededError thrown before API call if projected cost exceeds limit
 ```
 
 ---
-
 
 ## AI Agent / Tool-Calling Usage
 
@@ -486,9 +634,9 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          prompt:      { type: "string", description: "The user prompt." },
+          prompt: { type: "string", description: "The user prompt." },
           temperature: { type: "number", description: "Sampling temperature 0–2." },
-          maxTokens:   { type: "integer", description: "Max tokens to generate." },
+          maxTokens: { type: "integer", description: "Max tokens to generate." },
         },
         required: ["prompt"],
       },
@@ -516,7 +664,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          prompt:     { type: "string" },
+          prompt: { type: "string" },
           schemaName: { type: "string", description: "Schema identifier known to the agent." },
         },
         required: ["prompt", "schemaName"],
@@ -531,7 +679,7 @@ async function dispatchTool(name: string, args: Record<string, unknown>): Promis
     case "generate_text": {
       const result = await aiClient.generateText(args.prompt as string, {
         temperature: args.temperature as number | undefined,
-        maxTokens:   args.maxTokens   as number | undefined,
+        maxTokens: args.maxTokens as number | undefined,
       });
       return result.content;
     }
@@ -605,12 +753,15 @@ Agents that use raw JSON schemas (e.g. Anthropic tool_use) can use this schema b
       "input_schema": {
         "type": "object",
         "properties": {
-          "prompt":       { "type": "string"  },
-          "provider":     { "type": "string", "enum": ["openai","anthropic","xai","venice","mock"] },
-          "model":        { "type": "string"  },
-          "temperature":  { "type": "number"  },
-          "maxTokens":    { "type": "integer" },
-          "systemPrompt": { "type": "string"  }
+          "prompt": { "type": "string" },
+          "provider": {
+            "type": "string",
+            "enum": ["openai", "anthropic", "xai", "venice", "mock"]
+          },
+          "model": { "type": "string" },
+          "temperature": { "type": "number" },
+          "maxTokens": { "type": "integer" },
+          "systemPrompt": { "type": "string" }
         },
         "required": ["prompt"]
       }
@@ -621,9 +772,9 @@ Agents that use raw JSON schemas (e.g. Anthropic tool_use) can use this schema b
       "input_schema": {
         "type": "object",
         "properties": {
-          "prompt":   { "type": "string" },
+          "prompt": { "type": "string" },
           "provider": { "type": "string" },
-          "model":    { "type": "string" }
+          "model": { "type": "string" }
         },
         "required": ["prompt"]
       }
@@ -635,7 +786,7 @@ Agents that use raw JSON schemas (e.g. Anthropic tool_use) can use this schema b
         "type": "object",
         "properties": {
           "audioBase64": { "type": "string" },
-          "filename":    { "type": "string" }
+          "filename": { "type": "string" }
         },
         "required": ["audioBase64"]
       }
@@ -646,7 +797,7 @@ Agents that use raw JSON schemas (e.g. Anthropic tool_use) can use this schema b
       "input_schema": {
         "type": "object",
         "properties": {
-          "text":  { "type": "string" },
+          "text": { "type": "string" },
           "model": { "type": "string" }
         },
         "required": ["text"]
@@ -658,7 +809,7 @@ Agents that use raw JSON schemas (e.g. Anthropic tool_use) can use this schema b
       "input_schema": {
         "type": "object",
         "properties": {
-          "prompt":     { "type": "string" },
+          "prompt": { "type": "string" },
           "jsonSchema": { "type": "object", "description": "JSON Schema for the output object." }
         },
         "required": ["prompt", "jsonSchema"]
@@ -693,9 +844,9 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 
 ### Two modes
 
-| Mode | Use case | API key exposure |
-|------|----------|-----------------|
-| **proxy** | Production | Key stays on your server — browser never sees it |
+| Mode       | Use case        | API key exposure                                            |
+| ---------- | --------------- | ----------------------------------------------------------- |
+| **proxy**  | Production      | Key stays on your server — browser never sees it            |
 | **direct** | Dev / demo only | Key visible in DevTools — non-suppressible DOM banner shown |
 
 ### Proxy mode (recommended)
@@ -752,7 +903,7 @@ while (true) {
 const client = createWebClient({
   mode: "direct",
   provider: "openai",
-  apiKey: "sk-…",   // ⚠️ visible in DevTools — dev/demo only
+  apiKey: "sk-…", // ⚠️ visible in DevTools — dev/demo only
 });
 
 const result = await client.generateText("Hello!");
@@ -774,7 +925,10 @@ const history = session.getMessages();
 ```html
 <!doctype html>
 <html lang="en">
-  <head><meta charset="UTF-8" /><title>ai-powered demo</title></head>
+  <head>
+    <meta charset="UTF-8" />
+    <title>ai-powered demo</title>
+  </head>
   <body>
     <textarea id="prompt">Explain WebAssembly.</textarea>
     <button id="btn">Generate</button>
@@ -1111,6 +1265,7 @@ Plugins receive a **frozen snapshot** of `AiConfig` — mutations throw `TypeErr
 ### ESM-only design (Decision D1)
 
 This package uses `"type": "module"` and ships only ES Modules. This decision was made to:
+
 - Support top-level `await` in CLI entry points
 - Enable tree-shaking in Vite browser bundles
 - Align with the direction of the Node.js and npm ecosystems
@@ -1119,7 +1274,6 @@ This package uses `"type": "module"` and ships only ES Modules. This decision wa
 **Migration path for CJS consumers:** wrap the import in a dynamic `import()` or migrate to `"type": "module"`.
 
 ---
-
 
 ## Writing a Plugin
 
@@ -1176,18 +1330,18 @@ export const myPlugin: AiPlugin = {
 
 ### Key `RequestContext` fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `config` | `Readonly<AiConfig>` | Frozen config snapshot — mutations throw `TypeError` |
-| `messages` | `Array<{role, content}>` | Mutable message list |
-| `modality` | `Modality` | Active modality for this request |
+| Field      | Type                     | Description                                          |
+| ---------- | ------------------------ | ---------------------------------------------------- |
+| `config`   | `Readonly<AiConfig>`     | Frozen config snapshot — mutations throw `TypeError` |
+| `messages` | `Array<{role, content}>` | Mutable message list                                 |
+| `modality` | `Modality`               | Active modality for this request                     |
 
 ### Key `ResponseContext` fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `result` | `TextResult \| ImageResult \| …` | Provider response |
-| `modality` | `Modality` | Active modality |
+| Field      | Type                             | Description       |
+| ---------- | -------------------------------- | ----------------- |
+| `result`   | `TextResult \| ImageResult \| …` | Provider response |
+| `modality` | `Modality`                       | Active modality   |
 
 ### Full example: rate-limiter plugin
 
@@ -1204,7 +1358,7 @@ export interface RateLimiterOptions {
 
 export function createRateLimiterPlugin(opts: RateLimiterOptions = {}): AiPlugin {
   const maxRequests = opts.maxRequests ?? 10;
-  const windowMs    = opts.windowMs    ?? 60_000;
+  const windowMs = opts.windowMs ?? 60_000;
   const timestamps: number[] = [];
 
   return {
@@ -1223,7 +1377,7 @@ export function createRateLimiterPlugin(opts: RateLimiterOptions = {}): AiPlugin
         const resetIn = windowMs - (now - timestamps[0]!);
         throw new Error(
           `Rate limit exceeded: ${maxRequests} req/${windowMs}ms. ` +
-          `Reset in ${Math.ceil(resetIn / 1000)}s.`
+            `Reset in ${Math.ceil(resetIn / 1000)}s.`,
         );
       }
 
@@ -1247,12 +1401,7 @@ export function createRateLimiterPlugin(opts: RateLimiterOptions = {}): AiPlugin
 
 ```json
 {
-  "plugins": [
-    "audit-log",
-    "rate-limiter",
-    "./plugins/my-plugin.js",
-    "@my-scope/ai-powered-plugin"
-  ]
+  "plugins": ["audit-log", "rate-limiter", "./plugins/my-plugin.js", "@my-scope/ai-powered-plugin"]
 }
 ```
 
@@ -1262,18 +1411,21 @@ export function createRateLimiterPlugin(opts: RateLimiterOptions = {}): AiPlugin
 import { getAiClient } from "ai-powered";
 import { createRateLimiterPlugin } from "./plugins/rate-limiter.js";
 
-const client = getAiClient({
-  mock: true,
-  plugins: ["audit-log"],               // string: built-in or npm package
-}, [
-  createRateLimiterPlugin({ maxRequests: 20, windowMs: 30_000 }),  // object: programmatic
-]);
+const client = getAiClient(
+  {
+    mock: true,
+    plugins: ["audit-log"], // string: built-in or npm package
+  },
+  [
+    createRateLimiterPlugin({ maxRequests: 20, windowMs: 30_000 }), // object: programmatic
+  ],
+);
 ```
 
 ### Plugin sandboxing
 
 - **Frozen config:** `ctx.config` is a deep-frozen snapshot of `AiConfig`. Any attempt to mutate it throws a `TypeError`. This ensures plugins cannot alter global configuration.
-- **PluginError isolation:** If a plugin's hook throws an error that is *not* intentionally re-thrown by the caller, it is caught, wrapped as a `PluginError`, and logged. The plugin is then bypassed for subsequent hooks in the current request cycle.
+- **PluginError isolation:** If a plugin's hook throws an error that is _not_ intentionally re-thrown by the caller, it is caught, wrapped as a `PluginError`, and logged. The plugin is then bypassed for subsequent hooks in the current request cycle.
 - **Bypass behaviour:** A bypassed plugin still receives `onError` callbacks (from a separate try-catch) so audit-style plugins never miss error events.
 
 ### Error handling in plugins
@@ -1295,11 +1447,11 @@ async onRequest(ctx: RequestContext): Promise<RequestContext> {
 
 ### Built-in plugins
 
-| Plugin ID | Factory | Description |
-|-----------|---------|-------------|
-| `"audit-log"` | `createAuditLogPlugin(opts)` | JSONL audit trail with masked keys and SHA-256 prompt hashes |
-| `"rate-limiter"` | `createRateLimiterPlugin(opts)` | Token-bucket rate limiter per sliding window |
-| `"prompt-shield"` | `createPromptShieldPlugin(opts)` | Heuristic prompt injection detector |
+| Plugin ID         | Factory                          | Description                                                  |
+| ----------------- | -------------------------------- | ------------------------------------------------------------ |
+| `"audit-log"`     | `createAuditLogPlugin(opts)`     | JSONL audit trail with masked keys and SHA-256 prompt hashes |
+| `"rate-limiter"`  | `createRateLimiterPlugin(opts)`  | Token-bucket rate limiter per sliding window                 |
+| `"prompt-shield"` | `createPromptShieldPlugin(opts)` | Heuristic prompt injection detector                          |
 
 ### Publishing a plugin to npm
 
@@ -1369,4 +1521,4 @@ npm run serve
 
 ---
 
-*Made with ❤️ and AI by the ai-powered contributors.*
+_Made with ❤️ and AI by the ai-powered contributors._

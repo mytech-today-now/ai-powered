@@ -127,9 +127,10 @@ if (-not (Test-Path $InputFile)) {
 
 $defaultPre = @"
 Using Augmentcode AI (with Augment-extensions) in VS Code:
-- Load bead tasks from '$IssuesJsonl'
-- Check task completion status in '$completedJsonl' — skip any task already marked complete
+- Load bead tasks using 'scripts\beads-helpers.ps1' (dot-sourceit to get the 'bd' alias: `. .\scripts\beads-helpers.ps1`) or call 'scripts\beads-query.ps1' directly
+- Check task completion status with "bd list --status open" or "bd ready " — skip any task whose status is not open/in-progress
 - For each remaining task in this batch:
+    - Claim the task before starting: "bd update <id> --claim"
     - Generate production-quality code that fully satisfies the bead task requirements
     - Follow professional coding standards at all times
     - Do not use stubs, placeholders, or incomplete implementations

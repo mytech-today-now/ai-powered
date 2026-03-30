@@ -37,8 +37,12 @@ export interface ServeOptions {
   port?: number;
   /** Network interface to bind. Default: 127.0.0.1 */
   host?: string;
-  /** Allowed CORS origin. Default: http://localhost:5173 */
-  corsOrigin?: string;
+  /**
+   * Allowed CORS origin(s). Default: http://localhost:5173
+   * Pass an array to allow multiple origins.
+   * Pass "*" to allow any origin (development only).
+   */
+  corsOrigin?: string | string[];
   /** Max requests per minute before 429. Default: 60 */
   rateLimit?: number;
   /** Force MockProvider for all requests (no API calls). Default: false */
@@ -75,8 +79,26 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   const logger = getLogger();
 
   const app = express();
-  const origin = opts.corsOrigin ?? "http://localhost:5173";
-  const rpm    = opts.rateLimit  ?? 60;
+  const configuredOrigin = opts.corsOrigin ?? "http://localhost:5173";
+  const rpm              = opts.rateLimit  ?? 60;
+
+  // Build a cors origin handler that also accepts `null` (file:// URLs) and
+  // normalised arrays of allowed origins.
+  const corsOriginOption: cors.CorsOptions["origin"] = (requestOrigin, callback) => {
+    // requestOrigin is undefined for same-origin or non-browser requests;
+    // it is the string "null" when the page is opened as a file:// URL.
+    if (!requestOrigin || requestOrigin === "null") {
+      return callback(null, true);
+    }
+    if (configuredOrigin === "*") {
+      return callback(null, true);
+    }
+    const allowed = Array.isArray(configuredOrigin) ? configuredOrigin : [configuredOrigin];
+    if (allowed.includes(requestOrigin)) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS: origin '${requestOrigin}' is not allowed`));
+  };
 
   // 1. Helmet — security headers on every response
   app.use(
@@ -98,13 +120,13 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   );
 
   // 2. CORS
-  app.use(cors({ origin }));
+  app.use(cors({ origin: corsOriginOption }));
 
   // 3. Rate limiter — 429 on exceed
   app.use(
     rateLimit({
       windowMs:       60_000,
-      max:            rpm,
+      limit:          rpm,
       standardHeaders: true,
       legacyHeaders:  false,
       message:        { error: "Too many requests — rate limit exceeded.", code: "RATE_LIMITED" },

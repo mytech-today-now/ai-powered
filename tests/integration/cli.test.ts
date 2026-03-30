@@ -63,8 +63,15 @@ function run(
     ...(opts.input !== undefined ? { input: opts.input } : {}),
   };
   const result = spawnSync("node", [BINARY, ...args], spawnOpts);
+  // dotenv v17 prints an informational banner to stdout (e.g. "[dotenv@17.x]
+  // injecting env…"). Strip those lines so JSON-parsing tests are not broken.
+  const rawStdout = result.stdout ?? "";
+  const cleanStdout = rawStdout
+    .split("\n")
+    .filter((line) => !line.startsWith("[dotenv"))
+    .join("\n");
   return {
-    stdout: result.stdout ?? "",
+    stdout: cleanStdout,
     stderr: result.stderr ?? "",
     exitCode: result.status ?? -1,
   };

@@ -25,6 +25,7 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   xai: "XAI_API_KEY",
   venice: "VENICE_API_KEY",
+  lumaai: "LUMAAI_API_KEY",
   custom: "AI_API_KEY",
   mock: "",
 };
@@ -35,6 +36,7 @@ const MODALITY_SUPPORT: Record<string, string[]> = {
   anthropic: ["text", "structured"],
   venice: ["text", "image", "structured"],
   xai: ["text", "structured"],
+  lumaai: ["video"],
   custom: ["text", "image", "audio", "video", "structured"],
   mock: ["text", "image", "audio", "video", "structured"],
 };
@@ -45,6 +47,7 @@ const MODEL_DEFAULTS: Record<string, Partial<Record<string, string>>> = {
   anthropic: { text: "claude-opus-4-5", structured: "claude-3-5-sonnet-20241022" },
   venice: { text: "llama-3.3-70b", image: "fluently-xl", structured: "llama-3.3-70b" },
   xai: { text: "grok-2-1212", structured: "grok-2-1212" },
+  lumaai: { video: "ray-2" },
   custom: {},
   mock: {},
 };
@@ -129,6 +132,15 @@ async function validateApiKey(
           signal: AbortSignal.timeout(10_000),
         });
         if (res.ok) return { valid: true, message: "✓ xAI API key is valid." };
+        const body = await res.text().catch(() => "");
+        return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
+      }
+      case "lumaai": {
+        const res = await fetch("https://api.lumalabs.ai/dream-machine/v1/ping", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) return { valid: true, message: "✓ Luma AI API key is valid." };
         const body = await res.text().catch(() => "");
         return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
       }
@@ -234,6 +246,11 @@ export async function runWizard(opts: { templateMode?: boolean } = {}): Promise<
         name: "xAI (Grok) — text & structured only",
         value: "xai",
         disabled: notSupported("xai"),
+      },
+      {
+        name: "Luma AI (Ray-2) — video generation only",
+        value: "lumaai",
+        disabled: notSupported("lumaai"),
       },
       { name: "Custom / Self-hosted", value: "custom" },
       { name: "Mock (no API calls — for testing)", value: "mock" },

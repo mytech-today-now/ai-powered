@@ -38,9 +38,11 @@ const XAI_BASE_URL = "https://api.x.ai/v1";
 const MAX_TOKENS_DEFAULT = 4096;
 
 const GROK_MODELS: ModelDescriptor[] = [
-  { id: "grok-2",        name: "Grok 2",        capabilities: ["text", "structured"], contextWindow: 131072 },
-  { id: "grok-2-latest", name: "Grok 2 Latest",  capabilities: ["text", "structured"], contextWindow: 131072 },
-  { id: "grok-beta",     name: "Grok Beta",      capabilities: ["text", "structured"], contextWindow: 131072 },
+  { id: "grok-2",           name: "Grok 2",          capabilities: ["text", "structured"], contextWindow: 131072 },
+  { id: "grok-2-latest",    name: "Grok 2 Latest",   capabilities: ["text", "structured"], contextWindow: 131072 },
+  { id: "grok-2-mini",      name: "Grok 2 Mini",     capabilities: ["text", "structured"], contextWindow: 131072 },
+  { id: "grok-beta",        name: "Grok Beta",       capabilities: ["text", "structured"], contextWindow: 131072 },
+  { id: "grok-vision-beta", name: "Grok Vision Beta", capabilities: ["text", "structured"], contextWindow: 8192  },
 ];
 
 const DEFAULT_TEXT_MODEL = "grok-2";

@@ -207,7 +207,7 @@ export class MockProvider extends BaseProvider {
       modality: "video",
       provider: "mock",
       model: "mock-video-v1",
-      data: "",
+      data: "data:video/mp4;base64,AAAAAA==",
       mimeType: "video/mp4",
       usage: MOCK_ZERO_USAGE,
       cost: calculateCost("mock-video-v1", MOCK_ZERO_USAGE),

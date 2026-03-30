@@ -26,6 +26,7 @@ import { AnthropicProvider } from "./anthropic.js";
 import { GrokProvider } from "./xai.js";
 import { VeniceProvider } from "./venice.js";
 import { CustomProvider } from "./custom.js";
+import { LumaAIProvider } from "./lumaai.js";
 
 export { MockProvider } from "./mock.js";
 export { OpenAiProvider } from "./openai.js";
@@ -33,6 +34,7 @@ export { AnthropicProvider } from "./anthropic.js";
 export { GrokProvider } from "./xai.js";
 export { VeniceProvider } from "./venice.js";
 export { CustomProvider } from "./custom.js";
+export { LumaAIProvider } from "./lumaai.js";
 
 // ---------------------------------------------------------------------------
 // Provider registry
@@ -47,6 +49,7 @@ const REGISTRY = new Map<ProviderName, ProviderConstructor>([
   ["xai",       GrokProvider],
   ["venice",    VeniceProvider],
   ["custom",    CustomProvider],
+  ["lumaai",    LumaAIProvider],
 ]);
 
 /**

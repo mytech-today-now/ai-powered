@@ -47,8 +47,9 @@ export {
   lookupModelPricing,
   calculateCost,
   estimateCost,
+  listPricing,
 } from "./utils.js";
-export type { AiLoggerOptions, ModelPricing } from "./utils.js";
+export type { AiLoggerOptions, ModelPricing, PricingEntry } from "./utils.js";
 
 export { withRetry, CircuitBreaker } from "./resilience.js";
 export type { RetryOptions, CircuitState } from "./resilience.js";

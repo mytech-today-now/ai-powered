@@ -7,7 +7,13 @@
  */
 
 import { AiConfigSchema, ConfigError, loadConfig } from "../../src/ai-powered/core.js";
-import { maskApiKey } from "../../src/ai-powered/utils.js";
+import {
+  maskApiKey,
+  listPricing,
+  lookupModelPricing,
+  calculateCost,
+  estimateCost,
+} from "../../src/ai-powered/utils.js";
 import { renderTemplate, getBuiltInTemplate } from "../../src/ai-powered/templates/builtins.js";
 import { ConversationSession } from "../../src/ai-powered/client.js";
 
@@ -155,6 +161,203 @@ describe("ConversationSession", () => {
     const history = session.getHistory();
     history.pop();
     expect(session.getHistory()).toHaveLength(1); // original unchanged
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listPricing
+// ---------------------------------------------------------------------------
+
+describe("listPricing", () => {
+  it("returns a non-empty array", () => {
+    const entries = listPricing();
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
+  it("results are sorted alphabetically by model id", () => {
+    const entries = listPricing();
+    for (let i = 1; i < entries.length; i++) {
+      expect(entries[i]!.model.localeCompare(entries[i - 1]!.model)).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("every entry has a model, modality, and primaryUsd", () => {
+    for (const e of listPricing()) {
+      expect(typeof e.model).toBe("string");
+      expect(["text", "image", "audio", "video"]).toContain(e.modality);
+      expect(typeof e.primaryUsd).toBe("number");
+      expect(e.primaryUsd).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("filters by modality=video", () => {
+    const entries = listPricing({ modality: "video" });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.modality).toBe("video");
+      expect(e.perVideoUsd).toBeDefined();
+    }
+  });
+
+  it("filters by modality=image", () => {
+    const entries = listPricing({ modality: "image" });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.modality).toBe("image");
+    }
+  });
+
+  it("filters by model substring", () => {
+    const entries = listPricing({ model: "gpt-4o" });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.model).toContain("gpt-4o");
+    }
+  });
+
+  it("returns empty array when model filter matches nothing", () => {
+    expect(listPricing({ model: "nonexistent-model-xyz" })).toHaveLength(0);
+  });
+
+  it("filters by model substring 'gpt-4' — returns all gpt-4 variants including base entry", () => {
+    const entries = listPricing({ model: "gpt-4" });
+    expect(entries.length).toBeGreaterThan(0);
+    for (const e of entries) {
+      expect(e.model).toContain("gpt-4");
+    }
+    // Both the base "gpt-4" entry and versioned variants must be present.
+    const ids = entries.map((e) => e.model);
+    expect(ids).toContain("gpt-4");
+    expect(ids).toContain("gpt-4o");
+    expect(ids).toContain("gpt-4-turbo");
+  });
+
+  it("Luma AI ray-flash-2 has primaryUsd=0.04 and modality=video", () => {
+    const entry = listPricing({ model: "ray-flash-2" }).find(e => e.model === "ray-flash-2");
+    expect(entry).toBeDefined();
+    expect(entry!.modality).toBe("video");
+    expect(entry!.primaryUsd).toBe(0.04);
+    expect(entry!.perVideoUsd).toBe(0.04);
+  });
+
+  it("Luma AI ray-2 has primaryUsd=0.14", () => {
+    const entry = listPricing({ model: "ray-2" }).find(e => e.model === "ray-2");
+    expect(entry).toBeDefined();
+    expect(entry!.primaryUsd).toBe(0.14);
+  });
+
+  it("gpt-4o has modality=text and correct rates", () => {
+    const entry = listPricing().find(e => e.model === "gpt-4o");
+    expect(entry).toBeDefined();
+    expect(entry!.modality).toBe("text");
+    expect(entry!.promptPer1kUsd).toBe(0.005);
+    expect(entry!.completionPer1kUsd).toBe(0.015);
+    expect(entry!.primaryUsd).toBe(0.005);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lookupModelPricing
+// ---------------------------------------------------------------------------
+
+describe("lookupModelPricing", () => {
+  it("exact match returns correct pricing", () => {
+    const p = lookupModelPricing("gpt-4o");
+    expect(p.promptPer1kUsd).toBe(0.005);
+    expect(p.completionPer1kUsd).toBe(0.015);
+  });
+
+  it("prefix match resolves versioned model ids", () => {
+    const p = lookupModelPricing("gpt-4o-mini-2024-07-18");
+    expect(p.promptPer1kUsd).toBe(0.00015);
+  });
+
+  it("unknown model returns fallback pricing (not zero)", () => {
+    const p = lookupModelPricing("some-unknown-model-abc");
+    expect(p.promptPer1kUsd).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateCost
+// ---------------------------------------------------------------------------
+
+describe("calculateCost", () => {
+  it("text model: computes correct cost from token usage", () => {
+    // gpt-4o: $0.005/1k prompt + $0.015/1k completion
+    // 1000 prompt + 500 completion = 0.005 + 0.0075 = 0.0125
+    const cost = calculateCost("gpt-4o", {
+      promptTokens: 1000,
+      completionTokens: 500,
+      totalTokens: 1500,
+    });
+    expect(cost.isEstimate).toBe(false);
+    expect(cost.totalUsd).toBeCloseTo(0.0125, 6);
+  });
+
+  it("image model: returns perImageUsd regardless of tokens", () => {
+    const cost = calculateCost("dall-e-3", {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    });
+    expect(cost.isEstimate).toBe(false);
+    expect(cost.totalUsd).toBe(0.04);
+  });
+
+  it("video model: returns perVideoUsd for ray-flash-2", () => {
+    const cost = calculateCost("ray-flash-2", {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    });
+    expect(cost.isEstimate).toBe(false);
+    expect(cost.totalUsd).toBe(0.04);
+  });
+
+  it("video model: returns perVideoUsd for ray-2", () => {
+    const cost = calculateCost("ray-2", {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    });
+    expect(cost.totalUsd).toBe(0.14);
+  });
+
+  it("result is rounded to 6 decimal places", () => {
+    const cost = calculateCost("gpt-4o-mini", {
+      promptTokens: 1,
+      completionTokens: 1,
+      totalTokens: 2,
+    });
+    const decimals = cost.totalUsd.toString().split(".")[1]?.length ?? 0;
+    expect(decimals).toBeLessThanOrEqual(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// estimateCost
+// ---------------------------------------------------------------------------
+
+describe("estimateCost", () => {
+  it("always returns isEstimate=true", () => {
+    const est = estimateCost("gpt-4o", "Hello world");
+    expect(est.isEstimate).toBe(true);
+  });
+
+  it("returns a positive cost for non-empty text", () => {
+    const est = estimateCost("gpt-4o", "Write me a haiku about the ocean.");
+    expect(est.totalUsd).toBeGreaterThan(0);
+  });
+
+  it("returns zero cost for empty text", () => {
+    const est = estimateCost("gpt-4o", "");
+    expect(est.totalUsd).toBe(0);
+  });
+
+  it("video model returns fixed video cost regardless of text", () => {
+    const est = estimateCost("ray-flash-2", "Generate a time-lapse of clouds");
+    expect(est.totalUsd).toBe(0.04);
   });
 });
 

@@ -18,6 +18,11 @@
  * to <configPath>.bak.<timestamp> and migrated to the current schema.
  */
 
+// Load .env from process.cwd() before any process.env access.
+// Named import ensures tsc does not elide the call under verbatimModuleSyntax.
+import { config as _dotenvLoad } from "dotenv";
+_dotenvLoad(); // populate process.env from .env (no-op if already loaded)
+
 import { z } from "zod";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -53,6 +58,7 @@ export const ProviderNameSchema = z.enum([
   "anthropic",
   "xai",
   "venice",
+  "lumaai",
   "custom",
   "mock",
 ]);
@@ -394,6 +400,7 @@ function resolveApiKey(merged: PlainObject): string | undefined {
     anthropic: "ANTHROPIC_API_KEY",
     xai: "XAI_API_KEY",
     venice: "VENICE_API_KEY",
+    lumaai: "LUMAAI_API_KEY",
     custom: "AI_CUSTOM_API_KEY",
     mock: "",
   };

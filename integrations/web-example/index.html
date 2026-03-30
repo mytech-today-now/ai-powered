@@ -29,6 +29,10 @@
           <label for="proxy-url">Proxy URL:</label>
           <input id="proxy-url" type="text" value="http://localhost:3001"
                  placeholder="http://localhost:3001" spellcheck="false" />
+          <label for="proxy-provider-select">Provider:</label>
+          <select id="proxy-provider-select" title="Active providers from server .env">
+            <option value="">Default</option>
+          </select>
           <span class="hint">Run <code>npm run serve</code> to start the proxy server.</span>
         </div>
 
@@ -78,6 +82,10 @@
           <textarea id="text-prompt" rows="3"
             placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
         </div>
+        <div class="model-row">
+          <label for="text-model-select">Model:</label>
+          <select id="text-model-select"><option value="">Default</option></select>
+        </div>
         <div class="btn-row">
           <button id="btn-text-generate" class="btn-primary">Generate</button>
           <button id="btn-text-stream"   class="btn-primary">Stream</button>
@@ -91,6 +99,10 @@
         <div class="input-group">
           <textarea id="image-prompt" rows="2"
             placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
+        </div>
+        <div class="model-row">
+          <label for="image-model-select">Model:</label>
+          <select id="image-model-select"><option value="">Default</option></select>
         </div>
         <div class="btn-row">
           <button id="btn-image-generate" class="btn-primary">Generate Image</button>
@@ -108,6 +120,10 @@
             <textarea id="tts-text" rows="2"
               placeholder="Text to synthesize…">Hello! This demonstrates text-to-speech synthesis.</textarea>
           </div>
+          <div class="model-row">
+            <label for="tts-model-select">Model:</label>
+            <select id="tts-model-select"><option value="">Default</option></select>
+          </div>
           <div class="btn-row">
             <button id="btn-tts-speak" class="btn-primary">Synthesize Speech</button>
           </div>
@@ -124,6 +140,10 @@
             <input id="audio-file-input" type="file" accept="audio/*" class="file-input" />
             <span id="audio-filename" class="filename-display">No file selected</span>
           </div>
+          <div class="model-row">
+            <label for="transcribe-model-select">Model:</label>
+            <select id="transcribe-model-select"><option value="">Default</option></select>
+          </div>
           <div class="btn-row">
             <button id="btn-transcribe" class="btn-primary" disabled>Transcribe</button>
           </div>
@@ -137,9 +157,64 @@
         <div class="proxy-only-note">
           ℹ Video generation requires proxy mode (server-side rendering).
         </div>
+
+        <!-- ── Batch drop zone ────────────────────────────────────── -->
+        <div id="batch-drop-zone" class="batch-drop-zone" role="region" aria-label="Batch file drop zone">
+          <span class="drop-icon" aria-hidden="true">📂</span>
+          <span class="drop-text">
+            Drop a <strong>.json</strong>, <strong>.jsonl</strong>, or <strong>.md</strong> shot-list here
+          </span>
+          <span class="drop-or">— or —</span>
+          <label for="batch-file-input" class="file-label">Choose file</label>
+          <input id="batch-file-input" type="file" accept=".json,.jsonl,.md" class="file-input" />
+          <span id="batch-filename" class="filename-display">No file selected</span>
+        </div>
+
+        <!-- ── Pre-flight panel (shown after file is loaded) ──────── -->
+        <div id="batch-preflight" class="batch-preflight hidden">
+          <div class="preflight-header">
+            <span class="section-label">Shot List Preview</span>
+            <button id="btn-batch-clear" class="btn-ghost btn-sm">✕ Clear</button>
+          </div>
+          <div id="batch-summary" class="batch-summary"></div>
+          <div class="btn-row" style="margin-top:.5rem">
+            <button id="btn-batch-run" class="btn-primary" disabled>▶ Run Batch</button>
+          </div>
+        </div>
+
+        <!-- ── Progress bar (shown while running) ─────────────────── -->
+        <div id="batch-progress" class="batch-progress hidden" aria-live="polite">
+          <div class="progress-header">
+            <span id="batch-progress-label">Processing…</span>
+            <span id="batch-progress-counter" class="progress-counter">0 / 0</span>
+          </div>
+          <div class="progress-bar-track">
+            <div id="batch-progress-bar" class="progress-bar-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- ── Batch results (shown after run) ────────────────────── -->
+        <div id="batch-results" class="batch-results hidden">
+          <div class="results-header">
+            <span class="section-label">Batch Results</span>
+            <div class="results-actions">
+              <button id="btn-download-results" class="btn-ghost btn-sm">⬇ Download HTML</button>
+              <button id="btn-download-zip" class="btn-ghost btn-sm">⬇ Download ZIP</button>
+            </div>
+          </div>
+          <div id="batch-shots" class="batch-shots"></div>
+        </div>
+
+        <!-- ── Single video (divider) ──────────────────────────────── -->
+        <hr class="divider" />
+        <h2 class="subsection-title">Single Video</h2>
         <div class="input-group">
           <textarea id="video-prompt" rows="2"
             placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
+        </div>
+        <div class="model-row">
+          <label for="video-model-select">Model:</label>
+          <select id="video-model-select"><option value="">Default</option></select>
         </div>
         <div class="btn-row">
           <button id="btn-video-generate" class="btn-primary">Generate Video</button>
@@ -153,6 +228,10 @@
         <div class="input-group">
           <textarea id="structured-prompt" rows="4"
             placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
+        </div>
+        <div class="model-row">
+          <label for="structured-model-select">Model:</label>
+          <select id="structured-model-select"><option value="">Default</option></select>
         </div>
         <div class="btn-row">
           <button id="btn-structured-generate" class="btn-primary">Generate JSON</button>
@@ -184,7 +263,11 @@
     <!--
       UMD bundle must load BEFORE app.js so window.AiPowered is defined.
       Run `npm run build:web` once to produce dist-web/ai-powered.umd.js.
+      JSZip is loaded for client-side ZIP generation in the batch results panel.
     -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+            integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHuvXg=="
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="../../dist-web/ai-powered.umd.js"></script>
     <script src="app.js"></script>
   </body>

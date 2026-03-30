@@ -52,6 +52,7 @@ const MAX_TOKENS_DEFAULT = 4096;
 const VENICE_STATIC_MODELS: ModelDescriptor[] = [
   { id: "llama-3.3-70b",       name: "Llama 3.3 70B",       capabilities: ["text", "structured"] },
   { id: "mistral-31-24b",      name: "Mistral 3.1 24B",      capabilities: ["text", "structured"] },
+  { id: "qwen-2.5-vl",         name: "Qwen 2.5 VL",          capabilities: ["text", "structured"] },
   { id: "venice-sd-3.5",       name: "Venice SD 3.5",        capabilities: ["image"] },
   { id: "fluently-xl",         name: "Fluently XL",          capabilities: ["image"] },
 ];

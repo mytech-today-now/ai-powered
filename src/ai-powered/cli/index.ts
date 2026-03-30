@@ -53,8 +53,8 @@ function addGlobalFlags(cmd: Command): Command {
     .addOption(new Option("--provider <name>",    "AI provider to use"))
     .addOption(new Option("--model <id>",          "Model identifier"))
     .addOption(new Option("--api-key <key>",       "API key (overrides env var)"))
-    .addOption(new Option("--temperature <n>",     "Sampling temperature (0-2)").argParser(parseFloat))
-    .addOption(new Option("--max-tokens <n>",      "Maximum response tokens").argParser(parseInt))
+    .addOption(new Option("--temperature <n>",     "Sampling temperature (0-2)").argParser((v) => parseFloat(v)))
+    .addOption(new Option("--max-tokens <n>",      "Maximum response tokens").argParser((v) => parseInt(v, 10)))
     .addOption(new Option("--json",                "Emit JSON output on stdout"))
     .addOption(new Option("--modality <m>",        "AI modality (text|image|audio|video|structured)"))
     .addOption(new Option("--stream",              "Enable streaming output"))
@@ -64,8 +64,8 @@ function addGlobalFlags(cmd: Command): Command {
     .addOption(new Option("--quiet",               "Suppress decorative output; raw result only"))
     .addOption(new Option("--no-color",            "Disable ANSI colour codes"))
     .addOption(new Option("--no-fallback",         "Disable provider failover loop"))
-    .addOption(new Option("--budget-session <n>",  "Session spend ceiling in USD").argParser(parseFloat))
-    .addOption(new Option("--warn-budget <n>",     "Warn-budget fraction (0-1)").argParser(parseFloat))
+    .addOption(new Option("--budget-session <n>",  "Session spend ceiling in USD").argParser((v) => parseFloat(v)))
+    .addOption(new Option("--warn-budget <n>",     "Warn-budget fraction (0-1)").argParser((v) => parseFloat(v)))
     .addOption(new Option("--log",                 "Print log file tail"))
     .addOption(new Option("--debug",               "Enable debug-level logging"));
 }
@@ -244,6 +244,14 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString("utf-8").trim();
+}
+
+/**
+ * Serialise `obj` to a JSON line and write it to `stream`.
+ * Used by the batch command for NDJSON output (stdout or file).
+ */
+function writeLine(obj: object, stream: NodeJS.WritableStream): void {
+  stream.write(JSON.stringify(obj) + "\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -558,7 +566,7 @@ const structuredCmd = new Command("structured")
   .description("Generate structured JSON output validated against a schema")
   .argument("[prompt]", "Prompt text (reads stdin if omitted)")
   .addOption(new Option("--schema <spec>", "JSON Schema file, Zod schema file, or inline JSON"))
-  .addOption(new Option("--max-retries <n>", "Max validation retries (default 2)").argParser(parseInt).default(2))
+  .addOption(new Option("--max-retries <n>", "Max validation retries (default 2)").argParser((v) => parseInt(v, 10)).default(2))
   .addOption(new Option("--template <name>", "Named prompt template"))
   .addOption(new Option("--var <key=value>", "Template variable (repeatable)").argParser(collectKv).default({}))
   .action(async (promptArg: string | undefined, _opts, cmd: Command) => {
@@ -823,9 +831,9 @@ addGlobalFlags(healthCmd);
 const batchCmd = new Command("batch")
   .description("Process multiple prompts from a JSONL file")
   .argument("<mode>", "Modality mode (text|image|audio|video|structured)")
-  .addOption(new Option("--input <file>",       "Input JSONL file (required)"))
-  .addOption(new Option("--output <file>",      "Output JSONL file (required)"))
-  .addOption(new Option("--concurrency <n>",    "Max parallel requests (default 3)").argParser(parseInt).default(3))
+  .addOption(new Option("--input <file>",       "Input JSONL file, or - to read from stdin"))
+  .addOption(new Option("--output <file>",      "Output JSONL file, or - to write to stdout"))
+  .addOption(new Option("--concurrency <n>",    "Max parallel requests (default 3)").argParser((v) => parseInt(v, 10)).default(3))
   .action(async (mode: string, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const inputFile  = opts["input"]  as string | undefined;
@@ -834,17 +842,36 @@ const batchCmd = new Command("batch")
     if (!inputFile)  { process.stderr.write("Error: --input is required for batch\n");  process.exit(EXIT_ERROR); }
     if (!outputFile) { process.stderr.write("Error: --output is required for batch\n"); process.exit(EXIT_ERROR); }
 
-    // Read all rows
+    // Read all rows — from stdin when --input is '-'
     const rows: Array<Record<string, unknown>> = [];
-    const rl = readline.createInterface({ input: fs.createReadStream(inputFile) });
-    for await (const line of rl) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try { rows.push(JSON.parse(trimmed) as Record<string, unknown>); }
-      catch { process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`); }
+    if (inputFile === "-") {
+      const raw = await readStdin();
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try { rows.push(JSON.parse(trimmed) as Record<string, unknown>); }
+        catch { process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`); }
+      }
+      if (rows.length === 0) {
+        process.stderr.write("No batch items read from stdin\n");
+        process.exit(EXIT_ERROR);
+      }
+    } else {
+      const rl = readline.createInterface({ input: fs.createReadStream(inputFile) });
+      for await (const line of rl) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try { rows.push(JSON.parse(trimmed) as Record<string, unknown>); }
+        catch { process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`); }
+      }
     }
 
-    const out = fs.createWriteStream(outputFile, { flags: "w" });
+    // Write output — to stdout when --output is '-'
+    const toStdout = outputFile === "-";
+    const outStream = toStdout ? null : fs.createWriteStream(outputFile, { flags: "w" });
+    // targetStream is the active NDJSON output destination used by writeLine().
+    const targetStream: NodeJS.WritableStream = toStdout ? process.stdout : outStream!;
+
     const batchConfig  = loadConfig(toConfigOverrides(opts) as never);
     const batchModel   = (batchConfig.model as string | undefined) ?? "gpt-4o";
     const client = await getAiClient("cli-batch", toConfigOverrides(opts) as never);
@@ -872,9 +899,9 @@ const batchCmd = new Command("batch")
           const r = await client.generateText(prompt);
           response = { content: r.content, cost: r.cost };
         }
-        out.write(JSON.stringify({ prompt, response }) + "\n");
+        writeLine({ prompt, response }, targetStream);
       } catch (err) {
-        out.write(JSON.stringify({ prompt, error: err instanceof Error ? err.message : String(err) }) + "\n");
+        writeLine({ prompt, error: err instanceof Error ? err.message : String(err) }, targetStream);
       }
     }
 
@@ -883,11 +910,13 @@ const batchCmd = new Command("batch")
     for (const row of rows) {
       if (running.length >= concurrency) await running.shift();
       running.push(processRow(row));
-      if (!opts["quiet"]) process.stderr.write(`Processing row ${++idx}/${rows.length}\r`);
+      if (!opts["quiet"] && !toStdout) process.stderr.write(`Processing row ${++idx}/${rows.length}\r`);
     }
     await Promise.all(running);
-    out.end();
-    if (!opts["quiet"]) process.stderr.write(`\nBatch complete: ${rows.length} rows → ${outputFile}\n`);
+    if (!toStdout) {
+      outStream?.end();
+      if (!opts["quiet"]) process.stderr.write(`\nBatch complete: ${rows.length} rows → ${outputFile}\n`);
+    }
   });
 addGlobalFlags(batchCmd);
 
@@ -896,10 +925,10 @@ addGlobalFlags(batchCmd);
 // ---------------------------------------------------------------------------
 const serveCmd = new Command("serve")
   .description("Start a local HTTP proxy server for all ai-powered modalities")
-  .addOption(new Option("--port <n>",        "Port to listen on (default 3001)").argParser(parseInt).default(3001))
+  .addOption(new Option("--port <n>",        "Port to listen on (default 3001)").argParser((v) => parseInt(v, 10)).default(3001))
   .addOption(new Option("--host <addr>",     "Host to bind to (default 127.0.0.1)").default("127.0.0.1"))
   .addOption(new Option("--cors-origin <o>", "Allowed CORS origin (default http://localhost:5173)").default("http://localhost:5173"))
-  .addOption(new Option("--rate-limit <n>",  "Max requests per minute (default 60)").argParser(parseInt).default(60))
+  .addOption(new Option("--rate-limit <n>",  "Max requests per minute (default 60)").argParser((v) => parseInt(v, 10)).default(60))
   .addOption(new Option("--log-file <path>", "Append structured JSONL logs to this file"))
   .action(async (_opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();

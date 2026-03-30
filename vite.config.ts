@@ -75,6 +75,28 @@ export default defineConfig(({ command }) => {
       root: resolve(__dirname, "integrations/web-example"),
       define: sharedDefine,
       resolve: { alias: webAlias },
+      plugins: [
+        {
+          // The HTML loads `../../dist-web/ai-powered.umd.js` which the
+          // browser normalises to `/dist-web/ai-powered.umd.js`.  Because
+          // Vite's root is integrations/web-example/ it cannot find the file
+          // at the repo root.  This middleware intercepts those requests and
+          // streams the file directly from <repo-root>/dist-web/.
+          name: "ai-powered:serve-dist-web",
+          configureServer(server) {
+            server.middlewares.use("/dist-web", (req, res, next) => {
+              const { createReadStream, existsSync } = require("node:fs") as typeof import("node:fs");
+              const { extname } = require("node:path") as typeof import("node:path");
+              const filePath = resolve(__dirname, "dist-web", (req.url ?? "/").replace(/^\//, ""));
+              if (!existsSync(filePath)) { next(); return; }
+              const ext = extname(filePath);
+              const mime = ext === ".map" ? "application/json" : "application/javascript";
+              res.setHeader("Content-Type", mime);
+              createReadStream(filePath).on("error", () => next()).pipe(res as never);
+            });
+          },
+        },
+      ],
     };
   }
 

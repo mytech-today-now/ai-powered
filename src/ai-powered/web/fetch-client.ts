@@ -40,6 +40,12 @@ export interface WebTokenUsage {
   totalTokens: number;
 }
 
+/** Cost breakdown for a call (server-provided). */
+export interface WebCostBreakdown {
+  totalUsd: number;
+  isEstimate: boolean;
+}
+
 /** Result of a text-generation call. */
 export interface WebTextResult {
   content: string;
@@ -47,6 +53,7 @@ export interface WebTextResult {
   provider: string;
   finishReason?: string;
   usage?: WebTokenUsage;
+  cost?: WebCostBreakdown;
 }
 
 /** Result of a structured-output call. */
@@ -54,6 +61,7 @@ export interface WebStructuredResult<T = unknown> {
   data: T;
   model: string;
   provider: string;
+  cost?: WebCostBreakdown;
 }
 
 /** Minimal model descriptor returned from listModels(). */
@@ -355,6 +363,7 @@ export class WebAiClient {
         provider?: string;
         finishReason?: string;
         usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+        cost?: { totalUsd: number; isEstimate: boolean };
       };
       return {
         content: data.content ?? data.text ?? "",
@@ -362,6 +371,7 @@ export class WebAiClient {
         provider: data.provider ?? "",
         ...(data.finishReason !== undefined && { finishReason: data.finishReason }),
         ...(data.usage !== undefined && { usage: data.usage }),
+        ...(data.cost !== undefined && { cost: data.cost }),
       };
     }
 
@@ -544,7 +554,8 @@ export class WebAiClient {
 
   /**
    * Generate an image and return it as a `Blob` (use `URL.createObjectURL()`).
-   * In proxy mode the server JSON response's `url` field is fetched to Blob.
+   * In proxy mode the server JSON response may contain `url`, `b64_json`, or
+   * `data` (data URI from `ImageResult`) — all three formats are handled.
    */
   async generateImage(prompt: string, options?: WebCallOptions): Promise<Blob> {
     if (this.opts.mode === "proxy") {
@@ -557,7 +568,7 @@ export class WebAiClient {
         signal: options?.signal ?? null,
       });
       await this.assertOk(res);
-      const data = (await res.json()) as { url?: string; b64_json?: string };
+      const data = (await res.json()) as { url?: string; b64_json?: string; data?: string; mimeType?: string };
       if (data.url) {
         const imgRes = await fetch(data.url, { signal: options?.signal ?? null });
         return imgRes.blob();
@@ -566,7 +577,16 @@ export class WebAiClient {
         const bytes = Uint8Array.from(atob(data.b64_json), (c) => c.charCodeAt(0));
         return new Blob([bytes], { type: "image/png" });
       }
-      throw new Error("generateImage: no url or b64_json in proxy response");
+      // ImageResult.data is a data URI (e.g. "data:image/png;base64,...")
+      if (data.data) {
+        const commaIdx = data.data.indexOf(",");
+        const header = commaIdx >= 0 ? data.data.slice(0, commaIdx) : "";
+        const b64 = commaIdx >= 0 ? data.data.slice(commaIdx + 1) : data.data;
+        const mime = header.match(/:(.*?);/)?.[1] ?? data.mimeType ?? "image/png";
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        return new Blob([bytes], { type: mime });
+      }
+      throw new Error("generateImage: no image data in proxy response");
     }
 
     // Direct mode — OpenAI / Venice images endpoint
@@ -697,7 +717,7 @@ export class WebAiClient {
         signal: options?.signal ?? null,
       });
       await this.assertOk(res);
-      const data = (await res.json()) as { url?: string; b64_json?: string };
+      const data = (await res.json()) as { url?: string; b64_json?: string; data?: string; mimeType?: string };
       if (data.url) {
         const vidRes = await fetch(data.url, { signal: options?.signal ?? null });
         return vidRes.blob();
@@ -705,6 +725,15 @@ export class WebAiClient {
       if (data.b64_json) {
         const bytes = Uint8Array.from(atob(data.b64_json), (c) => c.charCodeAt(0));
         return new Blob([bytes], { type: "video/mp4" });
+      }
+      // VideoResult.data is a data URI (e.g. "data:video/mp4;base64,...")
+      if (data.data) {
+        const commaIdx = data.data.indexOf(",");
+        const header = commaIdx >= 0 ? data.data.slice(0, commaIdx) : "";
+        const b64 = commaIdx >= 0 ? data.data.slice(commaIdx + 1) : data.data;
+        const mime = header.match(/:(.*?);/)?.[1] ?? data.mimeType ?? "video/mp4";
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        return new Blob([bytes], { type: mime });
       }
       throw new Error("generateVideo: no video data in proxy response");
     }
@@ -740,11 +769,13 @@ export class WebAiClient {
         data?: T;
         model?: string;
         provider?: string;
+        cost?: { totalUsd: number; isEstimate: boolean };
       };
       return {
         data: data.data ?? (data as unknown as T),
         model: data.model ?? "",
         provider: data.provider ?? "",
+        ...(data.cost !== undefined && { cost: data.cost }),
       };
     }
 

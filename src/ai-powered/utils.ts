@@ -68,25 +68,35 @@ export function estimateTokens(text: string): number {
 
 /** Per-model pricing configuration (all USD). */
 export interface ModelPricing {
-  /** USD charged per 1 000 prompt/input tokens. 0 for non-token modalities. */
-  promptPer1kUsd: number;
-  /** USD charged per 1 000 completion/output tokens. 0 for non-token modalities. */
-  completionPer1kUsd: number;
+  /**
+   * USD charged per 1 000 prompt/input tokens.
+   * Omit (or set to `undefined`) for non-token modalities (image, video, audio-minute).
+   */
+  promptPer1kUsd?: number;
+  /**
+   * USD charged per 1 000 completion/output tokens.
+   * Omit (or set to `undefined`) for non-token modalities.
+   */
+  completionPer1kUsd?: number;
   /** When true, cost is fixed per image rather than per-token. */
   perImage?: true;
   /** Fixed USD per generated image (used when `perImage` is true). */
   perImageUsd?: number;
   /** USD per minute of audio processed (transcription / TTS). */
   perMinuteUsd?: number;
+  /** Fixed USD per generated video clip (used for video models). */
+  perVideoUsd?: number;
 }
 
 /**
  * Pricing table keyed by model identifier.
  *
- * Sources (as of 2026-03-27):
- *   OpenAI  — https://openai.com/api/pricing/
+ * Sources (as of 2026-03-30):
+ *   OpenAI    — https://openai.com/api/pricing/
  *   Anthropic — https://www.anthropic.com/pricing
- *   xAI     — https://x.ai/api
+ *   xAI       — https://x.ai/api
+ *   Venice    — https://venice.ai/pricing
+ *   Luma AI   — https://lumalabs.ai/dream-machine/api/pricing
  *
  * For models not listed here, `lookupModelPricing` falls back to
  * FALLBACK_PRICING so the calculator never throws.
@@ -95,45 +105,137 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   // --- OpenAI text -------------------------------------------------------
   "gpt-4o":                    { promptPer1kUsd: 0.005,   completionPer1kUsd: 0.015   },
   "gpt-4o-mini":               { promptPer1kUsd: 0.00015, completionPer1kUsd: 0.0006  },
+  "o1":                        { promptPer1kUsd: 0.015,   completionPer1kUsd: 0.06    },
+  "o1-mini":                   { promptPer1kUsd: 0.003,   completionPer1kUsd: 0.012   },
   "gpt-4-turbo":               { promptPer1kUsd: 0.01,    completionPer1kUsd: 0.03    },
   "gpt-4-turbo-preview":       { promptPer1kUsd: 0.01,    completionPer1kUsd: 0.03    },
   "gpt-4":                     { promptPer1kUsd: 0.03,    completionPer1kUsd: 0.06    },
   "gpt-3.5-turbo":             { promptPer1kUsd: 0.0005,  completionPer1kUsd: 0.0015  },
-  // --- OpenAI image ------------------------------------------------------
-  "dall-e-3":                  { promptPer1kUsd: 0, completionPer1kUsd: 0, perImage: true, perImageUsd: 0.04 },
-  "dall-e-2":                  { promptPer1kUsd: 0, completionPer1kUsd: 0, perImage: true, perImageUsd: 0.016 },
+  // --- OpenAI image (per-image flat rate; token fields omitted) ----------
+  "dall-e-3":                  { perImage: true, perImageUsd: 0.04  },
+  "dall-e-2":                  { perImage: true, perImageUsd: 0.016 },
   // --- OpenAI audio ------------------------------------------------------
-  "whisper-1":                 { promptPer1kUsd: 0, completionPer1kUsd: 0, perMinuteUsd: 0.006 },
-  "tts-1":                     { promptPer1kUsd: 0.015, completionPer1kUsd: 0 },
-  "tts-1-hd":                  { promptPer1kUsd: 0.03,  completionPer1kUsd: 0 },
+  // whisper: billed per minute of audio (token fields omitted)
+  "whisper-1":                 { perMinuteUsd: 0.006 },
+  // TTS: billed per 1k characters sent as prompt; no completion tokens
+  "tts-1":                     { promptPer1kUsd: 0.015 },
+  "tts-1-hd":                  { promptPer1kUsd: 0.03  },
   // --- Anthropic ---------------------------------------------------------
   "claude-3-opus-20240229":        { promptPer1kUsd: 0.015,  completionPer1kUsd: 0.075  },
   "claude-3-5-sonnet-20241022":    { promptPer1kUsd: 0.003,  completionPer1kUsd: 0.015  },
   "claude-3-5-haiku-20241022":     { promptPer1kUsd: 0.0008, completionPer1kUsd: 0.004  },
   "claude-3-sonnet-20240229":      { promptPer1kUsd: 0.003,  completionPer1kUsd: 0.015  },
   "claude-3-haiku-20240307":       { promptPer1kUsd: 0.00025,completionPer1kUsd: 0.00125},
-  // --- xAI / Grok --------------------------------------------------------
-  "grok-2":                    { promptPer1kUsd: 0.002, completionPer1kUsd: 0.01  },
-  "grok-beta":                 { promptPer1kUsd: 0.005, completionPer1kUsd: 0.015 },
-  // --- Venice.ai ----------------------------------------------------------
-  // Venice text models are priced similarly to their underlying base models.
-  // Using conservative estimates based on Venice's public pricing (2026-03-27).
-  "llama-3.3-70b":             { promptPer1kUsd: 0.001, completionPer1kUsd: 0.003 },
-  "mistral-31-24b":            { promptPer1kUsd: 0.0007,completionPer1kUsd: 0.002 },
-  // Venice image generation (flat rate per image, ~$0.05 for standard quality)
-  "fluently-xl":               { promptPer1kUsd: 0, completionPer1kUsd: 0, perImage: true, perImageUsd: 0.05 },
-  "venice-sd-3.5":             { promptPer1kUsd: 0, completionPer1kUsd: 0, perImage: true, perImageUsd: 0.05 },
+  // --- xAI / Grok (2026-03-30: x.ai/api) --------------------------------
+  "grok-2":                    { promptPer1kUsd: 0.002,  completionPer1kUsd: 0.01   },
+  "grok-2-latest":             { promptPer1kUsd: 0.002,  completionPer1kUsd: 0.01   },
+  "grok-2-mini":               { promptPer1kUsd: 0.0002, completionPer1kUsd: 0.0005 },
+  "grok-beta":                 { promptPer1kUsd: 0.005,  completionPer1kUsd: 0.015  },
+  "grok-vision-beta":          { promptPer1kUsd: 0.005,  completionPer1kUsd: 0.015  },
+  // --- Venice.ai (2026-03-30: venice.ai/pricing) --------------------------
+  "llama-3.3-70b":             { promptPer1kUsd: 0.001,  completionPer1kUsd: 0.003  },
+  "mistral-31-24b":            { promptPer1kUsd: 0.0007, completionPer1kUsd: 0.002  },
+  "qwen-2.5-vl":               { promptPer1kUsd: 0.001,  completionPer1kUsd: 0.003  },
+  // Venice image generation (per-image flat rate; token fields omitted)
+  "fluently-xl":               { perImage: true, perImageUsd: 0.05 },
+  "venice-sd-3.5":             { perImage: true, perImageUsd: 0.05 },
+  // --- Luma AI video (2026-03-30: lumalabs.ai/dream-machine/api/pricing) -
+  // Per video clip (~5-second output); token fields omitted.
+  "ray-2":                     { perVideoUsd: 0.14 },
+  "ray-flash-2":               { perVideoUsd: 0.04 },
+  "ray-2-720p":                { perVideoUsd: 0.14 },
+  "ray-flash-2-720p":          { perVideoUsd: 0.04 },
+  "dream-machine":             { perVideoUsd: 0.14 },
   // --- Mock models (plausible fixture values matching real-world scale) --
   "mock-text-v1":              { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
-  "mock-image-v1":             { promptPer1kUsd: 0, completionPer1kUsd: 0, perImage: true, perImageUsd: 0.04 },
-  "mock-whisper-v1":           { promptPer1kUsd: 0, completionPer1kUsd: 0, perMinuteUsd: 0.006 },
-  "mock-tts-v1":               { promptPer1kUsd: 0.015, completionPer1kUsd: 0 },
-  "mock-video-v1":             { promptPer1kUsd: 0, completionPer1kUsd: 0, perImage: true, perImageUsd: 0.05 },
+  "mock-image-v1":             { perImage: true, perImageUsd: 0.04  },
+  "mock-whisper-v1":           { perMinuteUsd: 0.006 },
+  "mock-tts-v1":               { promptPer1kUsd: 0.015 },
+  "mock-video-v1":             { perVideoUsd: 0.05 },
   "mock-structured-v1":        { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
 };
 
 /** Fallback when no exact or prefix match exists in MODEL_PRICING. */
 const FALLBACK_PRICING: ModelPricing = { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 };
+
+/**
+ * A single entry returned by `listPricing()`.
+ *
+ * Combines the model identifier with its full `ModelPricing` record so
+ * consumers can iterate over the entire pricing table without needing to
+ * maintain their own copy.
+ */
+export interface PricingEntry extends ModelPricing {
+  /** The model identifier (e.g. "gpt-4o", "ray-2"). */
+  model: string;
+  /**
+   * Convenience field: the primary per-unit cost in USD.
+   *
+   * - Token models  → `promptPer1kUsd` (input rate; output rate may differ)
+   * - Image models  → `perImageUsd`
+   * - Audio models  → `perMinuteUsd`
+   * - Video models  → `perVideoUsd`
+   */
+  primaryUsd: number;
+  /**
+   * Human-readable modality label derived from the pricing shape.
+   * One of: "text" | "image" | "audio" | "video"
+   */
+  modality: "text" | "image" | "audio" | "video";
+}
+
+/**
+ * Returns the complete pricing table as an array of `PricingEntry` objects,
+ * sorted alphabetically by model identifier.
+ *
+ * This is the primary programmatic way for library consumers to inspect all
+ * known model prices without importing the internal `MODEL_PRICING` constant.
+ *
+ * @example
+ * ```ts
+ * import { listPricing } from 'ai-powered';
+ * const allPrices = listPricing();
+ * const videoPrices = allPrices.filter(e => e.modality === 'video');
+ * ```
+ *
+ * @param filter  Optional filter to return only entries matching the given
+ *                modality or a partial model-id substring.
+ */
+export function listPricing(filter?: {
+  modality?: "text" | "image" | "audio" | "video";
+  model?: string;
+}): PricingEntry[] {
+  const entries: PricingEntry[] = Object.entries(MODEL_PRICING)
+    .map(([id, pricing]) => {
+      let modality: PricingEntry["modality"];
+      let primaryUsd: number;
+
+      if (pricing.perVideoUsd !== undefined) {
+        modality = "video";
+        primaryUsd = pricing.perVideoUsd;
+      } else if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
+        modality = "image";
+        primaryUsd = pricing.perImageUsd;
+      } else if (pricing.perMinuteUsd !== undefined) {
+        modality = "audio";
+        primaryUsd = pricing.perMinuteUsd;
+      } else {
+        modality = "text";
+        primaryUsd = pricing.promptPer1kUsd ?? 0;
+      }
+
+      return { model: id, ...pricing, primaryUsd, modality };
+    })
+    .sort((a, b) => a.model.localeCompare(b.model));
+
+  if (!filter) return entries;
+
+  return entries.filter((e) => {
+    if (filter.modality && e.modality !== filter.modality) return false;
+    if (filter.model && !e.model.includes(filter.model)) return false;
+    return true;
+  });
+}
 
 /**
  * Returns the ModelPricing entry for `model`.
@@ -160,12 +262,14 @@ export function lookupModelPricing(model: string): ModelPricing {
 /**
  * Computes the actual cost of a completed call from provider-reported usage.
  *
- * - For token-based models: `(promptTokens / 1000) × promptRate + (completionTokens / 1000) × completionRate`
- * - For image models: `perImageUsd` (fixed per call)
+ * - For video models:      `perVideoUsd` (fixed per clip)
+ * - For image models:      `perImageUsd` (fixed per call)
  * - For audio-minute models: `(durationSeconds / 60) × perMinuteUsd`
- *   (falls back to character-count estimate when durationSeconds is absent)
+ *   (falls back to a character-count heuristic when durationSeconds is absent)
+ * - For token-based models: `(promptTokens / 1000) × promptRate + (completionTokens / 1000) × completionRate`
  *
- * The returned `totalUsd` is rounded to 6 decimal places.
+ * The returned `totalUsd` is rounded to 6 decimal places via
+ * `Math.round(raw * 1e6) / 1e6` (avoids floating-point string-parse artifacts).
  * `isEstimate` is always `false` because the usage data comes from the provider.
  *
  * @param model            Model identifier (used for pricing lookup).
@@ -180,7 +284,10 @@ export function calculateCost(
   const pricing = lookupModelPricing(model);
 
   let raw: number;
-  if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
+  if (pricing.perVideoUsd !== undefined) {
+    // Video models: fixed cost per generated clip.
+    raw = pricing.perVideoUsd;
+  } else if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
     raw = pricing.perImageUsd;
   } else if (pricing.perMinuteUsd !== undefined) {
     const minutes = durationSeconds !== undefined
@@ -189,12 +296,12 @@ export function calculateCost(
     raw = minutes * pricing.perMinuteUsd;
   } else {
     raw =
-      (usage.promptTokens     / 1000) * pricing.promptPer1kUsd +
-      (usage.completionTokens / 1000) * pricing.completionPer1kUsd;
+      (usage.promptTokens     / 1000) * (pricing.promptPer1kUsd     ?? 0) +
+      (usage.completionTokens / 1000) * (pricing.completionPer1kUsd ?? 0);
   }
 
   return {
-    totalUsd: parseFloat(raw.toFixed(6)),
+    totalUsd: Math.round(raw * 1e6) / 1e6,
     isEstimate: false,
   };
 }
@@ -202,9 +309,11 @@ export function calculateCost(
 /**
  * Estimates cost BEFORE a call using a token-count heuristic on `promptText`.
  *
- * Completion tokens are approximated as 50 % of the prompt token estimate,
- * which is conservative for most real-world tasks.  The returned
- * `CostBreakdown` has `isEstimate: true` so callers (and logs) can distinguish
+ * - For video models: returns `perVideoUsd` directly (fixed cost, prompt-length-independent).
+ * - For image models: returns `perImageUsd` directly (fixed cost).
+ * - For all others:  completion tokens are approximated as 50 % of the prompt token estimate.
+ *
+ * The returned `CostBreakdown` has `isEstimate: true` so callers (and logs) can distinguish
  * it from provider-reported actual cost.
  *
  * @param model       Model identifier (used for pricing lookup).
@@ -213,20 +322,25 @@ export function calculateCost(
 export function estimateCost(model: string, promptText: string): CostBreakdown {
   const pricing = lookupModelPricing(model);
 
+  if (pricing.perVideoUsd !== undefined) {
+    // Video models: fixed cost regardless of prompt length.
+    return { totalUsd: Math.round(pricing.perVideoUsd * 1e6) / 1e6, isEstimate: true };
+  }
+
   if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
     // Image models: fixed cost regardless of prompt length.
-    return { totalUsd: parseFloat(pricing.perImageUsd.toFixed(6)), isEstimate: true };
+    return { totalUsd: Math.round(pricing.perImageUsd * 1e6) / 1e6, isEstimate: true };
   }
 
   const estimatedPrompt = estimateTokens(promptText);
-  const estimatedCompletion = Math.ceil(estimatedPrompt * 0.5); // heuristic
+  const estimatedCompletion = Math.ceil(estimatedPrompt * 0.5); // heuristic: ~50% completion
 
   const raw =
-    (estimatedPrompt     / 1000) * pricing.promptPer1kUsd +
-    (estimatedCompletion / 1000) * pricing.completionPer1kUsd;
+    (estimatedPrompt     / 1000) * (pricing.promptPer1kUsd     ?? 0) +
+    (estimatedCompletion / 1000) * (pricing.completionPer1kUsd ?? 0);
 
   return {
-    totalUsd: parseFloat(raw.toFixed(6)),
+    totalUsd: Math.round(raw * 1e6) / 1e6,
     isEstimate: true,
   };
 }

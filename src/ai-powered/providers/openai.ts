@@ -68,6 +68,14 @@ const DEFAULT_IMAGE_MODEL = "dall-e-3";
 const DEFAULT_TRANSCRIPTION_MODEL = "whisper-1";
 const DEFAULT_TTS_MODEL   = "tts-1";
 
+const IMAGE_MODEL_IDS = new Set(IMAGE_MODELS.map((m) => m.id));
+
+/** Return the configured model only if it is image-capable; else the image default. */
+function resolveImageModel(configModel: string | undefined): string {
+  if (configModel && IMAGE_MODEL_IDS.has(configModel)) return configModel;
+  return DEFAULT_IMAGE_MODEL;
+}
+
 // ---------------------------------------------------------------------------
 // OpenAiProvider
 // ---------------------------------------------------------------------------
@@ -180,7 +188,7 @@ export class OpenAiProvider extends BaseProvider {
   ): Promise<ImageResult> {
     this.assertCapability("image");
     void options;
-    const model = this.config.model ?? DEFAULT_IMAGE_MODEL;
+    const model = resolveImageModel(this.config.model);
     const start = Date.now();
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
@@ -190,18 +198,19 @@ export class OpenAiProvider extends BaseProvider {
         prompt,
         n: 1,
         size: "1024x1024",
-        response_format: "url",
       });
 
       const imageData = response.data?.[0];
-      const url = imageData?.url ?? "";
+      // Newer models (gpt-image-1) return b64_json; dall-e-3 returns url by default.
+      const data: string = imageData?.url ?? imageData?.b64_json ?? "";
+      const mimeType = imageData?.b64_json ? "image/png" : "image/png";
 
       return {
         modality: "image",
         provider: "openai",
         model,
-        data: url,
-        mimeType: "image/png",
+        data,
+        mimeType,
         width: 1024,
         height: 1024,
         usage: zeroUsage,

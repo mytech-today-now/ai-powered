@@ -7,6 +7,7 @@
  *   GET  /health               – liveness probe
  *   GET  /config               – resolved config with all API keys masked
  *   GET  /models               – list models (optional ?modality=)
+ *   GET  /pricing              – full MODEL_PRICING table (optional ?modality= ?model=)
  *   POST /text                 – generate text (blocking or plain-text stream)
  *   POST /stream               – SSE streaming: data: {"delta":"…"} / data: [DONE]
  *   POST /image                – generate image
@@ -14,6 +15,7 @@
  *   POST /audio/speak          – synthesise speech → base64 audio
  *   POST /video                – generate video
  *   POST /structured           – generate structured JSON
+ *   POST /batch               – sequential batch (NDJSON stream)
  *
  * All routes call getAiClient() per request so that per-request overrides
  * (provider, model, temperature, profile, mock) are fully honoured.
@@ -25,11 +27,55 @@
 
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
-import { getAiClient, loadConfig, maskApiKey } from "../index.js";
+import { getAiClient, loadConfig, maskApiKey, listPricing } from "../index.js";
 import { getTemplate, renderTemplate } from "../templates/index.js";
 import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger } from "../utils.js";
 import type { ServeOptions } from "./index.js";
+
+// ---------------------------------------------------------------------------
+// Provider metadata — used by GET /providers
+// ---------------------------------------------------------------------------
+
+/** Static metadata for every registered provider. */
+const PROVIDER_META = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    envKey: "OPENAI_API_KEY",
+    modalities: ["text", "image", "audio", "structured"],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    envKey: "ANTHROPIC_API_KEY",
+    modalities: ["text", "structured"],
+  },
+  {
+    id: "xai",
+    name: "xAI / Grok",
+    envKey: "XAI_API_KEY",
+    modalities: ["text", "structured"],
+  },
+  {
+    id: "venice",
+    name: "Venice",
+    envKey: "VENICE_API_KEY",
+    modalities: ["text", "image", "structured"],
+  },
+  {
+    id: "lumaai",
+    name: "Luma AI",
+    envKey: "LUMAAI_API_KEY",
+    modalities: ["video"],
+  },
+  {
+    id: "mock",
+    name: "Mock (testing)",
+    envKey: "",
+    modalities: ["text", "image", "audio", "video", "structured"],
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -74,6 +120,19 @@ const VideoBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
 
 const StructuredBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
   prompt: z.string().min(1, "prompt must not be empty"),
+});
+
+/** A single item inside a batch request. */
+const BatchItemSchema = ClientOverrideSchema.merge(TemplateSchema).extend({
+  modality: z.enum(["text", "image", "video", "structured"]).default("video"),
+  prompt:   z.string().min(1, "prompt must not be empty"),
+  /** Optional human-readable name used as the output filename. */
+  name:     z.string().optional(),
+});
+
+/** Body for POST /batch — base overrides plus an ordered item list. */
+const BatchBodySchema = ClientOverrideSchema.extend({
+  items: z.array(BatchItemSchema).min(1, "items must not be empty"),
 });
 
 // ---------------------------------------------------------------------------
@@ -163,6 +222,14 @@ function mapError(err: unknown, res: Response): boolean {
 export function createRouter(opts: ServeOptions): Router {
   const router = Router();
 
+  // --- GET /.well-known/appspecific/com.chrome.devtools.json ---
+  // Chrome DevTools automatically probes this URL for any server it inspects.
+  // Responding with an empty object silences the 404 and CSP-violation console
+  // noise without exposing any application data.
+  router.get("/.well-known/appspecific/com.chrome.devtools.json", (_req, res) => {
+    res.json({});
+  });
+
   // --- GET /health ---
   router.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -187,14 +254,73 @@ export function createRouter(opts: ServeOptions): Router {
     }
   });
 
+  // --- GET /providers ---
+  // Returns all known providers with an `active` flag (true when the
+  // corresponding API key env-var is set, or when mock mode is enabled).
+  router.get("/providers", (_req, res) => {
+    const providerList = PROVIDER_META.map((p) => ({
+      id: p.id,
+      name: p.name,
+      active:
+        p.id === "mock"
+          ? Boolean(opts.mock)
+          : Boolean(process.env[p.envKey]),
+      modalities: [...p.modalities],
+    }));
+    res.json(providerList);
+  });
+
+  // --- GET /pricing ---
+  // Returns the full MODEL_PRICING table as a JSON array.
+  // Supports optional ?modality= ("text"|"image"|"audio"|"video") and
+  // ?model= (substring match) query parameters to narrow results.
+  router.get("/pricing", (req, res) => {
+    const modality = req.query["modality"] as string | undefined;
+    const model    = req.query["model"]    as string | undefined;
+
+    const validModalities = ["text", "image", "audio", "video"] as const;
+    type ModalityFilter = typeof validModalities[number];
+
+    if (modality && !validModalities.includes(modality as ModalityFilter)) {
+      res.status(400).json({
+        error: `Invalid modality "${modality}". Must be one of: ${validModalities.join(", ")}.`,
+      });
+      return;
+    }
+
+    const entries = listPricing({
+      ...(modality ? { modality: modality as ModalityFilter } : {}),
+      ...(model    ? { model }                                : {}),
+    });
+
+    res.json(entries);
+  });
+
   // --- GET /models ---
+  // Accepts optional ?modality= and ?provider= query params.
+  // When ?provider= is specified and mock mode is off, a client for that
+  // provider is instantiated to retrieve its model list.  Falls back to an
+  // empty array if the provider cannot be instantiated (e.g. missing key).
   router.get(
     "/models",
     wrap(async (req, res) => {
       const modality = req.query["modality"] as string | undefined;
-      const client = await getAiClient("serve-models", opts.configOverrides);
-      const models = await client.listModels(modality as never);
-      res.json(models);
+      const providerOverride = req.query["provider"] as string | undefined;
+      const overrides = {
+        ...opts.configOverrides,
+        ...(opts.mock ? { mock: true } : {}),
+        ...(providerOverride && !opts.mock
+          ? { provider: providerOverride as never }
+          : {}),
+      };
+      try {
+        const client = await getAiClient("serve-models", overrides as never);
+        const models = await client.listModels(modality as never);
+        res.json(models);
+      } catch {
+        // Provider construction failed (e.g. missing API key) — return empty list
+        res.json([]);
+      }
     }),
   );
 
@@ -346,6 +472,81 @@ export function createRouter(opts: ServeOptions): Router {
       } catch (err) {
         if (!mapError(err, res)) next(err);
       }
+    }),
+  );
+
+  // --- POST /batch ---
+  // Processes items sequentially and streams one NDJSON line per item.
+  // Each line is: { index, name?, modality, prompt, status:"ok"|"error", result?, error? }
+  // Item-level overrides are merged on top of the body-level base overrides.
+  router.post(
+    "/batch",
+    wrap(async (req, res, next) => {
+      const body = parseBody(BatchBodySchema, req, res);
+      if (!body) return;
+
+      res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("X-Accel-Buffering", "no"); // disable Nginx buffering
+
+      const baseOverrides = buildOverrides(body, opts);
+
+      for (let i = 0; i < body.items.length; i++) {
+        const item = body.items[i]!;
+        // Item-level overrides win over body-level overrides.
+        const itemOverrides = buildOverrides({ ...body, ...item }, opts);
+        const prompt = resolvePrompt(item.prompt, item.template, item.vars);
+
+        try {
+          const client = await getAiClient("serve-batch", itemOverrides as never);
+          let result: unknown;
+
+          if (item.modality === "video") {
+            result = await client.generateVideo(prompt);
+          } else if (item.modality === "image") {
+            result = await client.generateImage(prompt);
+          } else if (item.modality === "structured") {
+            const { z: zod } = await import("zod");
+            const schema = zod.record(zod.unknown());
+            result = await client.generateStructured(prompt, schema);
+          } else {
+            result = await client.generateText(prompt);
+          }
+
+          res.write(
+            JSON.stringify({
+              index: i,
+              name: item.name,
+              modality: item.modality,
+              prompt,
+              status: "ok",
+              result,
+            }) + "\n",
+          );
+        } catch (err) {
+          // Per-item errors are written as NDJSON lines — they do NOT abort the stream.
+          const msg = err instanceof Error ? err.message : String(err);
+          res.write(
+            JSON.stringify({
+              index: i,
+              name: item.name,
+              modality: item.modality,
+              prompt,
+              status: "error",
+              error: msg,
+            }) + "\n",
+          );
+          // Still propagate budget/exhaustion errors so the caller can decide.
+          if (err instanceof BudgetExceededError || err instanceof AllProvidersExhaustedError) {
+            res.end();
+            next(err);
+            return;
+          }
+        }
+      }
+
+      res.end();
+      void baseOverrides; // suppress unused-var lint
     }),
   );
 
