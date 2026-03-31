@@ -1,5 +1,5 @@
 {
-  "name": "@mytechtoday/ai-powered",
+  "name": "ai-powered",
   "version": "0.3.2",
   "description": "Unified AI client and CLI: multi-modal, multi-provider, browser-safe, fully mock-able",
   "type": "module",

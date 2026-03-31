@@ -3,7 +3,7 @@
 > **Unified AI client and CLI** — multi-modal, multi-provider, browser-safe, fully mock-able.
 
 [![CI](https://github.com/mytech-today-now/ai-powered/actions/workflows/ci.yml/badge.svg)](https://github.com/mytech-today-now/ai-powered/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@mytech-today-now/ai-powered.svg)](https://www.npmjs.com/package/@mytech-today-now/ai-powered)
+[![npm version](https://img.shields.io/npm/v/ai-powered.svg)](https://www.npmjs.com/package/ai-powered)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![ESM only](https://img.shields.io/badge/ESM-only-blue)](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c)
 
@@ -13,13 +13,13 @@
 
 ```bash
 # Install
-npm install -g @mytech-today-now/ai-powered
+npm install -g ai-powered
 
 # Run a quick text generation (uses mock provider — no API key needed)
 ai-powered text --mock "Explain REST APIs in one sentence."
 
 # Or as a library (Node.js ≥ 18, ESM only)
-import { getAiClient } from "@mytech-today-now/ai-powered";
+import { getAiClient } from "ai-powered";
 const client = getAiClient({ mock: true });
 const result = await client.generateText("Hello, AI!");
 console.log(result.content);
@@ -72,10 +72,10 @@ console.log(result.content);
 
 ```bash
 # Global CLI install
-npm install -g @mytech-today-now/ai-powered
+npm install -g ai-powered
 
 # Local library install
-npm install @mytech-today-now/ai-powered
+npm install ai-powered
 
 # Development (from source)
 git clone https://github.com/mytech-today-now/ai-powered.git
@@ -472,7 +472,7 @@ them by relative path.
 ### Quick start
 
 ```typescript
-import { getAiClient } from "@mytech-today-now/ai-powered";
+import { getAiClient } from "ai-powered";
 
 // Use mock provider for testing (no API key required)
 const client = getAiClient({ mock: true });
@@ -487,7 +487,7 @@ console.log(result.latencyMs); // number
 ### Text generation
 
 ```typescript
-import { getAiClient } from "@mytech-today-now/ai-powered";
+import { getAiClient } from "ai-powered";
 
 const client = getAiClient({
   provider: "openai",
@@ -561,7 +561,7 @@ for await (const chunk of stream) {
 ### Multi-turn conversation sessions
 
 ```typescript
-import { getAiClient, ConversationSession } from "@mytech-today-now/ai-powered";
+import { getAiClient, ConversationSession } from "ai-powered";
 
 const client = getAiClient({ mock: true });
 const session = new ConversationSession("system: You are helpful.");
@@ -578,7 +578,7 @@ console.log(r2.content); // "Alice"
 ### Loading config manually
 
 ```typescript
-import { loadConfig, getAiClient } from "@mytech-today-now/ai-powered";
+import { loadConfig, getAiClient } from "ai-powered";
 
 const config = loadConfig({
   profileOverride: "production",
@@ -620,7 +620,7 @@ const client = getAiClient({
 
 ```typescript
 import OpenAI from "openai";
-import { getAiClient } from "@mytech-today-now/ai-powered";
+import { getAiClient } from "ai-powered";
 
 const openai = new OpenAI();
 const aiClient = getAiClient({ mock: true });
@@ -935,7 +935,7 @@ ai-powered serve --port 3001
 Then in your browser app:
 
 ```typescript
-import { createWebClient } from "@mytech-today-now/ai-powered/web";
+import { createWebClient } from "ai-powered/web";
 
 const client = createWebClient({
   mode: "proxy",
@@ -987,7 +987,7 @@ const result = await client.generateText("Hello!");
 ### Browser conversation sessions
 
 ```typescript
-import { BrowserConversationSession } from "@mytech-today-now/ai-powered/web";
+import { BrowserConversationSession } from "ai-powered/web";
 
 const session = new BrowserConversationSession("chat-1");
 // State is persisted to sessionStorage automatically
@@ -1273,7 +1273,7 @@ The built-in `prompt-shield` plugin heuristically detects common injection patte
 Set `reject: true` in the plugin config to block flagged requests instead of only logging:
 
 ```typescript
-import { createPromptShieldPlugin } from "@mytech-today-now/ai-powered";
+import { createPromptShieldPlugin } from "ai-powered";
 const shield = createPromptShieldPlugin({ reject: true });
 ```
 
@@ -1357,7 +1357,7 @@ Plugins are the primary extension point for `ai-powered`. A plugin is any ESM mo
 ### The `AiPlugin` interface
 
 ```typescript
-import type { AiPlugin, RequestContext, ResponseContext, AiPoweredError } from "@mytech-today-now/ai-powered";
+import type { AiPlugin, RequestContext, ResponseContext, AiPoweredError } from "ai-powered";
 
 export const myPlugin: AiPlugin = {
   /** Required: unique plugin identifier. Used in logs and error messages. */
@@ -1422,7 +1422,7 @@ export const myPlugin: AiPlugin = {
 
 ```typescript
 // plugins/rate-limiter.ts
-import type { AiPlugin, RequestContext, AiPoweredError } from "@mytech-today-now/ai-powered";
+import type { AiPlugin, RequestContext, AiPoweredError } from "ai-powered";
 
 export interface RateLimiterOptions {
   /** Max requests per window. Default: 10. */
@@ -1483,7 +1483,7 @@ export function createRateLimiterPlugin(opts: RateLimiterOptions = {}): AiPlugin
 **Via the library API** (plugin objects — for programmatic control):
 
 ```typescript
-import { getAiClient } from "@mytech-today-now/ai-powered";
+import { getAiClient } from "ai-powered";
 import { createRateLimiterPlugin } from "./plugins/rate-limiter.js";
 
 const client = getAiClient(
@@ -1506,7 +1506,7 @@ const client = getAiClient(
 ### Error handling in plugins
 
 ```typescript
-import { PluginError } from "@mytech-today-now/ai-powered";
+import { PluginError } from "ai-powered";
 
 async onRequest(ctx: RequestContext): Promise<RequestContext> {
   try {
