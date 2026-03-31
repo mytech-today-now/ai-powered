@@ -3,7 +3,7 @@
 > **Unified AI client and CLI** — multi-modal, multi-provider, browser-safe, fully mock-able.
 
 [![CI](https://github.com/mytech-today-now/ai-powered/actions/workflows/ci.yml/badge.svg)](https://github.com/mytech-today-now/ai-powered/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/ai-powered.svg)](https://www.npmjs.com/package/ai-powered)
+[![npm version](https://img.shields.io/npm/v/@mytech-today-now/ai-powered.svg)](https://www.npmjs.com/package/@mytech-today-now/ai-powered)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![ESM only](https://img.shields.io/badge/ESM-only-blue)](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c)
 
@@ -13,13 +13,13 @@
 
 ```bash
 # Install
-npm install -g ai-powered
+npm install -g @mytech-today-now/ai-powered
 
 # Run a quick text generation (uses mock provider — no API key needed)
 ai-powered text --mock "Explain REST APIs in one sentence."
 
 # Or as a library (Node.js ≥ 18, ESM only)
-import { getAiClient } from "ai-powered";
+import { getAiClient } from "@mytech-today-now/ai-powered";
 const client = getAiClient({ mock: true });
 const result = await client.generateText("Hello, AI!");
 console.log(result.content);
@@ -47,12 +47,13 @@ console.log(result.content);
 4. [CLI Reference](#cli-reference)
 5. [Library Usage](#library-usage)
 6. [AI Agent / Tool-Calling Usage](#ai-agent--tool-calling-usage)
-7. [Browser / Web Usage](#browser--web-usage)
-8. [Cross-Language Shell Integration](#cross-language-shell-integration)
-9. [Security Best Practices](#security-best-practices)
-10. [Architecture Overview](#architecture-overview)
-11. [Writing a Plugin](#writing-a-plugin)
-12. [Contributing](#contributing)
+7. [Standard API Compatibility](#standard-api-compatibility)
+8. [Browser / Web Usage](#browser--web-usage)
+9. [Cross-Language Shell Integration](#cross-language-shell-integration)
+10. [Security Best Practices](#security-best-practices)
+11. [Architecture Overview](#architecture-overview)
+12. [Writing a Plugin](#writing-a-plugin)
+13. [Contributing](#contributing)
 
 ---
 
@@ -71,10 +72,10 @@ console.log(result.content);
 
 ```bash
 # Global CLI install
-npm install -g ai-powered
+npm install -g @mytech-today-now/ai-powered
 
 # Local library install
-npm install ai-powered
+npm install @mytech-today-now/ai-powered
 
 # Development (from source)
 git clone https://github.com/mytech-today-now/ai-powered.git
@@ -282,7 +283,7 @@ cat shots.jsonl | ai-powered batch video --input - --output - | jq .
 
 ```bash
 ai-powered serve --mock --port 3001
-# Exposes: GET /health, GET /config, GET /models, POST /text, POST /stream, POST /image, POST /batch, etc.
+# Exposes: GET /health, GET /config, GET /models, GET /pricing, POST /text, POST /stream, POST /image, POST /batch, and /v1/* compat routes
 ```
 
 ### `session` — Manage conversation sessions
@@ -471,7 +472,7 @@ them by relative path.
 ### Quick start
 
 ```typescript
-import { getAiClient } from "ai-powered";
+import { getAiClient } from "@mytech-today-now/ai-powered";
 
 // Use mock provider for testing (no API key required)
 const client = getAiClient({ mock: true });
@@ -486,7 +487,7 @@ console.log(result.latencyMs); // number
 ### Text generation
 
 ```typescript
-import { getAiClient } from "ai-powered";
+import { getAiClient } from "@mytech-today-now/ai-powered";
 
 const client = getAiClient({
   provider: "openai",
@@ -560,7 +561,7 @@ for await (const chunk of stream) {
 ### Multi-turn conversation sessions
 
 ```typescript
-import { getAiClient, ConversationSession } from "ai-powered";
+import { getAiClient, ConversationSession } from "@mytech-today-now/ai-powered";
 
 const client = getAiClient({ mock: true });
 const session = new ConversationSession("system: You are helpful.");
@@ -577,7 +578,7 @@ console.log(r2.content); // "Alice"
 ### Loading config manually
 
 ```typescript
-import { loadConfig, getAiClient } from "ai-powered";
+import { loadConfig, getAiClient } from "@mytech-today-now/ai-powered";
 
 const config = loadConfig({
   profileOverride: "production",
@@ -619,7 +620,7 @@ const client = getAiClient({
 
 ```typescript
 import OpenAI from "openai";
-import { getAiClient } from "ai-powered";
+import { getAiClient } from "@mytech-today-now/ai-powered";
 
 const openai = new OpenAI();
 const aiClient = getAiClient({ mock: true });
@@ -838,6 +839,80 @@ All endpoints accept per-request overrides (`provider`, `model`, `temperature`, 
 
 ---
 
+## Standard API Compatibility
+
+`ai-powered` exposes industry-standard wire-format endpoints so that existing OpenAI and Anthropic client libraries work without modification — just point the `baseURL` at your proxy server. API keys are managed centrally in `ai-powered`; consumers send **no credentials**.
+
+### Endpoint table
+
+| Route | Standard | Providers | Streaming |
+| --- | --- | --- | --- |
+| `POST /v1/chat/completions` | OpenAI Chat | openai · anthropic · xai · venice · mock | ✅ SSE (`stream: true`) |
+| `POST /v1/messages` | Anthropic Messages | openai · anthropic · xai · venice · mock | ✅ SSE (6-event sequence) |
+| `GET  /v1/models` | OpenAI Models | all active providers | — |
+| `POST /v1/images/generations` | OpenAI Images | openai · venice · mock | — |
+| `POST /v1/audio/transcriptions` | OpenAI Audio | openai · mock | — |
+| `POST /v1/audio/speech` | OpenAI TTS | openai · mock | — |
+| `POST /v1/video/generations` | **ai-powered-native** | lumaai · mock | — |
+
+> ⚠️ `/v1/video/generations` uses an `ai-powered`-native request/response shape. There is no external industry standard for video generation; the route exists to give proxy consumers a consistent `/v1/` namespace.
+
+### Provider × modality support matrix
+
+| Provider | text | image | audio | video | structured |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| openai | ✅ | ✅ | ✅ | — | ✅ |
+| anthropic | ✅ | — | — | — | ✅ |
+| xai | ✅ | — | — | — | ✅ |
+| venice | ✅ | ✅ | — | — | — |
+| lumaai | — | — | — | ✅ | — |
+| mock | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+### OpenAI client quick-start (FilmBuff pattern)
+
+Point the official OpenAI SDK at your proxy. The `apiKey` field is required by the SDK but is **not forwarded** — `ai-powered` manages all real credentials server-side.
+
+```typescript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:3001/v1",
+  apiKey:  "not-used", // ai-powered manages credentials
+});
+
+const response = await client.chat.completions.create({
+  model:    "gpt-4",
+  messages: [{ role: "user", content: "Summarise the plot of Metropolis." }],
+});
+
+console.log(response.choices[0]?.message.content);
+```
+
+### Anthropic client quick-start
+
+Override `baseURL` on the official Anthropic SDK so requests hit the proxy instead of `api.anthropic.com`. Again, credentials are not forwarded.
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL:  "http://localhost:3001/v1",
+  apiKey:   "not-used", // ai-powered manages credentials
+});
+
+const message = await client.messages.create({
+  model:      "claude-3-5-sonnet-20241022",
+  max_tokens: 1024,
+  messages:   [{ role: "user", content: "What is the golden ratio?" }],
+});
+
+console.log(message.content[0]?.type === "text" ? message.content[0].text : "");
+```
+
+> 💡 **API key management**: consumers never embed provider credentials. All keys live in `~/.ai-powered/config.json` or environment variables on the machine running the proxy.
+
+---
+
 ## Browser / Web Usage
 
 The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`) with **no Node.js built-in dependencies**.
@@ -860,7 +935,7 @@ ai-powered serve --port 3001
 Then in your browser app:
 
 ```typescript
-import { createWebClient } from "ai-powered/web";
+import { createWebClient } from "@mytech-today-now/ai-powered/web";
 
 const client = createWebClient({
   mode: "proxy",
@@ -912,7 +987,7 @@ const result = await client.generateText("Hello!");
 ### Browser conversation sessions
 
 ```typescript
-import { BrowserConversationSession } from "ai-powered/web";
+import { BrowserConversationSession } from "@mytech-today-now/ai-powered/web";
 
 const session = new BrowserConversationSession("chat-1");
 // State is persisted to sessionStorage automatically
@@ -1198,7 +1273,7 @@ The built-in `prompt-shield` plugin heuristically detects common injection patte
 Set `reject: true` in the plugin config to block flagged requests instead of only logging:
 
 ```typescript
-import { createPromptShieldPlugin } from "ai-powered";
+import { createPromptShieldPlugin } from "@mytech-today-now/ai-powered";
 const shield = createPromptShieldPlugin({ reject: true });
 ```
 
@@ -1282,7 +1357,7 @@ Plugins are the primary extension point for `ai-powered`. A plugin is any ESM mo
 ### The `AiPlugin` interface
 
 ```typescript
-import type { AiPlugin, RequestContext, ResponseContext, AiPoweredError } from "ai-powered";
+import type { AiPlugin, RequestContext, ResponseContext, AiPoweredError } from "@mytech-today-now/ai-powered";
 
 export const myPlugin: AiPlugin = {
   /** Required: unique plugin identifier. Used in logs and error messages. */
@@ -1347,7 +1422,7 @@ export const myPlugin: AiPlugin = {
 
 ```typescript
 // plugins/rate-limiter.ts
-import type { AiPlugin, RequestContext, AiPoweredError } from "ai-powered";
+import type { AiPlugin, RequestContext, AiPoweredError } from "@mytech-today-now/ai-powered";
 
 export interface RateLimiterOptions {
   /** Max requests per window. Default: 10. */
@@ -1408,7 +1483,7 @@ export function createRateLimiterPlugin(opts: RateLimiterOptions = {}): AiPlugin
 **Via the library API** (plugin objects — for programmatic control):
 
 ```typescript
-import { getAiClient } from "ai-powered";
+import { getAiClient } from "@mytech-today-now/ai-powered";
 import { createRateLimiterPlugin } from "./plugins/rate-limiter.js";
 
 const client = getAiClient(
@@ -1431,7 +1506,7 @@ const client = getAiClient(
 ### Error handling in plugins
 
 ```typescript
-import { PluginError } from "ai-powered";
+import { PluginError } from "@mytech-today-now/ai-powered";
 
 async onRequest(ctx: RequestContext): Promise<RequestContext> {
   try {

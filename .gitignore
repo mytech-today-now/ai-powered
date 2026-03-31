@@ -1,42 +1,101 @@
+# =============================================================================
+# ai-powered — .gitignore
+# =============================================================================
+
+# =============================================================================
+# DEPENDENCIES & BUILD
+# =============================================================================
+
+node_modules/
+dist/
+dist-web/
+*.tsbuildinfo
+
+# =============================================================================
+# ENVIRONMENT & SECRETS  (NEVER commit credentials)
+# =============================================================================
+
+.env
+.env.local
+.env.*.local
+.ai-powered/config.json
+.ai-powered/config.json.bak.*
+
+# =============================================================================
+# RUNTIME LOGS & SESSION DATA
+# =============================================================================
+
+logs/
+ai-powered.jsonl
+ai-powered-audit.jsonl
+
+# =============================================================================
+# TESTING & COVERAGE
+# =============================================================================
+
+coverage/
+.nyc_output/
+
+# =============================================================================
+# WIP / INTERNAL MATERIALS  (not for public repo)
+# =============================================================================
+
+# Prompt-engineering artifacts and JIRA drafts
+ai-prompts/
+
+# Root-level WIP prompt files
+TOC-prompt.md
+
+# Beads task tracker data (local issue store + archive)
+.beads/
+completed.jsonl
+scripts/completed.jsonl
+
+# Internal / debug scripts (prefixed with underscore)
+scripts/_*.ps1
+
+# OpenSpec workflow artifacts (internal change management)
+openspec/
+
+# =============================================================================
+# AUGMENT / TOOLING INTERNALS
+# =============================================================================
+
+# Augment Extensions manifest (machine-generated, local only)
+.augment/extensions.json
 
 # Dolt database files (added by bd init)
 .dolt/
 *.db
 
-# Augment Extensions
-.augment/extensions.json
-
-# =============================================================================
-# ai-powered package
-# =============================================================================
-
-# --- Dependencies ---
-node_modules/
-
-# --- Build outputs ---
-dist/
-dist-web/
-
-# --- Environment files (NEVER commit credentials) ---
-.env
-.env.local
-.env.*.local
-
-# --- Local ai-powered config (may contain API keys) ---
-.ai-powered/config.json
-.ai-powered/config.json.bak.*
-
-# --- Session and audit logs ---
-ai-powered.jsonl
-ai-powered-audit.jsonl
-logs/
-
-# --- TypeScript cache ---
-*.tsbuildinfo
-
-# --- Test coverage ---
-coverage/
-.nyc_output/
-
-# --- Husky internal ---
+# Husky internal hooks
 .husky/_/
+
+# =============================================================================
+# OS & EDITOR NOISE
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# VS Code (keep settings.json if team-shared, ignore personal state)
+.vscode/settings.json
+.vscode/*.code-workspace
+.history/
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# Vim / Emacs swap files
+*.swp
+*.swo
+*~
+

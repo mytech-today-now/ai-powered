@@ -286,6 +286,113 @@
     return new Blob([arr], { type: mimeType });
   }
 
+  /* ── Mock video stub detection & Canvas placeholder ─────────── */
+
+  /**
+   * Returns true if `dataUri` is the mock provider's 4-byte stub.
+   * The stub is "data:video/mp4;base64,AAAAAA==" — only 4 bytes of payload.
+   */
+  function isStubVideoData(dataUri) {
+    if (!dataUri) return false;
+    const b64 = dataUri.replace(/^data:[^,]+,/, "").replace(/=/g, "");
+    return b64.length <= 8; // ≤ 4 decoded bytes → definitely a stub
+  }
+
+  /**
+   * Draw an animated preview frame on `canvas` at time `elapsed` / `durationMs`.
+   * Shows the prompt text, a progress bar, and the ai-powered brand mark.
+   */
+  function _drawFrame(ctx, w, h, label, elapsed, durationMs) {
+    const progress = Math.min(elapsed / durationMs, 1);
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#6366f1";
+    ctx.fillRect(0, h - 18, w * progress, 18);
+    ctx.fillStyle = "#f1f5f9";
+    ctx.font = "bold 13px system-ui,sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("🎬 " + label.slice(0, 42), w / 2, h / 2 - 10);
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "10px system-ui,sans-serif";
+    ctx.fillText("ai-powered · mock preview", w / 2, h / 2 + 14);
+    ctx.fillStyle = "#6366f1";
+    ctx.font = "bold 11px system-ui,sans-serif";
+    ctx.fillText(Math.round(progress * 100) + "%", w / 2, h - 4);
+  }
+
+  /**
+   * Generate a short animated WebM video blob via Canvas + MediaRecorder.
+   *
+   * @param {string} label      Text to embed (prompt summary).
+   * @param {number} durationMs Recording length in ms (default 2000).
+   * @returns {Promise<Blob>}
+   */
+  function generatePlaceholderVideoBlob(label, durationMs) {
+    durationMs = durationMs || 2000;
+    return new Promise(function (resolve, reject) {
+      const W = 320, H = 180;
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
+
+      const mimeType = (
+        ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+          .find(function (t) { return MediaRecorder.isTypeSupported(t); })
+      ) || "video/webm";
+
+      let stream, recorder;
+      try {
+        stream   = canvas.captureStream(25);
+        recorder = new MediaRecorder(stream, { mimeType });
+      } catch (e) { return reject(e); }
+
+      const chunks = [];
+      recorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        resolve(new Blob(chunks, { type: mimeType }));
+      };
+      recorder.onerror = reject;
+
+      recorder.start(100);
+      const start = performance.now();
+      function frame() {
+        const elapsed = performance.now() - start;
+        _drawFrame(ctx, W, H, label, elapsed, durationMs);
+        if (elapsed < durationMs) { requestAnimationFrame(frame); }
+        else { recorder.stop(); }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  /**
+   * Append a `<video>` element and a download link to `container`.
+   *
+   * @param {HTMLElement} container  Parent element to append into.
+   * @param {string}      url        Object URL for the video blob.
+   * @param {Blob}        blob       The video blob (used for size display).
+   * @param {string}      name       Base filename (without extension).
+   * @param {string}      ext        File extension, e.g. "webm" or "mp4".
+   */
+  function appendShotVideo(container, url, blob, name, ext) {
+    const vid = document.createElement("video");
+    vid.className = "shot-video";
+    vid.controls  = true;
+    vid.src       = url;
+    container.appendChild(vid);
+
+    const actions = document.createElement("div");
+    actions.className = "shot-actions";
+    const dlLink = document.createElement("a");
+    dlLink.className   = "shot-dl-link";
+    dlLink.href        = url;
+    dlLink.download    = name.replace(/[^a-z0-9_\-]/gi, "_") + "." + ext;
+    dlLink.textContent = "⬇ Download (" + Math.round(blob.size / 1024) + " KB)";
+    actions.appendChild(dlLink);
+    container.appendChild(actions);
+  }
+
   /* ── Proxy fetch helpers ─────────────────────────────────── */
   async function proxyPost(endpoint, body) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
@@ -752,9 +859,13 @@
       if (headingMatch) {
         flush();
         currentName = headingMatch[1].trim();
-      } else if (line && currentName !== null) {
+      } else if (line) {
         // Skip horizontal rules and metadata
         if (/^---+$/.test(line) || /^\*\*[^*]+\*\*:/.test(line)) continue;
+        // Auto-assign name for text appearing before the first heading
+        if (currentName === null) {
+          currentName = "Shot " + (items.length + 1);
+        }
         promptLines.push(line);
       }
     }
@@ -811,10 +922,27 @@
       const li = document.createElement("li");
       li.className = "shot-preview-item";
       const modality = item.modality || "text";
-      li.textContent = (i + 1) + ". " + item.name + " [" + modality + "]";
+
+      // Label + prompt excerpt (wrapped so the × button stays right-aligned)
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "shot-preview-label";
+      labelSpan.textContent = (i + 1) + ". " + item.name + " [" + modality + "]";
       const em = document.createElement("em");
       em.textContent = item.prompt.length > 80 ? item.prompt.slice(0, 80) + "…" : item.prompt;
-      li.appendChild(em);
+      labelSpan.appendChild(em);
+      li.appendChild(labelSpan);
+
+      // Remove button
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "shot-preview-remove";
+      removeBtn.textContent = "×";
+      removeBtn.title = "Remove this shot from the batch";
+      removeBtn.addEventListener("click", function () {
+        batchItems.splice(i, 1);
+        showBatchPreflight(batchItems);
+      });
+      li.appendChild(removeBtn);
+
       ul.appendChild(li);
     });
     const p = document.createElement("p");
@@ -908,23 +1036,30 @@
       errEl.textContent = "Error: " + result.error;
       body.appendChild(errEl);
     } else if (result.modality === "video" && result.result?.data) {
-      const blob = dataUriToBlob(result.result.data);
-      const url  = URL.createObjectURL(blob);
-      const vid  = document.createElement("video");
-      vid.className = "shot-video";
-      vid.controls  = true;
-      vid.src       = url;
-      body.appendChild(vid);
+      if (isStubVideoData(result.result.data)) {
+        // Stub data from mock provider — generate a real playable preview via Canvas
+        const spinEl = document.createElement("span");
+        spinEl.className   = "spinner-msg";
+        spinEl.textContent = "Encoding preview…";
+        body.appendChild(spinEl);
 
-      const actions = document.createElement("div");
-      actions.className = "shot-actions";
-      const dlLink = document.createElement("a");
-      dlLink.className  = "shot-dl-link";
-      dlLink.href       = url;
-      dlLink.download   = (result.name || ("shot-" + result.index)) + ".mp4";
-      dlLink.textContent = "⬇ Download";
-      actions.appendChild(dlLink);
-      body.appendChild(actions);
+        const shotName = result.name || ("shot-" + result.index);
+        generatePlaceholderVideoBlob(result.prompt || shotName, 2000)
+          .then(function (blob) {
+            const url = URL.createObjectURL(blob);
+            spinEl.remove();
+            appendShotVideo(body, url, blob, shotName, "webm");
+          })
+          .catch(function () {
+            spinEl.textContent = "Preview unavailable (mock stub)";
+          });
+      } else {
+        // Real provider data — use it directly
+        const blob = dataUriToBlob(result.result.data);
+        const url  = URL.createObjectURL(blob);
+        const shotName = result.name || ("shot-" + result.index);
+        appendShotVideo(body, url, blob, shotName, "mp4");
+      }
     } else if (result.status === "ok") {
       const note = document.createElement("p");
       note.style.cssText = "color:var(--muted);font-size:.8rem";
@@ -1130,22 +1265,28 @@ ${shotCards}
     try {
       let blob;
       let vidResult = null;
+
       if (modeSelect.value === "proxy") {
         vidResult = await proxyPost("/video", { prompt, model: videoModelSelect.value || undefined });
-        if (vidResult.data) {
+
+        if (vidResult.data && isStubVideoData(vidResult.data)) {
+          // Mock stub — generate a real playable preview via Canvas
+          showSpinner(videoOutput, "Encoding preview…");
+          blob = await generatePlaceholderVideoBlob(prompt, 2000);
+        } else if (vidResult.data) {
           blob = dataUriToBlob(vidResult.data);
         } else {
-          // Mock provider (and future providers) may return no binary data yet.
+          // Provider returned no binary data at all
           videoOutput.innerHTML =
-            '<p style="padding:1rem;color:var(--text-muted)">✓ Video generated successfully (mock — no binary preview available)</p>';
+            '<p style="padding:1rem;color:var(--text-muted)">✓ Video generated (no binary preview available)</p>';
           addUsage(vidResult?.usage ?? null, vidResult?.cost ?? null);
           setUsageText(videoUsage, vidResult?.usage ?? null, vidResult?.cost ?? null);
-          if (!vidResult?.cost) videoUsage.textContent = "Mock video · 0 KB";
           return;
         }
       } else {
         blob = await getClient().generateVideo(prompt);
       }
+
       const url = blobUrl("video", blob);
       videoOutput.innerHTML = "";
       const video = document.createElement("video");

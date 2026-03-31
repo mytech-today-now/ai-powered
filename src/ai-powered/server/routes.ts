@@ -15,7 +15,16 @@
  *   POST /audio/speak          – synthesise speech → base64 audio
  *   POST /video                – generate video
  *   POST /structured           – generate structured JSON
- *   POST /batch               – sequential batch (NDJSON stream)
+ *   POST /batch                – sequential batch (NDJSON stream)
+ *
+ * /v1/ compatibility routes (industry-standard wire formats):
+ *   POST /v1/chat/completions     – OpenAI Chat Completions (text + streaming + structured output)
+ *   POST /v1/messages             – Anthropic Messages API (text + streaming)
+ *   POST /v1/images/generations   – OpenAI Images API
+ *   POST /v1/audio/transcriptions – OpenAI Whisper transcription (multipart/form-data)
+ *   POST /v1/audio/speech         – OpenAI TTS (binary audio response)
+ *   GET  /v1/models               – OpenAI model list envelope (static aggregate)
+ *   POST /v1/video/generations    – ai-powered native video (no external standard adopted)
  *
  * All routes call getAiClient() per request so that per-request overrides
  * (provider, model, temperature, profile, mock) are fully honoured.
@@ -32,6 +41,7 @@ import { getTemplate, renderTemplate } from "../templates/index.js";
 import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger } from "../utils.js";
 import type { ServeOptions } from "./index.js";
+import { mountCompatRoutes } from "./compat/index.js";
 
 // ---------------------------------------------------------------------------
 // Provider metadata — used by GET /providers
@@ -298,21 +308,24 @@ export function createRouter(opts: ServeOptions): Router {
 
   // --- GET /models ---
   // Accepts optional ?modality= and ?provider= query params.
-  // When ?provider= is specified and mock mode is off, a client for that
-  // provider is instantiated to retrieve its model list.  Falls back to an
+  // When ?provider= is specified, that provider's model list is returned
+  // regardless of whether the server is in mock mode — all real providers
+  // use static lists so no live API calls are made.  Falls back to an
   // empty array if the provider cannot be instantiated (e.g. missing key).
+  // When no provider is specified and mock mode is on, the mock list is used.
   router.get(
     "/models",
     wrap(async (req, res) => {
       const modality = req.query["modality"] as string | undefined;
       const providerOverride = req.query["provider"] as string | undefined;
-      const overrides = {
-        ...opts.configOverrides,
-        ...(opts.mock ? { mock: true } : {}),
-        ...(providerOverride && !opts.mock
-          ? { provider: providerOverride as never }
-          : {}),
-      };
+
+      // Honour an explicit ?provider= override even in mock mode so that the
+      // UI can display models from all configured real providers.  listModels
+      // for every built-in provider is static (no network calls), so this is safe.
+      const overrides = providerOverride
+        ? { ...opts.configOverrides, provider: providerOverride as never, mock: false as const }
+        : { ...opts.configOverrides, ...(opts.mock ? { mock: true as const } : {}) };
+
       try {
         const client = await getAiClient("serve-models", overrides as never);
         const models = await client.listModels(modality as never);
@@ -549,6 +562,10 @@ export function createRouter(opts: ServeOptions): Router {
       void baseOverrides; // suppress unused-var lint
     }),
   );
+
+  // --- /v1/ compatibility routes (industry-standard wire formats) ---
+  // Mounted after all native routes so native routes always take precedence.
+  mountCompatRoutes(router, opts);
 
   return router;
 }

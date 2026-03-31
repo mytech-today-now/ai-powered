@@ -155,68 +155,30 @@ function Invoke-Show([string]$id) {
 
 function Invoke-Ready {
     $map     = Get-Issues
-    $allOpen = @($map.Values | Where-Object { $_.status -eq "open" -or $_.status -eq "in-progress" })
     $priSort = { if ($_.priority) { [int]$_.priority } else { 99 } }
 
-    $unblocked = @($allOpen | Where-Object { -not (Test-IssueBlocked $_ $map) } | Sort-Object $priSort)
-    $blocked   = @($allOpen | Where-Object {       Test-IssueBlocked $_ $map  } | Sort-Object $priSort)
-    $all       = @($unblocked) + @($blocked)
+    # Only strictly-open tasks; in-progress are already claimed and not actionable here.
+    $openOnly  = @($map.Values | Where-Object { $_.status -eq "open" })
+    $unblocked = @($openOnly   | Where-Object { -not (Test-IssueBlocked $_ $map) } | Sort-Object $priSort)
+    $blocked   = @($openOnly   | Where-Object {       Test-IssueBlocked $_ $map  })
 
-    if ($Limit -eq 0) {
-        # Summary mode: top 5 (highest priority) + last 5 (lowest priority)
-        # Equivalent to: bd ready --limit 5; bd ready --limit 0 | Select-Object -Last 5
-        $n    = 5
-        $top  = @($all | Select-Object -First $n)
-        $tail = @($all | Select-Object -Last  $n)
+    # Apply optional limit to the unblocked list only.
+    $issues = if ($Limit -gt 0) { @($unblocked | Select-Object -First $Limit) } else { $unblocked }
 
-        if ($Json) {
-            [ordered]@{ top = @($top); tail = @($tail); total = $all.Count } | ConvertTo-Json -Depth 10 | Write-Output
-            return
-        }
+    if ($Json) { ConvertTo-Json -InputObject @($issues) -Depth 10 -Compress | Write-Output; return }
 
-        Write-Host ""
-        Write-Host "=== Ready: Top $n (highest priority) ===" -ForegroundColor Cyan
-        Write-Host ""
-        if ($top.Count -eq 0) { Write-Host "(no open issues)" -ForegroundColor Gray }
-        else { $top | ForEach-Object { Format-IssueLine $_ } }
-
-        Write-Host ""
-        Write-Host "=== Ready: Last $n (lowest priority) ===" -ForegroundColor Cyan
-        Write-Host ""
-        if ($tail.Count -eq 0) { Write-Host "(no open issues)" -ForegroundColor Gray }
-        else { $tail | ForEach-Object { Format-IssueLine $_ } }
-
-        Write-Host ""
-        Write-Host "Total: $($unblocked.Count) unblocked, $($blocked.Count) blocked ($($all.Count) open)" -ForegroundColor Gray
-        Write-Host ""
+    Write-Host ""
+    Write-Host "=== Ready: Open & Unblocked (highest priority first) ===" -ForegroundColor Cyan
+    Write-Host ""
+    if ($issues.Count -eq 0) {
+        Write-Host "(no open unblocked issues)" -ForegroundColor Gray
     } else {
-        # Limit mode: top N, unblocked first
-        $issues        = @($all | Select-Object -First $Limit)
-        $dispUnblocked = @($issues | Where-Object { -not (Test-IssueBlocked $_ $map) })
-        $dispBlocked   = @($issues | Where-Object {       Test-IssueBlocked $_ $map  })
-
-        if ($Json) { ConvertTo-Json -InputObject @($issues) -Depth 10 -Compress | Write-Output; return }
-
-        Write-Host ""
-        Write-Host "=== Ready Issues (unblocked first) ===" -ForegroundColor Cyan
-        Write-Host ""
-        if ($issues.Count -eq 0) {
-            Write-Host "(no open issues)" -ForegroundColor Gray
-        } else {
-            if ($dispUnblocked.Count -gt 0) {
-                Write-Host "-- Unblocked ($($dispUnblocked.Count)) --" -ForegroundColor Green
-                $dispUnblocked | ForEach-Object { Format-IssueLine $_ }
-            }
-            if ($dispBlocked.Count -gt 0) {
-                Write-Host ""
-                Write-Host "-- Blocked ($($dispBlocked.Count)) --" -ForegroundColor DarkYellow
-                $dispBlocked | ForEach-Object { Format-IssueLine $_ }
-            }
-        }
-        Write-Host ""
-        Write-Host "Showing $($issues.Count) of $($all.Count) open  ($($unblocked.Count) unblocked, $($blocked.Count) blocked total)" -ForegroundColor Gray
-        Write-Host ""
+        $issues | ForEach-Object { Format-IssueLine $_ }
     }
+    Write-Host ""
+    $limitNote = if ($Limit -gt 0 -and $unblocked.Count -gt $Limit) { " (showing $Limit of $($unblocked.Count))" } else { "" }
+    Write-Host "$($issues.Count) unblocked$limitNote | $($blocked.Count) blocked | $($openOnly.Count) open total" -ForegroundColor Gray
+    Write-Host ""
 }
 
 function Invoke-Search([string]$query) {

@@ -428,12 +428,32 @@ button.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
   border-radius: 4px;
   background: #f1f5f9;
   color: var(--text);
-  white-space: nowrap;
+  flex-shrink: 0; /* prevent flex column from compressing rows vertically */
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.shot-preview-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex-shrink: 0; /* prevent flex column from compressing rows vertically */
+  white-space: nowrap;
 }
 .shot-preview-item em { color: var(--muted); font-style: normal; margin-left: .35rem; }
+.shot-preview-remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: .9rem;
+  line-height: 1;
+  padding: 0 .15rem;
+  color: var(--muted);
+  border-radius: 3px;
+  transition: color .15s, background .15s;
+}
+.shot-preview-remove:hover { color: var(--danger); background: #fee2e2; }
 
 /* ── Batch progress bar ───────────────────────────────── */
 .batch-progress { margin-bottom: .75rem; }
@@ -525,6 +545,21 @@ button.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
   transition: background .12s;
 }
 .shot-dl-link:hover { background: #eff6ff; }
+
+/* ── Status badges ────────────────────────────────────── */
+.badge-ok,
+.badge-error {
+  display: inline-block;
+  font-size: .65rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.badge-ok    { background: #dcfce7; color: #166534; }
+.badge-error { background: #fee2e2; color: var(--danger); }
 
 /* ── Proxy-only note ──────────────────────────────────── */
 .proxy-only-note {

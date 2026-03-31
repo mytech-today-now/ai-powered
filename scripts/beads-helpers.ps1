@@ -64,7 +64,12 @@ function bd-show {
     bd show $Id
 }
 
-function bd-ready { bd ready }
+# Returns all open, unblocked tasks sorted by highest priority first (P1 → P2 → P3).
+# Pass -Limit <n> to cap the result set.
+function bd-ready {
+    param([int]$Limit = 0)
+    if ($Limit -gt 0) { bd ready --limit $Limit } else { bd ready }
+}
 
 function bd-create {
     param(
@@ -133,7 +138,7 @@ function bd-help {
     Write-Host "  bd-list-open          # bd list --status open"
     Write-Host "  bd-list-all           # bd list"
     Write-Host "  bd-show <id>          # bd show <id>"
-    Write-Host "  bd-ready              # bd ready"
+    Write-Host "  bd-ready [-Limit <n>] # all open unblocked tasks, highest priority first"
     Write-Host "  bd-create <title>     # bd create <title> [-Description] [-Priority] [-Type]"
     Write-Host "  bd-update <id>        # bd update <id> [-Status] [-Claim] [-Priority]"
     Write-Host "  bd-close <id>         # bd close <id> [-Reason]"

@@ -49,6 +49,13 @@ const MOCK_AUDIO_DURATION_SECONDS = 30;
 /** Plausible character count used for TTS pricing (token-based per character). */
 const MOCK_TTS_CHARS = 120;
 
+/**
+ * Simulated per-video generation delay (ms) so the batch UI feels realistic.
+ * Automatically set to 0 inside Vitest / test environments to keep CI fast.
+ */
+const MOCK_VIDEO_DELAY_MS =
+  process.env["VITEST"] || process.env["NODE_ENV"] === "test" ? 0 : 1800;
+
 // ---------------------------------------------------------------------------
 // Schema-aware mock value generator
 // ---------------------------------------------------------------------------
@@ -201,17 +208,21 @@ export class MockProvider extends BaseProvider {
 
   override async generateVideo(prompt: string, options?: ProviderCallOptions): Promise<VideoResult> {
     this.assertCapability("video");
-    void prompt;
     void options;
+    const t0 = Date.now();
+    if (MOCK_VIDEO_DELAY_MS > 0) {
+      await new Promise<void>((r) => setTimeout(r, MOCK_VIDEO_DELAY_MS));
+    }
     return {
       modality: "video",
       provider: "mock",
       model: "mock-video-v1",
+      // 4-byte stub — the web client replaces this with a Canvas-generated preview
       data: "data:video/mp4;base64,AAAAAA==",
       mimeType: "video/mp4",
       usage: MOCK_ZERO_USAGE,
       cost: calculateCost("mock-video-v1", MOCK_ZERO_USAGE),
-      latencyMs: 1,
+      latencyMs: Date.now() - t0,
     };
   }
 
