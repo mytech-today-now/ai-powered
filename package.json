@@ -1,6 +1,6 @@
 {
   "name": "@mytech-today-now/ai-powered",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Unified AI client and CLI: multi-modal, multi-provider, browser-safe, fully mock-able",
   "type": "module",
   "main": "./dist/ai-powered/index.js",
