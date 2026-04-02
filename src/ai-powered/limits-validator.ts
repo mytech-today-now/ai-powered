@@ -117,11 +117,30 @@ export const LimitsValidator = {
   /**
    * Validate image width/height against provider+model constraints.
    *
+   * When the model config defines a `resolutions` list, the supplied dimensions
+   * are first snapped to the nearest supported entry (via `snapImage`) before
+   * any limit checks are applied.  This prevents providers like Venice from
+   * receiving arbitrary dimension pairs that they reject with HTTP 404.
+   *
+   * @returns The validated (and possibly snapped) `{ width, height }` pair.
    * @throws {ProviderError} when dimensions exceed maxWidth, maxHeight, or maxPixels.
    */
-  validateImage(provider: string, model: string, width: number, height: number): void {
+  validateImage(
+    provider: string,
+    model: string,
+    width: number,
+    height: number,
+  ): { width: number; height: number } {
     const cfg = _getModel(provider, model);
-    if (!cfg) return; // unknown model — skip validation
+    if (!cfg) return { width, height }; // unknown model — pass through unchanged
+
+    // Snap to the nearest supported resolution before limit checks so that
+    // providers with a fixed resolution list always receive a valid pair.
+    const snapped = _nearestResolution(cfg, width, height);
+    if (snapped) {
+      width = snapped.width;
+      height = snapped.height;
+    }
 
     const maxW = cfg.maxWidth ?? Infinity;
     const maxH = cfg.maxHeight ?? Infinity;
@@ -149,6 +168,8 @@ export const LimitsValidator = {
         false,
       );
     }
+
+    return { width, height };
   },
 
   /**

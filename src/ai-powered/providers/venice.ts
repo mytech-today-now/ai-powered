@@ -211,20 +211,10 @@ export class VeniceProvider extends BaseProvider {
       }
     }
 
-    // Snap to the nearest resolution that Venice actually accepts.
-    // Venice returns HTTP 404 for arbitrary/unsupported dimension pairs.
-    const snapped = LimitsValidator.snapImage("venice", model, width, height);
-    if (snapped.width !== width || snapped.height !== height) {
-      getLogger().debug(
-        { requested: `${width}×${height}`, snapped: `${snapped.width}×${snapped.height}`, model },
-        "VeniceProvider: snapped dimensions to nearest supported resolution",
-      );
-      width = snapped.width;
-      height = snapped.height;
-    }
-
-    // Validate against Venice's static constraints.
-    LimitsValidator.validateImage("venice", model, width, height);
+    // Snap to the nearest supported resolution and validate limits in one step.
+    // validateImage snaps when the model config defines a resolutions list,
+    // preventing Venice from receiving arbitrary pairs it rejects with HTTP 404.
+    ({ width, height } = LimitsValidator.validateImage("venice", model, width, height));
 
     const endpoint = `${VENICE_BASE_URL}/image/generate`;
     let resp: Response;
