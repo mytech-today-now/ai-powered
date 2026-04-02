@@ -16,7 +16,7 @@
     Vite dev-server port. Default: 5173
 
 .PARAMETER Mock
-    Start the proxy in mock mode (no real API calls). Default: $true
+    Start the proxy in mock mode (no real API calls). Default: $false (live mode)
 
 .PARAMETER Build
     Run 'npm run build' before restarting. Useful after code changes.
@@ -25,22 +25,26 @@
     Directory where stdout/stderr logs are written. Default: logs\
 
 .EXAMPLE
-    # Quick restart (mock mode, no rebuild)
+    # Quick restart in live mode (real API keys from .env)
     .\scripts\cycle-service.ps1
 
 .EXAMPLE
-    # Rebuild TypeScript then restart in mock mode
+    # Rebuild TypeScript then restart in live mode
     .\scripts\cycle-service.ps1 -Build
 
 .EXAMPLE
-    # Restart in live mode (real providers) on custom port
-    .\scripts\cycle-service.ps1 -Mock:$false -Port 4001
+    # Restart in mock mode (no real API calls) — useful for development
+    .\scripts\cycle-service.ps1 -Mock
+
+.EXAMPLE
+    # Restart in live mode on custom port
+    .\scripts\cycle-service.ps1 -Port 4001
 #>
 [CmdletBinding()]
 param(
     [int]    $Port     = 3001,
     [int]    $VitePort = 5173,
-    [switch] $Mock     = $true,
+    [switch] $Mock     = $false,
     [switch] $Build,
     [string] $LogDir   = "logs"
 )

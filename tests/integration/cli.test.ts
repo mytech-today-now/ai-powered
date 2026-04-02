@@ -52,10 +52,7 @@ interface RunResult {
   exitCode: number;
 }
 
-function run(
-  args: string[],
-  opts: { input?: string; env?: NodeJS.ProcessEnv } = {},
-): RunResult {
+function run(args: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } = {}): RunResult {
   const spawnOpts: SpawnSyncOptionsWithStringEncoding = {
     encoding: "utf-8",
     env: { ...MOCK_ENV, ...(opts.env ?? {}) },
@@ -114,11 +111,12 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("text --mock", () => {
+  // 30 s: first spawn in a parallel test-fork incurs cold-start JIT overhead
   it("prints content to stdout and exits 0", () => {
     const { stdout, exitCode } = run(["text", "--mock", "What is TypeScript?"]);
     expect(exitCode).toBe(0);
     expect(stdout.trim().length).toBeGreaterThan(0);
-  });
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -151,7 +149,11 @@ describe("structured --schema <file> --mock", () => {
       }),
     );
     const { stdout, exitCode } = run([
-      "structured", "--mock", "--schema", schemaFile, "Describe TypeScript",
+      "structured",
+      "--mock",
+      "--schema",
+      schemaFile,
+      "Describe TypeScript",
     ]);
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -245,7 +247,7 @@ describe("health-check --mock", () => {
 
 describe("batch text --mock", () => {
   it("processes 5 input rows and writes 5 output rows", async () => {
-    const inputFile  = path.join(tmpDir, "input.jsonl");
+    const inputFile = path.join(tmpDir, "input.jsonl");
     const outputFile = path.join(tmpDir, "output.jsonl");
 
     const rows = Array.from({ length: 5 }, (_, i) =>
@@ -254,10 +256,13 @@ describe("batch text --mock", () => {
     fs.writeFileSync(inputFile, rows.join("\n") + "\n", "utf-8");
 
     const { exitCode } = run([
-      "batch", "text",
+      "batch",
+      "text",
       "--mock",
-      "--input",  inputFile,
-      "--output", outputFile,
+      "--input",
+      inputFile,
+      "--output",
+      outputFile,
     ]);
     expect(exitCode).toBe(0);
     expect(fs.existsSync(outputFile)).toBe(true);
@@ -306,4 +311,3 @@ describe("session clear <id>", () => {
     expect(clearResult.stdout).toContain("cleared");
   });
 });
-

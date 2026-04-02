@@ -26,17 +26,19 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
   xai: "XAI_API_KEY",
   venice: "VENICE_API_KEY",
   lumaai: "LUMAAI_API_KEY",
+  runway: "RUNWAYML_API_SECRET",
   custom: "AI_API_KEY",
   mock: "",
 };
 
 /** Modalities supported by each provider. Used to disable incompatible choices. */
 const MODALITY_SUPPORT: Record<string, string[]> = {
-  openai: ["text", "image", "audio", "video", "structured"],
+  openai: ["text", "image", "audio", "structured"],
   anthropic: ["text", "structured"],
   venice: ["text", "image", "structured"],
   xai: ["text", "structured"],
   lumaai: ["video"],
+  runway: ["video"],
   custom: ["text", "image", "audio", "video", "structured"],
   mock: ["text", "image", "audio", "video", "structured"],
 };
@@ -48,6 +50,7 @@ const MODEL_DEFAULTS: Record<string, Partial<Record<string, string>>> = {
   venice: { text: "llama-3.3-70b", image: "fluently-xl", structured: "llama-3.3-70b" },
   xai: { text: "grok-2-1212", structured: "grok-2-1212" },
   lumaai: { video: "ray-2" },
+  runway: { video: "gen4.5" },
   custom: {},
   mock: {},
 };
@@ -57,9 +60,7 @@ const MODEL_DEFAULTS: Record<string, Partial<Record<string, string>>> = {
 // ---------------------------------------------------------------------------
 
 function writeEnvLine(envPath: string, key: string, value: string): void {
-  const content = fs.existsSync(envPath)
-    ? fs.readFileSync(envPath, "utf-8")
-    : "";
+  const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
   const lines = content.split("\n");
   const idx = lines.findIndex((l) => l.startsWith(`${key}=`));
   const newLine = `${key}=${value}`;
@@ -144,12 +145,22 @@ async function validateApiKey(
         const body = await res.text().catch(() => "");
         return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
       }
+      case "runway": {
+        const res = await fetch("https://api.dev.runwayml.com/v1/organization", {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "X-Runway-Version": "2024-11-06",
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) return { valid: true, message: "✓ Runway API key is valid." };
+        const body = await res.text().catch(() => "");
+        return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
+      }
       case "custom": {
         if (!baseUrl) return { valid: true, message: "⚠ No base URL — skipping validation." };
         const testUrl = new URL("/health", baseUrl).toString();
-        const res = await fetch(testUrl, { signal: AbortSignal.timeout(10_000) }).catch(
-          () => null,
-        );
+        const res = await fetch(testUrl, { signal: AbortSignal.timeout(10_000) }).catch(() => null);
         if (res?.ok) return { valid: true, message: "✓ Custom endpoint is reachable." };
         return { valid: false, message: "✗ Custom endpoint not reachable — check the URL." };
       }
@@ -173,8 +184,11 @@ async function runTemplateWizard(): Promise<void> {
   const modality = await select({
     message: "Modality:",
     choices: [
-      { value: "text" }, { value: "image" },
-      { value: "audio" }, { value: "video" }, { value: "structured" },
+      { value: "text" },
+      { value: "image" },
+      { value: "audio" },
+      { value: "video" },
+      { value: "structured" },
     ],
   });
   const userPrompt = await input({
@@ -185,7 +199,11 @@ async function runTemplateWizard(): Promise<void> {
     default: "{}",
   });
   let defaults: Record<string, string> = {};
-  try { defaults = JSON.parse(defaultsRaw) as Record<string, string>; } catch { /* ignore */ }
+  try {
+    defaults = JSON.parse(defaultsRaw) as Record<string, string>;
+  } catch {
+    /* ignore */
+  }
 
   const template = { name, description, modality, userPrompt, defaults };
   const outDir = await input({
@@ -251,6 +269,11 @@ export async function runWizard(opts: { templateMode?: boolean } = {}): Promise<
         name: "Luma AI (Ray-2) — video generation only",
         value: "lumaai",
         disabled: notSupported("lumaai"),
+      },
+      {
+        name: "Runway (Gen-4) — video generation only",
+        value: "runway",
+        disabled: notSupported("runway"),
       },
       { name: "Custom / Self-hosted", value: "custom" },
       { name: "Mock (no API calls — for testing)", value: "mock" },
@@ -351,13 +374,10 @@ export async function runWizard(opts: { templateMode?: boolean } = {}): Promise<
 
   // --- Step 7: Next steps ---
   const exampleCmd =
-    modality === "text"
-      ? 'ai-powered text "Hello, AI!"'
-      : `ai-powered ${modality} --help`;
+    modality === "text" ? 'ai-powered text "Hello, AI!"' : `ai-powered ${modality} --help`;
 
   console.log("\n🎉 Setup complete! Next steps:");
   console.log(`  ai-powered health-check`);
   console.log(`  ${exampleCmd}`);
   console.log(`  ai-powered list-models\n`);
 }
-

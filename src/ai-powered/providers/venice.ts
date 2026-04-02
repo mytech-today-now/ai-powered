@@ -40,24 +40,26 @@ import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
 import { BaseProvider } from "./base.js";
 import type { ProviderCallOptions } from "./base.js";
+import { AspectRatioService } from "../aspect-ratio.js";
+import { LimitsValidator } from "../limits-validator.js";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VENICE_BASE_URL  = "https://api.venice.ai/api/v1";
+const VENICE_BASE_URL = "https://api.venice.ai/api/v1";
 const MAX_TOKENS_DEFAULT = 4096;
 
 /** Static fallback model list used when the /models endpoint is unavailable. */
 const VENICE_STATIC_MODELS: ModelDescriptor[] = [
-  { id: "llama-3.3-70b",       name: "Llama 3.3 70B",       capabilities: ["text", "structured"] },
-  { id: "mistral-31-24b",      name: "Mistral 3.1 24B",      capabilities: ["text", "structured"] },
-  { id: "qwen-2.5-vl",         name: "Qwen 2.5 VL",          capabilities: ["text", "structured"] },
-  { id: "venice-sd-3.5",       name: "Venice SD 3.5",        capabilities: ["image"] },
-  { id: "fluently-xl",         name: "Fluently XL",          capabilities: ["image"] },
+  { id: "llama-3.3-70b", name: "Llama 3.3 70B", capabilities: ["text", "structured"] },
+  { id: "mistral-31-24b", name: "Mistral 3.1 24B", capabilities: ["text", "structured"] },
+  { id: "qwen-2.5-vl", name: "Qwen 2.5 VL", capabilities: ["text", "structured"] },
+  { id: "venice-sd-3.5", name: "Venice SD 3.5", capabilities: ["image"] },
+  { id: "fluently-xl", name: "Fluently XL", capabilities: ["image"] },
 ];
 
-const DEFAULT_TEXT_MODEL  = "llama-3.3-70b";
+const DEFAULT_TEXT_MODEL = "llama-3.3-70b";
 const DEFAULT_IMAGE_MODEL = "fluently-xl";
 
 // ---------------------------------------------------------------------------
@@ -104,18 +106,18 @@ export class VeniceProvider extends BaseProvider {
       });
       const choice = response.choices[0];
       const usage: TokenUsage = {
-        promptTokens:     response.usage?.prompt_tokens     ?? 0,
+        promptTokens: response.usage?.prompt_tokens ?? 0,
         completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens:      response.usage?.total_tokens      ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
       };
       return {
         modality: "text",
         provider: "venice",
         model,
-        content:      choice?.message.content ?? "",
+        content: choice?.message.content ?? "",
         usage,
-        cost:         calculateCost(model, usage),
-        latencyMs:    Date.now() - start,
+        cost: calculateCost(model, usage),
+        latencyMs: Date.now() - start,
         finishReason: choice?.finish_reason ?? "stop",
       };
     } catch (err) {
@@ -137,7 +139,9 @@ export class VeniceProvider extends BaseProvider {
 
     try {
       const stream = await this._client.chat.completions.create({
-        model, messages, stream: true,
+        model,
+        messages,
+        stream: true,
         temperature: options?.temperature ?? this.config.temperature,
         ...(options?.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
       });
@@ -154,12 +158,43 @@ export class VeniceProvider extends BaseProvider {
   // Image generation — POST /image/generate  (Venice-specific endpoint)
   // -------------------------------------------------------------------------
 
-  override async generateImage(prompt: string, options?: ProviderCallOptions): Promise<ImageResult> {
+  override async generateImage(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<ImageResult> {
     this.assertCapability("image");
-    void options;
     const model = this.config.model ?? DEFAULT_IMAGE_MODEL;
     const start = Date.now();
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
+    // -------------------------------------------------------------------------
+    // Resolve width/height from options (aspectRatio → snap, or direct w/h).
+    // Falls back to 1024×1024 when no size option is supplied.
+    // -------------------------------------------------------------------------
+    let width = 1024;
+    let height = 1024;
+
+    if (options?.width !== undefined && options.height !== undefined) {
+      width = options.width;
+      height = options.height;
+    } else if (options?.aspectRatio !== undefined && options.aspectRatio !== "auto") {
+      try {
+        const ratio = AspectRatioService.parse(options.aspectRatio);
+        // Derive dimensions from a 1024 base width; snap to the nearest valid resolution.
+        const computed = AspectRatioService.calculate(ratio, 1024);
+        width = computed.width;
+        height = computed.height;
+      } catch {
+        // Invalid ratio — fall back to default 1024×1024 and continue.
+        getLogger().warn(
+          { aspectRatio: options.aspectRatio },
+          "VeniceProvider: invalid aspectRatio, using default",
+        );
+      }
+    }
+
+    // Validate against Venice's static constraints.
+    LimitsValidator.validateImage("venice", model, width, height);
 
     const endpoint = `${VENICE_BASE_URL}/image/generate`;
     let resp: Response;
@@ -167,10 +202,10 @@ export class VeniceProvider extends BaseProvider {
       resp = await fetch(endpoint, {
         method: "POST",
         headers: {
-          Authorization:  `Bearer ${this._apiKey}`,
+          Authorization: `Bearer ${this._apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ model, prompt, width: 1024, height: 1024 }),
+        body: JSON.stringify({ model, prompt, width, height }),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -179,26 +214,41 @@ export class VeniceProvider extends BaseProvider {
 
     if (!resp.ok) {
       const retryable = resp.status === 429 || resp.status >= 500;
-      throw new ProviderError("venice", `Image generation HTTP ${resp.status}`, resp.status, retryable);
+      throw new ProviderError(
+        "venice",
+        `Image generation HTTP ${resp.status}`,
+        resp.status,
+        retryable,
+      );
     }
 
-    // Venice image response: { images: [{ b64_json?: string, url?: string }] }
-    const body = await resp.json() as { images?: Array<{ b64_json?: string; url?: string }> };
+    // Venice image response (current): { images: string[], request: { data: { format: string } } }
+    // Each element in `images` is a raw base64 string (no data-URI prefix).
+    // Older Venice docs described objects with b64_json/url; handle both shapes.
+    const body = (await resp.json()) as {
+      images?: Array<string | { b64_json?: string; url?: string }>;
+      request?: { data?: { format?: string } };
+    };
     const first = body.images?.[0];
-    const data  = first?.b64_json
-      ? `data:image/png;base64,${first.b64_json}`
-      : (first?.url ?? "");
+    const format = body.request?.data?.format ?? "webp";
+    const mimeType = format === "png" ? "image/png" : "image/webp";
+    let data = "";
+    if (typeof first === "string" && first.length > 0) {
+      data = `data:${mimeType};base64,${first}`;
+    } else if (first && typeof first === "object") {
+      data = first.b64_json ? `data:${mimeType};base64,${first.b64_json}` : (first.url ?? "");
+    }
 
     return {
       modality: "image",
       provider: "venice",
       model,
       data,
-      mimeType:  "image/png",
-      width:     1024,
-      height:    1024,
-      usage:     zeroUsage,
-      cost:      calculateCost(model, zeroUsage),
+      mimeType,
+      width,
+      height,
+      usage: zeroUsage,
+      cost: calculateCost(model, zeroUsage),
       latencyMs: Date.now() - start,
     };
   }
@@ -213,8 +263,8 @@ export class VeniceProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
-    const model  = this.config.model ?? DEFAULT_TEXT_MODEL;
-    const start  = Date.now();
+    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
@@ -228,17 +278,17 @@ export class VeniceProvider extends BaseProvider {
       const response = await this._client.chat.completions.create({
         model,
         messages,
-        temperature:     options?.temperature ?? this.config.temperature,
+        temperature: options?.temperature ?? this.config.temperature,
         response_format: { type: "json_object" },
-        max_tokens:      maxTok,
+        max_tokens: maxTok,
       });
-      const raw     = response.choices[0]?.message.content ?? "{}";
+      const raw = response.choices[0]?.message.content ?? "{}";
       const parsed: unknown = JSON.parse(raw);
-      const data    = schema.parse(parsed);
+      const data = schema.parse(parsed);
       const usage: TokenUsage = {
-        promptTokens:     response.usage?.prompt_tokens     ?? 0,
+        promptTokens: response.usage?.prompt_tokens ?? 0,
         completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens:      response.usage?.total_tokens      ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
       };
       return {
         modality: "structured",
@@ -246,7 +296,7 @@ export class VeniceProvider extends BaseProvider {
         model,
         data,
         usage,
-        cost:      calculateCost(model, usage),
+        cost: calculateCost(model, usage),
         latencyMs: Date.now() - start,
       };
     } catch (err) {
@@ -267,7 +317,7 @@ export class VeniceProvider extends BaseProvider {
 
       // Venice /models returns an OpenAI-compatible list with a `type` field:
       //   "text" | "image" | "code" | "embedding" …
-      const body = await resp.json() as {
+      const body = (await resp.json()) as {
         data?: Array<{ id: string; object?: string; [k: string]: unknown }>;
       };
       const raw = body.data ?? [];
@@ -302,4 +352,3 @@ export class VeniceProvider extends BaseProvider {
     return new ProviderError("venice", msg);
   }
 }
-

@@ -32,29 +32,47 @@ import { calculateCost, maskApiKey, getLogger } from "../utils.js";
 import { BaseProvider } from "./base.js";
 import type { ProviderCallOptions } from "./base.js";
 import { z } from "zod";
+import { LimitsValidator } from "../limits-validator.js";
+import { AspectRatioService } from "../aspect-ratio.js";
 
 // ---------------------------------------------------------------------------
 // Model lists
 // ---------------------------------------------------------------------------
 
 const TEXT_MODELS: ModelDescriptor[] = [
-  { id: "gpt-4o",             name: "GPT-4o",             capabilities: ["text", "structured"], contextWindow: 128000 },
-  { id: "gpt-4o-mini",        name: "GPT-4o Mini",        capabilities: ["text", "structured"], contextWindow: 128000 },
-  { id: "o1",                 name: "o1",                 capabilities: ["text"],               contextWindow: 200000 },
-  { id: "o1-mini",            name: "o1 Mini",            capabilities: ["text"],               contextWindow: 128000 },
-  { id: "gpt-4-turbo",        name: "GPT-4 Turbo",        capabilities: ["text", "structured"], contextWindow: 128000 },
-  { id: "gpt-3.5-turbo",      name: "GPT-3.5 Turbo",      capabilities: ["text", "structured"], contextWindow: 16385  },
+  { id: "gpt-4o", name: "GPT-4o", capabilities: ["text", "structured"], contextWindow: 128000 },
+  {
+    id: "gpt-4o-mini",
+    name: "GPT-4o Mini",
+    capabilities: ["text", "structured"],
+    contextWindow: 128000,
+  },
+  { id: "o1", name: "o1", capabilities: ["text"], contextWindow: 200000 },
+  { id: "o1-mini", name: "o1 Mini", capabilities: ["text"], contextWindow: 128000 },
+  {
+    id: "gpt-4-turbo",
+    name: "GPT-4 Turbo",
+    capabilities: ["text", "structured"],
+    contextWindow: 128000,
+  },
+  {
+    id: "gpt-3.5-turbo",
+    name: "GPT-3.5 Turbo",
+    capabilities: ["text", "structured"],
+    contextWindow: 16385,
+  },
 ];
 
 const IMAGE_MODELS: ModelDescriptor[] = [
   { id: "dall-e-3", name: "DALL-E 3", capabilities: ["image"] },
   { id: "dall-e-2", name: "DALL-E 2", capabilities: ["image"] },
+  { id: "gpt-image-1", name: "GPT-Image-1", capabilities: ["image"] },
 ];
 
 const AUDIO_MODELS: ModelDescriptor[] = [
-  { id: "whisper-1", name: "Whisper",   capabilities: ["audio"] },
-  { id: "tts-1",     name: "TTS-1",    capabilities: ["audio"] },
-  { id: "tts-1-hd",  name: "TTS-1 HD", capabilities: ["audio"] },
+  { id: "whisper-1", name: "Whisper", capabilities: ["audio"] },
+  { id: "tts-1", name: "TTS-1", capabilities: ["audio"] },
+  { id: "tts-1-hd", name: "TTS-1 HD", capabilities: ["audio"] },
 ];
 
 const ALL_OPENAI_MODELS: ModelDescriptor[] = [...TEXT_MODELS, ...IMAGE_MODELS, ...AUDIO_MODELS];
@@ -63,10 +81,10 @@ const ALL_OPENAI_MODELS: ModelDescriptor[] = [...TEXT_MODELS, ...IMAGE_MODELS, .
 // Default model IDs per modality
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TEXT_MODEL  = "gpt-4o";
+const DEFAULT_TEXT_MODEL = "gpt-4o";
 const DEFAULT_IMAGE_MODEL = "dall-e-3";
 const DEFAULT_TRANSCRIPTION_MODEL = "whisper-1";
-const DEFAULT_TTS_MODEL   = "tts-1";
+const DEFAULT_TTS_MODEL = "tts-1";
 
 const IMAGE_MODEL_IDS = new Set(IMAGE_MODELS.map((m) => m.id));
 
@@ -74,6 +92,91 @@ const IMAGE_MODEL_IDS = new Set(IMAGE_MODELS.map((m) => m.id));
 function resolveImageModel(configModel: string | undefined): string {
   if (configModel && IMAGE_MODEL_IDS.has(configModel)) return configModel;
   return DEFAULT_IMAGE_MODEL;
+}
+
+// ---------------------------------------------------------------------------
+// Size enum helpers
+// ---------------------------------------------------------------------------
+
+interface SizeEntry {
+  width: number;
+  height: number;
+  enum: string;
+}
+
+/** Valid size enums for DALL-E 3. */
+const DALLE3_SIZES: SizeEntry[] = [
+  { width: 1024, height: 1024, enum: "1024x1024" },
+  { width: 1792, height: 1024, enum: "1792x1024" },
+  { width: 1024, height: 1792, enum: "1024x1792" },
+];
+
+/** Valid size enums for GPT-Image-1 (excludes the "auto" entry). */
+const GPT_IMAGE1_SIZES: SizeEntry[] = [
+  { width: 1024, height: 1024, enum: "1024x1024" },
+  { width: 1536, height: 1024, enum: "1536x1024" },
+  { width: 1024, height: 1536, enum: "1024x1536" },
+];
+
+/**
+ * Pick the size entry from `list` whose aspect ratio is closest to `w:h`.
+ * Uses the absolute difference between `w/h` and `entry.width/entry.height`.
+ */
+function _nearestByRatio(w: number, h: number, list: SizeEntry[]): SizeEntry {
+  const targetRatio = w / h;
+  let best = list[0]!;
+  let bestDiff = Infinity;
+  for (const s of list) {
+    const diff = Math.abs(s.width / s.height - targetRatio);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolve the OpenAI `size` enum string and actual pixel dimensions from the
+ * caller-supplied `options`.  Priority: explicit width+height > aspectRatio.
+ * Falls back to 1024×1024 when neither is specified.
+ *
+ * Also calls `LimitsValidator.validateImage` when explicit dimensions are given
+ * so that over-limit inputs are caught before the API call.
+ */
+function resolveImageSize(
+  model: string,
+  options: ProviderCallOptions | undefined,
+  sizes: SizeEntry[],
+): { sizeEnum: string; width: number; height: number } {
+  let targetW: number;
+  let targetH: number;
+
+  if (options?.width != null && options?.height != null) {
+    targetW = options.width;
+    targetH = options.height;
+    // Validate limits before calling the API.
+    LimitsValidator.validateImage("openai", model, targetW, targetH);
+  } else if (options?.aspectRatio) {
+    const parsed = AspectRatioService.parse(options.aspectRatio);
+    // Use max dimension from the model's size list to scale up before snapping.
+    const maxDim = Math.max(...sizes.map((s) => Math.max(s.width, s.height)));
+    const isPortrait = parsed.heightRatio > parsed.widthRatio;
+    if (isPortrait) {
+      targetH = maxDim;
+      targetW = Math.round(maxDim * (parsed.widthRatio / parsed.heightRatio));
+    } else {
+      targetW = maxDim;
+      targetH = Math.round(maxDim * (parsed.heightRatio / parsed.widthRatio));
+    }
+  } else {
+    // Default: 1024×1024 square.
+    targetW = 1024;
+    targetH = 1024;
+  }
+
+  const match = _nearestByRatio(targetW, targetH, sizes);
+  return { sizeEnum: match.enum, width: match.width, height: match.height };
 }
 
 // ---------------------------------------------------------------------------
@@ -90,9 +193,7 @@ export class OpenAiProvider extends BaseProvider {
     super(config);
     const apiKey = config.apiKey;
     if (!apiKey) {
-      throw new Error(
-        'OpenAI API key is required. Set OPENAI_API_KEY or config.apiKey.',
-      );
+      throw new Error("OpenAI API key is required. Set OPENAI_API_KEY or config.apiKey.");
     }
     getLogger().debug({ apiKey: maskApiKey(apiKey) }, "OpenAiProvider: initialised");
     this._client = new OpenAI({ apiKey });
@@ -102,13 +203,10 @@ export class OpenAiProvider extends BaseProvider {
   // Text generation
   // -------------------------------------------------------------------------
 
-  override async generateText(
-    prompt: string,
-    options?: ProviderCallOptions,
-  ): Promise<TextResult> {
+  override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.assertCapability("text");
-    const model  = this.config.model ?? DEFAULT_TEXT_MODEL;
-    const start  = Date.now();
+    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const start = Date.now();
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
@@ -118,17 +216,17 @@ export class OpenAiProvider extends BaseProvider {
       const response = await this._client.chat.completions.create({
         model,
         messages,
-        temperature:  options?.temperature ?? this.config.temperature,
+        temperature: options?.temperature ?? this.config.temperature,
         ...(options?.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
       });
 
-      const choice   = response.choices[0];
-      const content  = choice?.message.content ?? "";
-      const finish   = choice?.finish_reason ?? "stop";
+      const choice = response.choices[0];
+      const content = choice?.message.content ?? "";
+      const finish = choice?.finish_reason ?? "stop";
       const usage: TokenUsage = {
-        promptTokens:     response.usage?.prompt_tokens     ?? 0,
+        promptTokens: response.usage?.prompt_tokens ?? 0,
         completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens:      response.usage?.total_tokens      ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
       };
       return {
         modality: "text",
@@ -149,10 +247,7 @@ export class OpenAiProvider extends BaseProvider {
   // Streaming text
   // -------------------------------------------------------------------------
 
-  override async *streamText(
-    prompt: string,
-    options?: ProviderCallOptions,
-  ): AsyncIterable<string> {
+  override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
     const model = this.config.model ?? DEFAULT_TEXT_MODEL;
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
@@ -187,32 +282,43 @@ export class OpenAiProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<ImageResult> {
     this.assertCapability("image");
-    void options;
     const model = resolveImageModel(this.config.model);
     const start = Date.now();
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
+    // Choose size enum list based on the resolved model.
+    const sizeList = model === "gpt-image-1" ? GPT_IMAGE1_SIZES : DALLE3_SIZES;
+    const { sizeEnum, width, height } = resolveImageSize(model, options, sizeList);
+
     try {
+      const size = sizeEnum as
+        | "1024x1024"
+        | "1792x1024"
+        | "1024x1792"
+        | "1536x1024"
+        | "1024x1536"
+        | "256x256"
+        | "512x512"
+        | "auto";
       const response = await this._client.images.generate({
         model,
         prompt,
         n: 1,
-        size: "1024x1024",
+        size,
       });
 
       const imageData = response.data?.[0];
       // Newer models (gpt-image-1) return b64_json; dall-e-3 returns url by default.
       const data: string = imageData?.url ?? imageData?.b64_json ?? "";
-      const mimeType = imageData?.b64_json ? "image/png" : "image/png";
 
       return {
         modality: "image",
         provider: "openai",
         model,
         data,
-        mimeType,
-        width: 1024,
-        height: 1024,
+        mimeType: "image/png",
+        width,
+        height,
         usage: zeroUsage,
         cost: calculateCost(model, zeroUsage),
         latencyMs: Date.now() - start,
@@ -251,7 +357,8 @@ export class OpenAiProvider extends BaseProvider {
       // "verbose_json".
       const raw = response as unknown as { text: string; language?: string; duration?: number };
       const durationSeconds = typeof raw.duration === "number" ? raw.duration : undefined;
-      const language: string | undefined = typeof raw.language === "string" ? raw.language : undefined;
+      const language: string | undefined =
+        typeof raw.language === "string" ? raw.language : undefined;
 
       return {
         modality: "audio",
@@ -347,9 +454,9 @@ export class OpenAiProvider extends BaseProvider {
       const data = schema.parse(parsed);
 
       const usage: TokenUsage = {
-        promptTokens:     response.usage?.prompt_tokens     ?? 0,
+        promptTokens: response.usage?.prompt_tokens ?? 0,
         completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens:      response.usage?.total_tokens      ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
       };
 
       return {
@@ -388,4 +495,3 @@ export class OpenAiProvider extends BaseProvider {
     return new ProviderError("openai", msg);
   }
 }
-

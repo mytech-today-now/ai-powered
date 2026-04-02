@@ -53,8 +53,7 @@ const MOCK_TTS_CHARS = 120;
  * Simulated per-video generation delay (ms) so the batch UI feels realistic.
  * Automatically set to 0 inside Vitest / test environments to keep CI fast.
  */
-const MOCK_VIDEO_DELAY_MS =
-  process.env["VITEST"] || process.env["NODE_ENV"] === "test" ? 0 : 1800;
+const MOCK_VIDEO_DELAY_MS = process.env["VITEST"] || process.env["NODE_ENV"] === "test" ? 0 : 1800;
 
 // ---------------------------------------------------------------------------
 // Schema-aware mock value generator
@@ -71,19 +70,19 @@ function generateMockValue<T>(schema: z.ZodType<T>): T {
   // Unwrap optional/nullable/default wrappers first.
   if (schema instanceof z.ZodOptional) return undefined as T;
   if (schema instanceof z.ZodNullable) return null as T;
-  if (schema instanceof z.ZodDefault)  return (schema._def as { defaultValue(): T }).defaultValue();
+  if (schema instanceof z.ZodDefault) return (schema._def as { defaultValue(): T }).defaultValue();
 
-  if (schema instanceof z.ZodString)  return "mock-string" as T;
-  if (schema instanceof z.ZodNumber)  return 0 as T;
+  if (schema instanceof z.ZodString) return "mock-string" as T;
+  if (schema instanceof z.ZodNumber) return 0 as T;
   if (schema instanceof z.ZodBoolean) return false as T;
-  if (schema instanceof z.ZodBigInt)  return BigInt(0) as T;
-  if (schema instanceof z.ZodDate)    return new Date(0) as T;
+  if (schema instanceof z.ZodBigInt) return BigInt(0) as T;
+  if (schema instanceof z.ZodDate) return new Date(0) as T;
   if (schema instanceof z.ZodLiteral) return (schema._def as { value: T }).value;
-  if (schema instanceof z.ZodArray)   return [] as T;
-  if (schema instanceof z.ZodTuple)   return [] as T;
-  if (schema instanceof z.ZodRecord)  return {} as T;
-  if (schema instanceof z.ZodMap)     return new Map() as T;
-  if (schema instanceof z.ZodSet)     return new Set() as T;
+  if (schema instanceof z.ZodArray) return [] as T;
+  if (schema instanceof z.ZodTuple) return [] as T;
+  if (schema instanceof z.ZodRecord) return {} as T;
+  if (schema instanceof z.ZodMap) return new Map() as T;
+  if (schema instanceof z.ZodSet) return new Set() as T;
 
   if (schema instanceof z.ZodEnum) {
     const opts = (schema._def as { values: T[] }).values;
@@ -101,7 +100,9 @@ function generateMockValue<T>(schema: z.ZodType<T>): T {
   }
 
   if (schema instanceof z.ZodDiscriminatedUnion) {
-    const options = [...(schema._def as { optionsMap: Map<unknown, z.ZodTypeAny> }).optionsMap.values()];
+    const options = [
+      ...(schema._def as { optionsMap: Map<unknown, z.ZodTypeAny> }).optionsMap.values(),
+    ];
     return generateMockValue(options[0]!) as T;
   }
 
@@ -116,7 +117,10 @@ function generateMockValue<T>(schema: z.ZodType<T>): T {
 
   if (schema instanceof z.ZodIntersection) {
     const def = schema._def as { left: z.ZodTypeAny; right: z.ZodTypeAny };
-    return { ...generateMockValue(def.left) as object, ...generateMockValue(def.right) as object } as T;
+    return {
+      ...(generateMockValue(def.left) as object),
+      ...(generateMockValue(def.right) as object),
+    } as T;
   }
 
   // Fallback: return an empty object for unknown types.
@@ -152,23 +156,32 @@ export class MockProvider extends BaseProvider {
     };
   }
 
-  override async generateImage(prompt: string, options?: ProviderCallOptions): Promise<ImageResult> {
+  override async generateImage(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<ImageResult> {
     this.assertCapability("image");
     void prompt;
-    void options;
+    const width = options?.width ?? 1024;
+    const height = options?.height ?? 1024;
     return {
       modality: "image",
       provider: "mock",
       model: "mock-image-v1",
       data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII=",
       mimeType: "image/png",
+      width,
+      height,
       usage: MOCK_ZERO_USAGE,
       cost: calculateCost("mock-image-v1", MOCK_ZERO_USAGE),
       latencyMs: 1,
     };
   }
 
-  override async transcribeAudio(buffer: Buffer, options?: ProviderCallOptions): Promise<TranscriptionResult> {
+  override async transcribeAudio(
+    buffer: Buffer,
+    options?: ProviderCallOptions,
+  ): Promise<TranscriptionResult> {
     this.assertCapability("audio");
     void buffer;
     void options;
@@ -185,7 +198,10 @@ export class MockProvider extends BaseProvider {
     };
   }
 
-  override async synthesizeSpeech(text: string, options?: ProviderCallOptions): Promise<AudioResult> {
+  override async synthesizeSpeech(
+    text: string,
+    options?: ProviderCallOptions,
+  ): Promise<AudioResult> {
     this.assertCapability("audio");
     void options;
     const charCount = text.length || MOCK_TTS_CHARS;
@@ -206,9 +222,13 @@ export class MockProvider extends BaseProvider {
     };
   }
 
-  override async generateVideo(prompt: string, options?: ProviderCallOptions): Promise<VideoResult> {
+  override async generateVideo(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<VideoResult> {
     this.assertCapability("video");
-    void options;
+    void prompt;
+    const aspectRatio = options?.aspectRatio ?? "1:1";
     const t0 = Date.now();
     if (MOCK_VIDEO_DELAY_MS > 0) {
       await new Promise<void>((r) => setTimeout(r, MOCK_VIDEO_DELAY_MS));
@@ -220,6 +240,7 @@ export class MockProvider extends BaseProvider {
       // 4-byte stub — the web client replaces this with a Canvas-generated preview
       data: "data:video/mp4;base64,AAAAAA==",
       mimeType: "video/mp4",
+      aspectRatio,
       usage: MOCK_ZERO_USAGE,
       cost: calculateCost("mock-video-v1", MOCK_ZERO_USAGE),
       latencyMs: Date.now() - t0,
@@ -259,13 +280,12 @@ export class MockProvider extends BaseProvider {
 
   override async listModels(_modality?: Modality): Promise<ModelDescriptor[]> {
     return [
-      { id: "mock-text-v1",       name: "Mock Text v1",       capabilities: ["text", "structured"] },
-      { id: "mock-image-v1",      name: "Mock Image v1",      capabilities: ["image"]              },
-      { id: "mock-whisper-v1",    name: "Mock Whisper v1",    capabilities: ["audio"]              },
-      { id: "mock-tts-v1",        name: "Mock TTS v1",        capabilities: ["audio"]              },
-      { id: "mock-video-v1",      name: "Mock Video v1",      capabilities: ["video"]              },
-      { id: "mock-structured-v1", name: "Mock Structured v1", capabilities: ["structured"]         },
+      { id: "mock-text-v1", name: "Mock Text v1", capabilities: ["text", "structured"] },
+      { id: "mock-image-v1", name: "Mock Image v1", capabilities: ["image"] },
+      { id: "mock-whisper-v1", name: "Mock Whisper v1", capabilities: ["audio"] },
+      { id: "mock-tts-v1", name: "Mock TTS v1", capabilities: ["audio"] },
+      { id: "mock-video-v1", name: "Mock Video v1", capabilities: ["video"] },
+      { id: "mock-structured-v1", name: "Mock Structured v1", capabilities: ["structured"] },
     ];
   }
 }
-

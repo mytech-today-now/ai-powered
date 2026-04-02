@@ -9,14 +9,14 @@
  *
  * Lifecycle flags handled on the root program:
  *   --status   print resolved config and provider health
- *   --init     scaffold .ai-powered/ directory; run wizard if no config exists
  *   --update   check npm for a newer version, update, migrate config
  *   --uninstall remove local .ai-powered/ directory and hooks
- *   --install  alias for --init
+ *   --install  alias for the `init` subcommand
  *   --log      print the tail of the log file
  *   --debug    enable verbose debug output globally
  *
- * Core commands are registered below and delegate to getAiClient().
+ * Subcommands include `init` (scaffold .ai-powered/ config directory) and
+ * core commands registered below that delegate to getAiClient().
  */
 
 import { Command, Option } from "commander";
@@ -28,6 +28,7 @@ import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { loadConfig, writeConfig, CURRENT_VERSION } from "../core.js";
 import { getAiClient } from "../index.js";
+import type { ProviderCallOptions } from "../index.js";
 import { maskApiKey, estimateCost, estimateTokens, initLogger } from "../utils.js";
 import { ValidationError } from "../types.js";
 import { listTemplates, getTemplate, renderTemplate } from "../templates/index.js";
@@ -37,9 +38,9 @@ import { startServer } from "../server/index.js";
 // ---------------------------------------------------------------------------
 // Exit-code constants
 // ---------------------------------------------------------------------------
-const EXIT_OK    = 0;
+const EXIT_OK = 0;
 const EXIT_ERROR = 1;
-const EXIT_FAIL  = 2; // validation / health-check failure
+const EXIT_FAIL = 2; // validation / health-check failure
 
 // Honour NO_COLOR env var (https://no-color.org/)
 if (process.env["NO_COLOR"]) process.env["FORCE_COLOR"] = "0";
@@ -50,24 +51,34 @@ if (process.env["NO_COLOR"]) process.env["FORCE_COLOR"] = "0";
 // ---------------------------------------------------------------------------
 function addGlobalFlags(cmd: Command): Command {
   return cmd
-    .addOption(new Option("--provider <name>",    "AI provider to use"))
-    .addOption(new Option("--model <id>",          "Model identifier"))
-    .addOption(new Option("--api-key <key>",       "API key (overrides env var)"))
-    .addOption(new Option("--temperature <n>",     "Sampling temperature (0-2)").argParser((v) => parseFloat(v)))
-    .addOption(new Option("--max-tokens <n>",      "Maximum response tokens").argParser((v) => parseInt(v, 10)))
-    .addOption(new Option("--json",                "Emit JSON output on stdout"))
-    .addOption(new Option("--modality <m>",        "AI modality (text|image|audio|video|structured)"))
-    .addOption(new Option("--stream",              "Enable streaming output"))
-    .addOption(new Option("--profile <name>",      "Named config profile"))
-    .addOption(new Option("--mock",                "Use mock provider (no API calls)"))
-    .addOption(new Option("--dry-run",             "Validate and estimate cost; skip API call"))
-    .addOption(new Option("--quiet",               "Suppress decorative output; raw result only"))
-    .addOption(new Option("--no-color",            "Disable ANSI colour codes"))
-    .addOption(new Option("--no-fallback",         "Disable provider failover loop"))
-    .addOption(new Option("--budget-session <n>",  "Session spend ceiling in USD").argParser((v) => parseFloat(v)))
-    .addOption(new Option("--warn-budget <n>",     "Warn-budget fraction (0-1)").argParser((v) => parseFloat(v)))
-    .addOption(new Option("--log",                 "Print log file tail"))
-    .addOption(new Option("--debug",               "Enable debug-level logging"));
+    .addOption(new Option("--provider <name>", "AI provider to use"))
+    .addOption(new Option("--model <id>", "Model identifier"))
+    .addOption(new Option("--api-key <key>", "API key (overrides env var)"))
+    .addOption(
+      new Option("--temperature <n>", "Sampling temperature (0-2)").argParser((v) => parseFloat(v)),
+    )
+    .addOption(
+      new Option("--max-tokens <n>", "Maximum response tokens").argParser((v) => parseInt(v, 10)),
+    )
+    .addOption(new Option("--json", "Emit JSON output on stdout"))
+    .addOption(new Option("--modality <m>", "AI modality (text|image|audio|video|structured)"))
+    .addOption(new Option("--stream", "Enable streaming output"))
+    .addOption(new Option("--profile <name>", "Named config profile"))
+    .addOption(new Option("--mock", "Use mock provider (no API calls)"))
+    .addOption(new Option("--dry-run", "Validate and estimate cost; skip API call"))
+    .addOption(new Option("--quiet", "Suppress decorative output; raw result only"))
+    .addOption(new Option("--no-color", "Disable ANSI colour codes"))
+    .addOption(new Option("--no-fallback", "Disable provider failover loop"))
+    .addOption(
+      new Option("--budget-session <n>", "Session spend ceiling in USD").argParser((v) =>
+        parseFloat(v),
+      ),
+    )
+    .addOption(
+      new Option("--warn-budget <n>", "Warn-budget fraction (0-1)").argParser((v) => parseFloat(v)),
+    )
+    .addOption(new Option("--log", "Print log file tail"))
+    .addOption(new Option("--debug", "Enable debug-level logging"));
 }
 
 // ---------------------------------------------------------------------------
@@ -78,10 +89,9 @@ const program = new Command()
   .description("Unified multi-modal AI CLI")
   .version(CURRENT_VERSION, "-v, --version", "Print version and exit")
   .helpOption("-h, --help", "Show help")
-  .addOption(new Option("--status",    "Print resolved config and provider health"))
-  .addOption(new Option("--init",      "Scaffold .ai-powered/ config directory"))
-  .addOption(new Option("--install",   "Alias for --init"))
-  .addOption(new Option("--update",    "Check for a newer npm version and update"))
+  .addOption(new Option("--status", "Print resolved config and provider health"))
+  .addOption(new Option("--install", "Alias for the init subcommand"))
+  .addOption(new Option("--update", "Check for a newer npm version and update"))
   .addOption(new Option("--uninstall", "Remove local .ai-powered/ directory and hooks"));
 
 // Attach global flags to root so subcommands can access them via optsWithGlobals().
@@ -97,12 +107,7 @@ const LOCAL_LOGS_DIR = path.join(process.cwd(), "logs");
 const LOG_FILE_PATH = path.join(LOCAL_LOGS_DIR, "ai-powered.jsonl");
 
 /** Sensitive files that must never be tracked by git. */
-const SENSITIVE_FILES = [
-  ".env",
-  ".env.local",
-  ".env.production",
-  ".ai-powered/config.json",
-];
+const SENSITIVE_FILES = [".env", ".env.local", ".env.production", ".ai-powered/config.json"];
 
 /**
  * Checks whether any sensitive credential files are currently tracked by git.
@@ -137,10 +142,9 @@ function handleStatus(): void {
   try {
     const config = loadConfig();
     const display = { ...config, apiKey: maskApiKey(config.apiKey ?? "") };
-    // eslint-disable-next-line no-console
+
     console.log(JSON.stringify(display, null, 2));
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error("Config error:", err instanceof Error ? err.message : String(err));
     process.exit(EXIT_FAIL);
   }
@@ -150,20 +154,20 @@ function handleInit(): void {
   // --- Scaffold .ai-powered/ config dir ---
   if (!fs.existsSync(LOCAL_CONFIG_DIR)) {
     fs.mkdirSync(LOCAL_CONFIG_DIR, { recursive: true });
-    // eslint-disable-next-line no-console
+
     console.log(`Created ${LOCAL_CONFIG_DIR}`);
   }
   if (!fs.existsSync(LOCAL_CONFIG_PATH)) {
     const scaffold = { version: CURRENT_VERSION, provider: "openai", modality: "text" };
     fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(scaffold, null, 2) + "\n", "utf-8");
-    // eslint-disable-next-line no-console
+
     console.log(`Created ${LOCAL_CONFIG_PATH}`);
   }
 
   // --- Scaffold logs/ directory ---
   if (!fs.existsSync(LOCAL_LOGS_DIR)) {
     fs.mkdirSync(LOCAL_LOGS_DIR, { recursive: true });
-    // eslint-disable-next-line no-console
+
     console.log(`Created ${LOCAL_LOGS_DIR}`);
   }
 
@@ -172,28 +176,28 @@ function handleInit(): void {
     const content = fs.readFileSync(GITIGNORE_PATH, "utf-8");
     const additions: string[] = [];
     if (!content.includes(".ai-powered/")) additions.push(".ai-powered/");
-    if (!content.includes("logs/"))        additions.push("logs/");
+    if (!content.includes("logs/")) additions.push("logs/");
     if (additions.length > 0) {
       fs.appendFileSync(
         GITIGNORE_PATH,
         `\n# ai-powered local config and logs\n${additions.join("\n")}\n`,
       );
-      // eslint-disable-next-line no-console
+
       console.log(`Added to .gitignore: ${additions.join(", ")}`);
     }
   }
 
-  // eslint-disable-next-line no-console
-  console.log("\nNext steps:\n  1. Edit .ai-powered/config.json\n  2. Run: ai-powered text \"Hello!\"");
+  console.log(
+    '\nNext steps:\n  1. Edit .ai-powered/config.json\n  2. Run: ai-powered text "Hello!"',
+  );
 }
 
 function handleUninstall(): void {
   if (fs.existsSync(LOCAL_CONFIG_DIR)) {
     fs.rmSync(LOCAL_CONFIG_DIR, { recursive: true, force: true });
-    // eslint-disable-next-line no-console
+
     console.log(`Removed ${LOCAL_CONFIG_DIR}`);
   } else {
-    // eslint-disable-next-line no-console
     console.log("Nothing to uninstall.");
   }
 }
@@ -202,18 +206,16 @@ async function handleUpdate(): Promise<void> {
   const { execSync } = await import("node:child_process");
   try {
     const latest = execSync("npm show ai-powered version", { encoding: "utf-8" }).trim();
-    // eslint-disable-next-line no-console
+
     console.log(`Current: ${CURRENT_VERSION}  Latest: ${latest}`);
     if (latest !== CURRENT_VERSION) {
       execSync("npm install -g ai-powered@latest", { stdio: "inherit" });
-      // eslint-disable-next-line no-console
+
       console.log("Updated successfully. Run 'ai-powered --status' to verify.");
     } else {
-      // eslint-disable-next-line no-console
       console.log("Already up to date.");
     }
   } catch {
-    // eslint-disable-next-line no-console
     console.error("Update failed. Ensure npm is in PATH and you have network access.");
     process.exit(EXIT_ERROR);
   }
@@ -225,17 +227,17 @@ async function handleUpdate(): Promise<void> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toConfigOverrides(opts: Record<string, any>): Record<string, unknown> {
   const overrides: Record<string, unknown> = {};
-  if (opts["provider"])       overrides["provider"]       = opts["provider"];
-  if (opts["model"])          overrides["model"]           = opts["model"];
-  if (opts["apiKey"])         overrides["apiKey"]          = opts["apiKey"];
+  if (opts["provider"]) overrides["provider"] = opts["provider"];
+  if (opts["model"]) overrides["model"] = opts["model"];
+  if (opts["apiKey"]) overrides["apiKey"] = opts["apiKey"];
   if (opts["temperature"] !== undefined) overrides["temperature"] = opts["temperature"];
-  if (opts["maxTokens"] !== undefined)   overrides["maxTokens"]   = opts["maxTokens"];
-  if (opts["mock"])           overrides["mock"]            = true;
-  if (opts["fallback"] === false) overrides["fallback"]    = false;
+  if (opts["maxTokens"] !== undefined) overrides["maxTokens"] = opts["maxTokens"];
+  if (opts["mock"]) overrides["mock"] = true;
+  if (opts["fallback"] === false) overrides["fallback"] = false;
   if (opts["budgetSession"] !== undefined) overrides["budgetSession"] = opts["budgetSession"];
-  if (opts["warnBudget"] !== undefined)    overrides["warnBudget"]   = opts["warnBudget"];
-  if (opts["debug"])          overrides["debug"]           = true;
-  if (opts["profile"])        overrides["profile"]         = opts["profile"];
+  if (opts["warnBudget"] !== undefined) overrides["warnBudget"] = opts["warnBudget"];
+  if (opts["debug"]) overrides["debug"] = true;
+  if (opts["profile"]) overrides["profile"] = opts["profile"];
   return overrides;
 }
 
@@ -305,26 +307,29 @@ function collectKv(val: string, acc: Record<string, string>): Record<string, str
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function jsonSchemaToZod(schema: Record<string, any>): z.ZodTypeAny {
   if (schema["enum"]) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const vals = schema["enum"] as [string, ...string[]];
     return z.enum(vals);
   }
   const type: string = Array.isArray(schema["type"])
-    ? (schema["type"] as string[]).find((t) => t !== "null") ?? "string"
-    : (schema["type"] as string | undefined) ?? "string";
+    ? ((schema["type"] as string[]).find((t) => t !== "null") ?? "string")
+    : ((schema["type"] as string | undefined) ?? "string");
 
   switch (type) {
-    case "string":  return z.string();
-    case "number":  return z.number();
-    case "integer": return z.number().int();
-    case "boolean": return z.boolean();
+    case "string":
+      return z.string();
+    case "number":
+      return z.number();
+    case "integer":
+      return z.number().int();
+    case "boolean":
+      return z.boolean();
     case "array": {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const items = schema["items"] ? jsonSchemaToZod(schema["items"] as Record<string, unknown>) : z.unknown();
+      const items = schema["items"]
+        ? jsonSchemaToZod(schema["items"] as Record<string, unknown>)
+        : z.unknown();
       return z.array(items);
     }
     case "object": {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       const props = schema["properties"] as Record<string, Record<string, unknown>> | undefined;
       if (!props) return z.record(z.unknown());
       const shape: Record<string, z.ZodTypeAny> = {};
@@ -335,7 +340,8 @@ function jsonSchemaToZod(schema: Record<string, any>): z.ZodTypeAny {
       }
       return z.object(shape);
     }
-    default: return z.unknown();
+    default:
+      return z.unknown();
   }
 }
 
@@ -343,16 +349,17 @@ function jsonSchemaToZod(schema: Record<string, any>): z.ZodTypeAny {
 async function loadSchema(schemaArg: string): Promise<z.ZodTypeAny> {
   // Inline JSON string
   if (schemaArg.trimStart().startsWith("{") || schemaArg.trimStart().startsWith("[")) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return jsonSchemaToZod(JSON.parse(schemaArg) as Record<string, unknown>);
   }
   // File
   const ext = path.extname(schemaArg).toLowerCase();
   if (ext === ".ts" || ext === ".js" || ext === ".mjs") {
-    const mod = await import(path.resolve(schemaArg)) as Record<string, unknown>;
+    const mod = (await import(path.resolve(schemaArg))) as Record<string, unknown>;
     const s = (mod["default"] ?? mod["schema"]) as z.ZodTypeAny | undefined;
     if (!s || typeof s.parse !== "function") {
-      throw new Error(`Schema file ${schemaArg} must export a Zod schema as default or named 'schema'`);
+      throw new Error(
+        `Schema file ${schemaArg} must export a Zod schema as default or named 'schema'`,
+      );
     }
     return s;
   }
@@ -368,7 +375,11 @@ const textCmd = new Command("text")
   .description("Generate text from a prompt")
   .argument("[prompt]", "Prompt text (reads stdin if omitted)")
   .addOption(new Option("--template <name>", "Named prompt template to use"))
-  .addOption(new Option("--var <key=value>", "Template variable (repeatable)").argParser(collectKv).default({}))
+  .addOption(
+    new Option("--var <key=value>", "Template variable (repeatable)")
+      .argParser(collectKv)
+      .default({}),
+  )
   .addOption(new Option("--session <id>", "Session ID for multi-turn conversation"))
   .action(async (promptArg: string | undefined, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
@@ -382,24 +393,29 @@ const textCmd = new Command("text")
       const tpl = getTemplate(templateName, (config.templateDirs ?? []) as string[]);
       prompt = renderTemplate(tpl, vars);
     } else {
-      prompt = promptArg ?? await readStdin();
+      prompt = promptArg ?? (await readStdin());
     }
-    if (!prompt) { process.stderr.write("Error: prompt required\n"); process.exit(EXIT_ERROR); }
+    if (!prompt) {
+      process.stderr.write("Error: prompt required\n");
+      process.exit(EXIT_ERROR);
+    }
 
     if (opts["dryRun"]) {
       const dryConfig = loadConfig(toConfigOverrides(opts) as never);
-      const dryModel  = (dryConfig.model as string | undefined) ?? "gpt-4o";
+      const dryModel = (dryConfig.model as string | undefined) ?? "gpt-4o";
       const estTokens = estimateTokens(prompt);
-      const estCost   = estimateCost(dryModel, prompt);
-      // eslint-disable-next-line no-console
-      console.log(JSON.stringify({
-        dryRun: true,
-        prompt,
-        model: dryModel,
-        estimatedTokens: estTokens,
-        estimatedCostUsd: estCost.totalUsd,
-        isEstimate: true,
-      }));
+      const estCost = estimateCost(dryModel, prompt);
+
+      console.log(
+        JSON.stringify({
+          dryRun: true,
+          prompt,
+          model: dryModel,
+          estimatedTokens: estTokens,
+          estimatedCostUsd: estCost.totalUsd,
+          isEstimate: true,
+        }),
+      );
       return;
     }
 
@@ -422,8 +438,15 @@ const textCmd = new Command("text")
         saveSession(sessionId, history);
       }
       if (opts["json"]) {
-        // eslint-disable-next-line no-console
-        console.log(JSON.stringify({ content: result.content, usage: result.usage, model: result.model, cost: result.cost, modality: result.modality }));
+        console.log(
+          JSON.stringify({
+            content: result.content,
+            usage: result.usage,
+            model: result.model,
+            cost: result.cost,
+            modality: result.modality,
+          }),
+        );
       } else {
         process.stdout.write(result.content + "\n");
       }
@@ -437,9 +460,19 @@ addGlobalFlags(textCmd);
 const imageCmd = new Command("image")
   .description("Generate an image from a prompt")
   .argument("[prompt]", "Prompt text (reads stdin if omitted)")
-  .addOption(new Option("--output <file>",    "Write binary output to file"))
-  .addOption(new Option("--template <name>",  "Named prompt template to use"))
-  .addOption(new Option("--var <key=value>",  "Template variable (repeatable)").argParser(collectKv).default({}))
+  .addOption(new Option("--output <file>", "Write binary output to file"))
+  .addOption(new Option("--template <name>", "Named prompt template to use"))
+  .addOption(
+    new Option("--var <key=value>", "Template variable (repeatable)")
+      .argParser(collectKv)
+      .default({}),
+  )
+  .addOption(new Option("--aspect-ratio <ratio>", "Desired aspect ratio (e.g. 16:9, 1:1)"))
+  .addOption(new Option("--width <px>", "Output width in pixels").argParser((v) => parseInt(v, 10)))
+  .addOption(
+    new Option("--height <px>", "Output height in pixels").argParser((v) => parseInt(v, 10)),
+  )
+  .addOption(new Option("--resolution <preset>", "Resolution preset (e.g. 1k, 2k, 720p, 1080p)"))
   .action(async (promptArg: string | undefined, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const templateName = opts["template"] as string | undefined;
@@ -451,21 +484,39 @@ const imageCmd = new Command("image")
       const tpl = getTemplate(templateName, (config.templateDirs ?? []) as string[]);
       prompt = renderTemplate(tpl, vars);
     } else {
-      prompt = promptArg ?? await readStdin();
+      prompt = promptArg ?? (await readStdin());
     }
-    if (!prompt) { process.stderr.write("Error: prompt required\n"); process.exit(EXIT_ERROR); }
+    if (!prompt) {
+      process.stderr.write("Error: prompt required\n");
+      process.exit(EXIT_ERROR);
+    }
+
+    // Build per-call generation options from flags.
+    const imageCallOpts: ProviderCallOptions = {};
+    const ar = opts["aspectRatio"] as string | undefined;
+    const w = opts["width"] as number | undefined;
+    const h = opts["height"] as number | undefined;
+    const res = opts["resolution"] as string | undefined;
+    if (ar) imageCallOpts.aspectRatio = ar;
+    if (w !== undefined) imageCallOpts.width = w;
+    if (h !== undefined) imageCallOpts.height = h;
+    if (res) imageCallOpts.resolution = res;
+
     const client = await getAiClient("cli-image", toConfigOverrides(opts) as never);
-    const result = await client.generateImage(prompt);
+    const result = await client.generateImage(prompt, imageCallOpts);
     const outFile = opts["output"] as string | undefined;
     if (outFile) {
       const data = Buffer.from(result.data.replace(/^data:[^,]+,/, ""), "base64");
       fs.writeFileSync(outFile, data);
       process.stderr.write(`Saved to ${outFile}\n`);
     } else if (opts["json"]) {
-      // eslint-disable-next-line no-console
-      console.log(JSON.stringify({ data: result.data, mimeType: result.mimeType, cost: result.cost }));
+      console.log(
+        JSON.stringify({ data: result.data, mimeType: result.mimeType, cost: result.cost }),
+      );
     } else {
-      process.stderr.write("Warning: use --output <file> to save the image or --json for base64.\n");
+      process.stderr.write(
+        "Warning: use --output <file> to save the image or --json for base64.\n",
+      );
     }
   });
 addGlobalFlags(imageCmd);
@@ -484,8 +535,9 @@ const transcribeCmd = new Command("transcribe")
     const client = await getAiClient("cli-transcribe", toConfigOverrides(opts) as never);
     const result = await client.transcribeAudio(buffer);
     if (opts["json"]) {
-      // eslint-disable-next-line no-console
-      console.log(JSON.stringify({ text: result.text, language: result.language, cost: result.cost }));
+      console.log(
+        JSON.stringify({ text: result.text, language: result.language, cost: result.cost }),
+      );
     } else {
       process.stdout.write(result.text + "\n");
     }
@@ -495,9 +547,13 @@ addGlobalFlags(transcribeCmd);
 const speakCmd = new Command("speak")
   .description("Synthesize speech from text")
   .argument("[text]", "Text to synthesize (reads stdin if omitted)")
-  .addOption(new Option("--output <file>",   "Write audio to file"))
+  .addOption(new Option("--output <file>", "Write audio to file"))
   .addOption(new Option("--template <name>", "Named prompt template to use"))
-  .addOption(new Option("--var <key=value>", "Template variable (repeatable)").argParser(collectKv).default({}))
+  .addOption(
+    new Option("--var <key=value>", "Template variable (repeatable)")
+      .argParser(collectKv)
+      .default({}),
+  )
   .action(async (textArg: string | undefined, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const templateName = opts["template"] as string | undefined;
@@ -509,9 +565,12 @@ const speakCmd = new Command("speak")
       const tpl = getTemplate(templateName, (config.templateDirs ?? []) as string[]);
       text = renderTemplate(tpl, vars);
     } else {
-      text = textArg ?? await readStdin();
+      text = textArg ?? (await readStdin());
     }
-    if (!text) { process.stderr.write("Error: text required\n"); process.exit(EXIT_ERROR); }
+    if (!text) {
+      process.stderr.write("Error: text required\n");
+      process.exit(EXIT_ERROR);
+    }
     const client = await getAiClient("cli-speak", toConfigOverrides(opts) as never);
     const result = await client.synthesizeSpeech(text);
     const outFile = opts["output"] as string | undefined;
@@ -519,8 +578,13 @@ const speakCmd = new Command("speak")
       fs.writeFileSync(outFile, result.audio);
       process.stderr.write(`Saved to ${outFile}\n`);
     } else if (opts["json"]) {
-      // eslint-disable-next-line no-console
-      console.log(JSON.stringify({ audio: result.audio.toString("base64"), mimeType: result.mimeType, cost: result.cost }));
+      console.log(
+        JSON.stringify({
+          audio: result.audio.toString("base64"),
+          mimeType: result.mimeType,
+          cost: result.cost,
+        }),
+      );
     } else {
       process.stderr.write("Warning: use --output <file> or --json to retrieve audio.\n");
     }
@@ -536,25 +600,47 @@ const videoCmd = new Command("video")
   .description("Generate a video from a prompt")
   .argument("[prompt]", "Prompt text (reads stdin if omitted)")
   .addOption(new Option("--output <file>", "Write video output to file"))
+  .addOption(new Option("--aspect-ratio <ratio>", "Desired aspect ratio (e.g. 16:9)"))
+  .addOption(new Option("--resolution <preset>", "Resolution preset (e.g. 720p, 1080p)"))
+  .addOption(
+    new Option("--duration <secs>", "Video duration in seconds").argParser((v) => parseInt(v, 10)),
+  )
+  .addOption(new Option("--fps <n>", "Frames per second").argParser((v) => parseInt(v, 10)))
+  .addOption(new Option("--quality <level>", "Quality hint: draft | standard | high"))
   .action(async (promptArg: string | undefined, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
-    const prompt = promptArg ?? await readStdin();
-    if (!prompt) { process.stderr.write("Error: prompt required\n"); process.exit(EXIT_ERROR); }
+    const prompt = promptArg ?? (await readStdin());
+    if (!prompt) {
+      process.stderr.write("Error: prompt required\n");
+      process.exit(EXIT_ERROR);
+    }
+
+    // Build per-call generation options from flags.
+    const videoCallOpts: ProviderCallOptions = {};
+    const ar = opts["aspectRatio"] as string | undefined;
+    const res = opts["resolution"] as string | undefined;
+    const dur = opts["duration"] as number | undefined;
+    const fps = opts["fps"] as number | undefined;
+    const quality = opts["quality"] as "draft" | "standard" | "high" | undefined;
+    if (ar) videoCallOpts.aspectRatio = ar;
+    if (res) videoCallOpts.resolution = res;
+    if (dur !== undefined) videoCallOpts.duration = dur;
+    if (fps !== undefined) videoCallOpts.fps = fps;
+    if (quality) videoCallOpts.quality = quality;
+
     const client = await getAiClient("cli-video", toConfigOverrides(opts) as never);
-    const result = await client.generateVideo(prompt);
+    const result = await client.generateVideo(prompt, videoCallOpts);
     const outFile = opts["output"] as string | undefined;
     if (outFile) {
-      const data = Buffer.from(
-        (result.data as string).replace(/^data:[^,]+,/, ""),
-        "base64",
-      );
+      const data = Buffer.from((result.data as string).replace(/^data:[^,]+,/, ""), "base64");
       fs.writeFileSync(outFile, data);
       process.stderr.write(`Saved to ${outFile}\n`);
     } else if (opts["json"]) {
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify(result));
     } else {
-      process.stderr.write("Warning: use --output <file> to save the video or --json for base64.\n");
+      process.stderr.write(
+        "Warning: use --output <file> to save the video or --json for base64.\n",
+      );
     }
   });
 addGlobalFlags(videoCmd);
@@ -566,9 +652,17 @@ const structuredCmd = new Command("structured")
   .description("Generate structured JSON output validated against a schema")
   .argument("[prompt]", "Prompt text (reads stdin if omitted)")
   .addOption(new Option("--schema <spec>", "JSON Schema file, Zod schema file, or inline JSON"))
-  .addOption(new Option("--max-retries <n>", "Max validation retries (default 2)").argParser((v) => parseInt(v, 10)).default(2))
+  .addOption(
+    new Option("--max-retries <n>", "Max validation retries (default 2)")
+      .argParser((v) => parseInt(v, 10))
+      .default(2),
+  )
   .addOption(new Option("--template <name>", "Named prompt template"))
-  .addOption(new Option("--var <key=value>", "Template variable (repeatable)").argParser(collectKv).default({}))
+  .addOption(
+    new Option("--var <key=value>", "Template variable (repeatable)")
+      .argParser(collectKv)
+      .default({}),
+  )
   .action(async (promptArg: string | undefined, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const schemaArg = opts["schema"] as string | undefined;
@@ -582,13 +676,14 @@ const structuredCmd = new Command("structured")
       const tpl = getTemplate(templateName, (config.templateDirs ?? []) as string[]);
       prompt = renderTemplate(tpl, vars);
     } else {
-      prompt = promptArg ?? await readStdin();
+      prompt = promptArg ?? (await readStdin());
     }
-    if (!prompt) { process.stderr.write("Error: prompt required\n"); process.exit(EXIT_ERROR); }
+    if (!prompt) {
+      process.stderr.write("Error: prompt required\n");
+      process.exit(EXIT_ERROR);
+    }
 
-    const schema: z.ZodTypeAny = schemaArg
-      ? await loadSchema(schemaArg)
-      : z.record(z.unknown());
+    const schema: z.ZodTypeAny = schemaArg ? await loadSchema(schemaArg) : z.record(z.unknown());
 
     const client = await getAiClient("cli-structured", toConfigOverrides(opts) as never);
 
@@ -598,7 +693,6 @@ const structuredCmd = new Command("structured")
       try {
         const result = await client.generateStructured(prompt, schema);
         if (opts["json"]) {
-          // eslint-disable-next-line no-console
           console.log(JSON.stringify(result));
         } else {
           process.stdout.write(JSON.stringify(result.data, null, 2) + "\n");
@@ -608,7 +702,9 @@ const structuredCmd = new Command("structured")
         lastRaw = err;
         lastIssues = err instanceof Error ? [err.message] : [String(err)];
         if (attempt < maxRetries) {
-          process.stderr.write(`Validation failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying…\n`);
+          process.stderr.write(
+            `Validation failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying…\n`,
+          );
         }
       }
     }
@@ -622,7 +718,9 @@ addGlobalFlags(structuredCmd);
 const wizardCmd = new Command("wizard")
   .alias("setup")
   .description("Interactive setup wizard for provider, API key, and model configuration")
-  .addOption(new Option("--template", "Create a custom prompt template instead of configuring a provider"))
+  .addOption(
+    new Option("--template", "Create a custom prompt template instead of configuring a provider"),
+  )
   .action(async (_opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     await runWizard(opts["template"] ? { templateMode: true } : {});
@@ -638,7 +736,6 @@ const listTemplatesCmd = new Command("list-templates")
     const config = loadConfig(toConfigOverrides(opts) as never);
     const templates = listTemplates((config.templateDirs ?? []) as string[]);
     if (opts["json"]) {
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify(templates, null, 2));
     } else {
       for (const t of templates) {
@@ -658,7 +755,7 @@ const listModelsCmd = new Command("list-models")
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const client = await getAiClient("cli-list-models", toConfigOverrides(opts) as never);
     const models = await client.listModels(modalityArg as never);
-    // eslint-disable-next-line no-console
+
     console.log(JSON.stringify(models, null, 2));
   });
 addGlobalFlags(listModelsCmd);
@@ -677,11 +774,9 @@ configCmd
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const config = loadConfig(toConfigOverrides(opts) as never) as Record<string, unknown>;
     const val = config[_key];
-    const display = _key.toLowerCase().includes("key") && typeof val === "string"
-      ? maskApiKey(val)
-      : val;
+    const display =
+      _key.toLowerCase().includes("key") && typeof val === "string" ? maskApiKey(val) : val;
     if (opts["json"]) {
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify({ [_key]: display }));
     } else {
       process.stdout.write(`${_key}: ${JSON.stringify(display)}\n`);
@@ -691,8 +786,7 @@ configCmd
 configCmd
   .command("set <key> <value>")
   .description("Set a config value in the global config file")
-  .action((_key: string, _value: string, _opts, cmd: Command) => {
-    const opts = cmd.optsWithGlobals<Record<string, unknown>>();
+  .action((_key: string, _value: string, _opts, _cmd: Command) => {
     writeConfig(GLOBAL_CONFIG_PATH_CLI, { [_key]: _value } as never);
     process.stdout.write(`Set ${_key}\n`);
   });
@@ -710,7 +804,6 @@ configCmd
       ]),
     );
     if (opts["json"]) {
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify(display, null, 2));
     } else {
       for (const [k, v] of Object.entries(display)) {
@@ -727,7 +820,10 @@ configCmd
       process.stderr.write("No global config file found.\n");
       return;
     }
-    const cfg = JSON.parse(fs.readFileSync(GLOBAL_CONFIG_PATH_CLI, "utf-8")) as Record<string, unknown>;
+    const cfg = JSON.parse(fs.readFileSync(GLOBAL_CONFIG_PATH_CLI, "utf-8")) as Record<
+      string,
+      unknown
+    >;
     delete cfg[_key];
     fs.writeFileSync(GLOBAL_CONFIG_PATH_CLI, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
     process.stdout.write(`Deleted ${_key}\n`);
@@ -738,8 +834,14 @@ configCmd
   .description("Reset the global config to defaults (prompts for confirmation)")
   .action(async () => {
     const { confirm } = await import("@inquirer/prompts");
-    const ok = await confirm({ message: "Reset global config? This cannot be undone.", default: false });
-    if (!ok) { process.stdout.write("Cancelled.\n"); return; }
+    const ok = await confirm({
+      message: "Reset global config? This cannot be undone.",
+      default: false,
+    });
+    if (!ok) {
+      process.stdout.write("Cancelled.\n");
+      return;
+    }
     const scaffold = { version: CURRENT_VERSION, provider: "openai", modality: "text" };
     if (!fs.existsSync(path.dirname(GLOBAL_CONFIG_PATH_CLI))) {
       fs.mkdirSync(path.dirname(GLOBAL_CONFIG_PATH_CLI), { recursive: true });
@@ -751,7 +853,9 @@ configCmd
 configCmd
   .command("path")
   .description("Print the path to the active global config file")
-  .action(() => { process.stdout.write(GLOBAL_CONFIG_PATH_CLI + "\n"); });
+  .action(() => {
+    process.stdout.write(GLOBAL_CONFIG_PATH_CLI + "\n");
+  });
 
 configCmd
   .command("validate")
@@ -795,14 +899,22 @@ const healthCmd = new Command("health-check")
       }
     } catch (err) {
       allPass = false;
-      checks.push({ check: "config", status: "fail", message: err instanceof Error ? err.message : String(err) });
+      checks.push({
+        check: "config",
+        status: "fail",
+        message: err instanceof Error ? err.message : String(err),
+      });
       checks.push({ check: "api-key", status: "fail", message: "skipped (config invalid)" });
     }
 
     // 3. Git-tracked credential files?
     const gitTracked = checkGitTrackedCredentials();
     if (gitTracked.length === 0) {
-      checks.push({ check: "git-credentials", status: "pass", message: "No sensitive files tracked by git" });
+      checks.push({
+        check: "git-credentials",
+        status: "pass",
+        message: "No sensitive files tracked by git",
+      });
     } else {
       allPass = false;
       checks.push({
@@ -813,7 +925,6 @@ const healthCmd = new Command("health-check")
     }
 
     if (opts["json"]) {
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify(checks, null, 2));
     } else {
       for (const c of checks) {
@@ -831,16 +942,26 @@ addGlobalFlags(healthCmd);
 const batchCmd = new Command("batch")
   .description("Process multiple prompts from a JSONL file")
   .argument("<mode>", "Modality mode (text|image|audio|video|structured)")
-  .addOption(new Option("--input <file>",       "Input JSONL file, or - to read from stdin"))
-  .addOption(new Option("--output <file>",      "Output JSONL file, or - to write to stdout"))
-  .addOption(new Option("--concurrency <n>",    "Max parallel requests (default 3)").argParser((v) => parseInt(v, 10)).default(3))
+  .addOption(new Option("--input <file>", "Input JSONL file, or - to read from stdin"))
+  .addOption(new Option("--output <file>", "Output JSONL file, or - to write to stdout"))
+  .addOption(
+    new Option("--concurrency <n>", "Max parallel requests (default 3)")
+      .argParser((v) => parseInt(v, 10))
+      .default(3),
+  )
   .action(async (mode: string, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
-    const inputFile  = opts["input"]  as string | undefined;
+    const inputFile = opts["input"] as string | undefined;
     const outputFile = opts["output"] as string | undefined;
     const concurrency = opts["concurrency"] as number;
-    if (!inputFile)  { process.stderr.write("Error: --input is required for batch\n");  process.exit(EXIT_ERROR); }
-    if (!outputFile) { process.stderr.write("Error: --output is required for batch\n"); process.exit(EXIT_ERROR); }
+    if (!inputFile) {
+      process.stderr.write("Error: --input is required for batch\n");
+      process.exit(EXIT_ERROR);
+    }
+    if (!outputFile) {
+      process.stderr.write("Error: --output is required for batch\n");
+      process.exit(EXIT_ERROR);
+    }
 
     // Read all rows — from stdin when --input is '-'
     const rows: Array<Record<string, unknown>> = [];
@@ -849,8 +970,11 @@ const batchCmd = new Command("batch")
       for (const line of raw.split("\n")) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        try { rows.push(JSON.parse(trimmed) as Record<string, unknown>); }
-        catch { process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`); }
+        try {
+          rows.push(JSON.parse(trimmed) as Record<string, unknown>);
+        } catch {
+          process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`);
+        }
       }
       if (rows.length === 0) {
         process.stderr.write("No batch items read from stdin\n");
@@ -861,8 +985,11 @@ const batchCmd = new Command("batch")
       for await (const line of rl) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        try { rows.push(JSON.parse(trimmed) as Record<string, unknown>); }
-        catch { process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`); }
+        try {
+          rows.push(JSON.parse(trimmed) as Record<string, unknown>);
+        } catch {
+          process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`);
+        }
       }
     }
 
@@ -872,8 +999,22 @@ const batchCmd = new Command("batch")
     // targetStream is the active NDJSON output destination used by writeLine().
     const targetStream: NodeJS.WritableStream = toStdout ? process.stdout : outStream!;
 
-    const batchConfig  = loadConfig(toConfigOverrides(opts) as never);
-    const batchModel   = (batchConfig.model as string | undefined) ?? "gpt-4o";
+    const batchConfig = loadConfig(toConfigOverrides(opts) as never);
+    // MODE_DEFAULT_MODELS: per-modality sensible defaults so --dry-run uses the
+    // correct pricing path for each mode (e.g. video → luma, not gpt-4o).
+    // Add a new entry here whenever a new modality is added to the batch command.
+    const MODE_DEFAULT_MODELS: Record<string, string> = {
+      video: "luma-ray-flash-2-720p",
+      image: "dall-e-3",
+      audio: "tts-1",
+      structured: "gpt-4o",
+      text: "gpt-4o",
+    };
+    const batchModel =
+      (opts["model"] as string | undefined) ??
+      (batchConfig.model as string | undefined) ??
+      MODE_DEFAULT_MODELS[mode] ??
+      "gpt-4o";
     const client = await getAiClient("cli-batch", toConfigOverrides(opts) as never);
     let idx = 0;
 
@@ -884,8 +1025,14 @@ const batchCmd = new Command("batch")
         let response: unknown;
         if (opts["dryRun"]) {
           const estTokens = estimateTokens(prompt);
-          const estCost   = estimateCost(batchModel, prompt);
-          response = { dryRun: true, model: batchModel, estimatedTokens: estTokens, estimatedCostUsd: estCost.totalUsd, isEstimate: true };
+          const estCost = estimateCost(batchModel, prompt);
+          response = {
+            dryRun: true,
+            model: batchModel,
+            estimatedTokens: estTokens,
+            estimatedCostUsd: estCost.totalUsd,
+            isEstimate: true,
+          };
         } else if (mode === "text") {
           const r = await client.generateText(prompt);
           response = { content: r.content, usage: r.usage, cost: r.cost };
@@ -893,7 +1040,19 @@ const batchCmd = new Command("batch")
           const r = await client.generateImage(prompt);
           response = { data: r.data, mimeType: r.mimeType, cost: r.cost };
         } else if (mode === "video") {
-          const r = await client.generateVideo(prompt);
+          const videoOpts: Record<string, unknown> = {};
+          if (row["duration"] !== undefined) videoOpts["duration"] = Number(row["duration"]);
+          if (row["fps"] !== undefined) videoOpts["fps"] = Number(row["fps"]);
+          if (row["aspectRatio"] !== undefined)
+            videoOpts["aspectRatio"] = String(row["aspectRatio"]);
+          if (row["resolution"] !== undefined) videoOpts["resolution"] = String(row["resolution"]);
+          if (row["quality"] !== undefined) videoOpts["quality"] = String(row["quality"]);
+          if (row["width"] !== undefined) videoOpts["width"] = Number(row["width"]);
+          if (row["height"] !== undefined) videoOpts["height"] = Number(row["height"]);
+          const r = await client.generateVideo(
+            prompt,
+            Object.keys(videoOpts).length ? (videoOpts as ProviderCallOptions) : undefined,
+          );
           response = r;
         } else {
           const r = await client.generateText(prompt);
@@ -901,7 +1060,10 @@ const batchCmd = new Command("batch")
         }
         writeLine({ prompt, response }, targetStream);
       } catch (err) {
-        writeLine({ prompt, error: err instanceof Error ? err.message : String(err) }, targetStream);
+        writeLine(
+          { prompt, error: err instanceof Error ? err.message : String(err) },
+          targetStream,
+        );
       }
     }
 
@@ -910,12 +1072,14 @@ const batchCmd = new Command("batch")
     for (const row of rows) {
       if (running.length >= concurrency) await running.shift();
       running.push(processRow(row));
-      if (!opts["quiet"] && !toStdout) process.stderr.write(`Processing row ${++idx}/${rows.length}\r`);
+      if (!opts["quiet"] && !toStdout)
+        process.stderr.write(`Processing row ${++idx}/${rows.length}\r`);
     }
     await Promise.all(running);
     if (!toStdout) {
       outStream?.end();
-      if (!opts["quiet"]) process.stderr.write(`\nBatch complete: ${rows.length} rows → ${outputFile}\n`);
+      if (!opts["quiet"])
+        process.stderr.write(`\nBatch complete: ${rows.length} rows → ${outputFile}\n`);
     }
   });
 addGlobalFlags(batchCmd);
@@ -925,36 +1089,49 @@ addGlobalFlags(batchCmd);
 // ---------------------------------------------------------------------------
 const serveCmd = new Command("serve")
   .description("Start a local HTTP proxy server for all ai-powered modalities")
-  .addOption(new Option("--port <n>",        "Port to listen on (default 3001)").argParser((v) => parseInt(v, 10)).default(3001))
-  .addOption(new Option("--host <addr>",     "Host to bind to (default 127.0.0.1)").default("127.0.0.1"))
-  .addOption(new Option("--cors-origin <o>", "Allowed CORS origin (default http://localhost:5173)").default("http://localhost:5173"))
-  .addOption(new Option("--rate-limit <n>",  "Max requests per minute (default 60)").argParser((v) => parseInt(v, 10)).default(60))
+  .addOption(
+    new Option("--port <n>", "Port to listen on (default 3001)")
+      .argParser((v) => parseInt(v, 10))
+      .default(3001),
+  )
+  .addOption(
+    new Option("--host <addr>", "Host to bind to (default 127.0.0.1)").default("127.0.0.1"),
+  )
+  .addOption(
+    new Option("--cors-origin <o>", "Allowed CORS origin (default http://localhost:5173)").default(
+      "http://localhost:5173",
+    ),
+  )
+  .addOption(
+    new Option("--rate-limit <n>", "Max requests per minute (default 60)")
+      .argParser((v) => parseInt(v, 10))
+      .default(60),
+  )
   .addOption(new Option("--log-file <path>", "Append structured JSONL logs to this file"))
   .action(async (_opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     // Resolve the log file path: prefer the explicit --log-file flag, but fall
     // back to the standard log path when the global --log flag is present.
     const logFile: string | undefined =
-      (opts["logFile"] as string | undefined) ??
-      (opts["log"] ? LOG_FILE_PATH : undefined);
+      (opts["logFile"] as string | undefined) ?? (opts["log"] ? LOG_FILE_PATH : undefined);
     if (logFile && !fs.existsSync(LOCAL_LOGS_DIR)) {
       fs.mkdirSync(LOCAL_LOGS_DIR, { recursive: true });
     }
     const profile = opts["profile"] as string | undefined;
     await startServer({
-      port:      opts["port"]      as number,
-      host:      opts["host"]      as string,
+      port: opts["port"] as number,
+      host: opts["host"] as string,
       corsOrigin: opts["corsOrigin"] as string,
       rateLimit: opts["rateLimit"] as number,
-      mock:      Boolean(opts["mock"]),
-      ...(profile  !== undefined ? { profile }  : {}),
-      debug:     Boolean(opts["debug"]),
-      ...(logFile  !== undefined ? { logFile }  : {}),
+      mock: Boolean(opts["mock"]),
+      ...(profile !== undefined ? { profile } : {}),
+      debug: Boolean(opts["debug"]),
+      ...(logFile !== undefined ? { logFile } : {}),
       configOverrides: toConfigOverrides(opts) as never,
     });
     // Keep process alive until SIGINT/SIGTERM.
     await new Promise<void>((resolve) => {
-      process.once("SIGINT",  resolve);
+      process.once("SIGINT", resolve);
       process.once("SIGTERM", resolve);
     });
   });
@@ -975,14 +1152,16 @@ sessionCmd
       return;
     }
     const files = fs.readdirSync(SESSION_DIR).filter((f) => f.endsWith(".json"));
-    if (files.length === 0) { process.stdout.write("No sessions found.\n"); return; }
+    if (files.length === 0) {
+      process.stdout.write("No sessions found.\n");
+      return;
+    }
     const sessions = files.map((f) => {
       const id = f.replace(/\.json$/, "");
       const stat = fs.statSync(path.join(SESSION_DIR, f));
       return { id, created: stat.birthtime.toISOString() };
     });
     if (opts["json"]) {
-      // eslint-disable-next-line no-console
       console.log(JSON.stringify(sessions, null, 2));
     } else {
       for (const s of sessions) process.stdout.write(`${s.id}  ${s.created}\n`);
@@ -1005,9 +1184,19 @@ sessionCmd
 addGlobalFlags(sessionCmd);
 
 // ---------------------------------------------------------------------------
+// init command
+// ---------------------------------------------------------------------------
+const initCmd = new Command("init")
+  .description("Scaffold .ai-powered/ config directory")
+  .action(() => {
+    handleInit();
+  });
+
+// ---------------------------------------------------------------------------
 // Register all commands on root program
 // ---------------------------------------------------------------------------
 program
+  .addCommand(initCmd)
   .addCommand(textCmd)
   .addCommand(imageCmd)
   .addCommand(audioCmd)
@@ -1030,7 +1219,7 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
 
   // --no-color: Commander parses "--no-color" as opts.color === false
   if (opts["color"] === false) {
-    process.env["NO_COLOR"]    = "1";
+    process.env["NO_COLOR"] = "1";
     process.env["FORCE_COLOR"] = "0";
   }
 
@@ -1054,14 +1243,28 @@ program.hook("preAction", (_thisCommand, actionCommand) => {
 // Root action: handle lifecycle flags when no subcommand is given
 // ---------------------------------------------------------------------------
 program.action(async (opts: Record<string, unknown>) => {
-  if (opts["status"])    { handleStatus(); return; }
-  if (opts["init"] || opts["install"]) { handleInit(); return; }
-  if (opts["uninstall"]) { handleUninstall(); return; }
-  if (opts["update"])    { await handleUpdate(); return; }
+  if (opts["status"]) {
+    handleStatus();
+    return;
+  }
+  if (opts["install"]) {
+    handleInit();
+    return;
+  }
+  if (opts["uninstall"]) {
+    handleUninstall();
+    return;
+  }
+  if (opts["update"]) {
+    await handleUpdate();
+    return;
+  }
   if (opts["log"]) {
     const logPath = path.join(os.homedir(), ".ai-powered", "ai-powered.log");
     if (fs.existsSync(logPath)) {
-      process.stdout.write(fs.readFileSync(logPath, "utf-8").split("\n").slice(-50).join("\n") + "\n");
+      process.stdout.write(
+        fs.readFileSync(logPath, "utf-8").split("\n").slice(-50).join("\n") + "\n",
+      );
     } else {
       process.stderr.write(`No log file found at ${logPath}\n`);
     }
@@ -1082,4 +1285,3 @@ program.parseAsync(process.argv).catch((err: unknown) => {
   process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(EXIT_ERROR);
 });
-

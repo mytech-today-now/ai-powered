@@ -7,6 +7,12 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <!-- ── Global Error Toast ───────────────────────────────────────── -->
+    <div id="global-error-toast" class="global-error-toast hidden" role="alert" aria-live="assertive">
+      <span id="global-error-msg" class="global-error-text"></span>
+      <button id="global-error-close" aria-label="Dismiss error">✕</button>
+    </div>
+
     <!-- ── App Header ─────────────────────────────────────────────── -->
     <header class="app-header">
       <div class="header-title">
@@ -104,6 +110,50 @@
           <label for="image-model-select">Model:</label>
           <select id="image-model-select"><option value="">Default</option></select>
         </div>
+
+        <!-- ── Image size controls ───────────────────────────────── -->
+        <div class="size-controls-row">
+          <label for="image-ratio-category">Category:</label>
+          <select id="image-ratio-category">
+            <option value="">Any</option>
+            <option value="square">Square</option>
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+            <option value="custom">Custom</option>
+          </select>
+
+          <label for="image-aspect-ratio">Aspect Ratio:</label>
+          <select id="image-aspect-ratio">
+            <option value="">Default</option>
+            <option value="1:1">1:1</option>
+            <option value="4:3">4:3</option>
+            <option value="3:4">3:4</option>
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="3:2">3:2</option>
+            <option value="2:3">2:3</option>
+          </select>
+
+          <label for="image-quality">Quality:</label>
+          <select id="image-quality">
+            <option value="">Default</option>
+            <option value="draft">Draft</option>
+            <option value="standard">Standard</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        <!-- Custom width/height (shown only when Category = Custom) -->
+        <div id="image-custom-dims" class="size-controls-row hidden">
+          <label for="image-width">Width (px):</label>
+          <input id="image-width" type="number" min="64" max="4096" step="64"
+                 placeholder="e.g. 1280" class="dim-input" />
+          <label for="image-height">Height (px):</label>
+          <input id="image-height" type="number" min="64" max="4096" step="64"
+                 placeholder="e.g. 720" class="dim-input" />
+          <span id="image-dims-hint" class="hint"></span>
+        </div>
+
         <div class="btn-row">
           <button id="btn-image-generate" class="btn-primary">Generate Image</button>
         </div>
@@ -158,69 +208,185 @@
           ℹ Video generation requires proxy mode (server-side rendering).
         </div>
 
-        <!-- ── Batch drop zone ────────────────────────────────────── -->
-        <div id="batch-drop-zone" class="batch-drop-zone" role="region" aria-label="Batch file drop zone">
-          <span class="drop-icon" aria-hidden="true">📂</span>
-          <span class="drop-text">
-            Drop a <strong>.json</strong>, <strong>.jsonl</strong>, or <strong>.md</strong> shot-list here
-          </span>
-          <span class="drop-or">— or —</span>
-          <label for="batch-file-input" class="file-label">Choose file</label>
-          <input id="batch-file-input" type="file" accept=".json,.jsonl,.md" class="file-input" />
-          <span id="batch-filename" class="filename-display">No file selected</span>
-        </div>
-
-        <!-- ── Pre-flight panel (shown after file is loaded) ──────── -->
-        <div id="batch-preflight" class="batch-preflight hidden">
-          <div class="preflight-header">
-            <span class="section-label">Shot List Preview</span>
-            <button id="btn-batch-clear" class="btn-ghost btn-sm">✕ Clear</button>
-          </div>
-          <div id="batch-summary" class="batch-summary"></div>
-          <div class="btn-row" style="margin-top:.5rem">
-            <button id="btn-batch-run" class="btn-primary" disabled>▶ Run Batch</button>
-          </div>
-        </div>
-
-        <!-- ── Progress bar (shown while running) ─────────────────── -->
-        <div id="batch-progress" class="batch-progress hidden" aria-live="polite">
-          <div class="progress-header">
-            <span id="batch-progress-label">Processing…</span>
-            <span id="batch-progress-counter" class="progress-counter">0 / 0</span>
-          </div>
-          <div class="progress-bar-track">
-            <div id="batch-progress-bar" class="progress-bar-fill" style="width:0%"></div>
-          </div>
-        </div>
-
-        <!-- ── Batch results (shown after run) ────────────────────── -->
-        <div id="batch-results" class="batch-results hidden">
-          <div class="results-header">
-            <span class="section-label">Batch Results</span>
-            <div class="results-actions">
-              <button id="btn-download-results" class="btn-ghost btn-sm">⬇ Download HTML</button>
-              <button id="btn-download-zip" class="btn-ghost btn-sm">⬇ Download ZIP</button>
-            </div>
-          </div>
-          <div id="batch-shots" class="batch-shots"></div>
-        </div>
-
-        <!-- ── Single video (divider) ──────────────────────────────── -->
-        <hr class="divider" />
-        <h2 class="subsection-title">Single Video</h2>
-        <div class="input-group">
-          <textarea id="video-prompt" rows="2"
-            placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
-        </div>
-        <div class="model-row">
+        <!-- ── Shared provider + model picker (governs both Batch and Single Video) ── -->
+        <div class="video-settings-bar">
+          <label for="video-provider-select">Provider:</label>
+          <select id="video-provider-select" title="Video AI provider">
+            <option value="">Default</option>
+          </select>
           <label for="video-model-select">Model:</label>
           <select id="video-model-select"><option value="">Default</option></select>
         </div>
-        <div class="btn-row">
-          <button id="btn-video-generate" class="btn-primary">Generate Video</button>
+
+        <!-- ── Video sub-tab navigation ───────────────────────────────── -->
+        <div class="video-tabs" role="tablist" aria-label="Video mode">
+          <button class="video-tab-btn active" data-vtab="batch"
+                  role="tab" aria-selected="true">Batch</button>
+          <button class="video-tab-btn" data-vtab="single"
+                  role="tab" aria-selected="false">Single Video</button>
         </div>
-        <div id="video-output" class="output-box video-output" aria-live="polite"></div>
-        <div id="video-usage" class="usage-bar"></div>
+
+        <!-- ── Batch sub-panel (default active; no hidden class) ────── -->
+        <div class="video-sub-panel" data-vtab="batch">
+
+          <!-- ── Batch drop zone ──────────────────────────────────── -->
+          <div id="batch-drop-zone" class="batch-drop-zone" role="region" aria-label="Batch file drop zone">
+            <span class="drop-icon" aria-hidden="true">📂</span>
+            <span class="drop-text">
+              Drop a <strong>.json</strong>, <strong>.jsonl</strong>, or <strong>.md</strong> shot-list here
+            </span>
+            <span class="drop-or">— or —</span>
+            <label for="batch-file-input" class="file-label">Choose file</label>
+            <input id="batch-file-input" type="file" accept=".json,.jsonl,.md" class="file-input" />
+            <span id="batch-filename" class="filename-display">No file selected</span>
+          </div>
+
+          <!-- ── Batch constraint defaults ──────────────────────── -->
+          <div class="batch-constraints">
+            <span class="batch-constraints-label">Default constraints (applied to all shots):</span>
+            <div class="size-controls-row">
+              <label for="batch-aspect-ratio">Aspect Ratio:</label>
+              <select id="batch-aspect-ratio">
+                <option value="">Default</option>
+                <option value="1:1">1:1 (Square)</option>
+                <option value="16:9">16:9 (Landscape)</option>
+                <option value="9:16">9:16 (Portrait/Story)</option>
+                <option value="4:3">4:3</option>
+                <option value="3:4">3:4</option>
+                <option value="21:9">21:9 (Cinematic)</option>
+              </select>
+
+              <label for="batch-resolution">Resolution:</label>
+              <select id="batch-resolution">
+                <option value="">Default</option>
+                <option value="480p">480p</option>
+                <option value="720p">720p</option>
+                <option value="1080p">1080p</option>
+                <option value="4k">4K</option>
+              </select>
+
+              <label for="batch-quality">Quality:</label>
+              <select id="batch-quality">
+                <option value="">Default</option>
+                <option value="draft">Draft</option>
+                <option value="standard">Standard</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div class="size-controls-row">
+              <label for="batch-duration">Duration (s):</label>
+              <input id="batch-duration" type="number" min="1" max="60" step="1"
+                     placeholder="e.g. 5" class="dim-input" />
+
+              <label for="batch-fps">FPS:</label>
+              <select id="batch-fps">
+                <option value="">Default</option>
+                <option value="24">24</option>
+                <option value="30">30</option>
+                <option value="60">60</option>
+              </select>
+            </div>
+          </div><!-- /.batch-constraints -->
+
+          <!-- ── Pre-flight panel (shown after file is loaded) ──── -->
+          <div id="batch-preflight" class="batch-preflight hidden">
+            <div class="preflight-header">
+              <span class="section-label">Shot List Preview</span>
+              <button id="btn-batch-clear" class="btn-ghost btn-sm">✕ Clear</button>
+            </div>
+            <div id="batch-summary" class="batch-summary"></div>
+            <div class="btn-row" style="margin-top:.5rem">
+              <button id="btn-batch-run" class="btn-primary" disabled>▶ Run Batch</button>
+            </div>
+          </div>
+
+          <!-- ── Progress bar (shown while running) ────────────── -->
+          <div id="batch-progress" class="batch-progress hidden" aria-live="polite">
+            <div class="progress-header">
+              <span id="batch-progress-label">Processing…</span>
+              <span id="batch-progress-counter" class="progress-counter">0 / 0</span>
+            </div>
+            <div class="progress-bar-track">
+              <div id="batch-progress-bar" class="progress-bar-fill" style="width:0%"></div>
+            </div>
+            <p id="batch-cost-tally" class="batch-cost-tally hidden"></p>
+          </div>
+
+          <!-- ── Batch results (shown after run) ───────────────── -->
+          <div id="batch-results" class="batch-results hidden">
+            <div class="results-header">
+              <span class="section-label">Batch Results</span>
+              <div class="results-actions">
+                <button id="btn-download-results" class="btn-ghost btn-sm">⬇ Download HTML</button>
+                <button id="btn-download-zip" class="btn-ghost btn-sm">⬇ Download ZIP</button>
+              </div>
+            </div>
+            <span id="zip-status" aria-live="polite"></span>
+            <div id="batch-shots" class="batch-shots"></div>
+          </div>
+
+        </div><!-- /.video-sub-panel[data-vtab="batch"] -->
+
+        <!-- ── Single-video sub-panel (hidden by default) ──────────── -->
+        <div class="video-sub-panel hidden" data-vtab="single">
+
+          <div class="input-group">
+            <textarea id="video-prompt" rows="2"
+              placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
+          </div>
+
+          <!-- ── Video size / duration controls ───────────────────── -->
+          <div class="size-controls-row">
+            <label for="video-aspect-ratio">Aspect Ratio:</label>
+            <select id="video-aspect-ratio">
+              <option value="">Default</option>
+              <option value="1:1">1:1 (Square)</option>
+              <option value="16:9">16:9 (Landscape)</option>
+              <option value="9:16">9:16 (Portrait/Story)</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+              <option value="21:9">21:9 (Cinematic)</option>
+            </select>
+
+            <label for="video-resolution">Resolution:</label>
+            <select id="video-resolution">
+              <option value="">Default</option>
+              <option value="480p">480p</option>
+              <option value="720p">720p</option>
+              <option value="1080p">1080p</option>
+              <option value="4k">4K</option>
+            </select>
+
+            <label for="video-quality">Quality:</label>
+            <select id="video-quality">
+              <option value="">Default</option>
+              <option value="draft">Draft</option>
+              <option value="standard">Standard</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+
+          <div class="size-controls-row">
+            <label for="video-duration">Duration (s):</label>
+            <input id="video-duration" type="number" min="1" max="60" step="1"
+                   placeholder="e.g. 5" class="dim-input" />
+
+            <label for="video-fps">FPS:</label>
+            <select id="video-fps">
+              <option value="">Default</option>
+              <option value="24">24</option>
+              <option value="30">30</option>
+              <option value="60">60</option>
+            </select>
+          </div>
+
+          <div class="btn-row">
+            <button id="btn-video-generate" class="btn-primary">Generate Video</button>
+          </div>
+          <div id="video-output" class="output-box video-output" aria-live="polite"></div>
+          <div id="video-usage" class="usage-bar"></div>
+
+        </div><!-- /.video-sub-panel[data-vtab="single"] -->
       </section>
 
       <!-- ── STRUCTURED TAB ────────────────────────────────────────── -->
@@ -265,9 +431,7 @@
       Run `npm run build:web` once to produce dist-web/ai-powered.umd.js.
       JSZip is loaded for client-side ZIP generation in the batch results panel.
     -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
-            integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHuvXg=="
-            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="../../dist-web/jszip.min.js"></script>
     <script src="../../dist-web/ai-powered.umd.js"></script>
     <script src="app.js"></script>
   </body>

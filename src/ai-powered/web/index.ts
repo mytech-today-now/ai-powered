@@ -69,6 +69,7 @@ export { createWebClient, WebAiClient, BrowserConversationSession } from "./fetc
 
 export type {
   WebCallOptions,
+  WebVideoOptions,
   WebTextResult,
   WebTokenUsage,
   WebStructuredResult,
@@ -81,4 +82,3 @@ export type {
 
 /** @internal Version sentinel consumed by the Vite build and dist-web bundle. */
 export const __WEB_MODULE_VERSION__ = "0.1.0";
-

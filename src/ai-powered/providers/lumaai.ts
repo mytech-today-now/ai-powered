@@ -23,6 +23,7 @@ import type { AiConfig, Modality } from "../core.js";
 import type { VideoResult, ModelDescriptor } from "../types.js";
 import { ProviderError } from "../types.js";
 import { maskApiKey, getLogger, calculateCost } from "../utils.js";
+import { LimitsValidator } from "../limits-validator.js";
 import { BaseProvider } from "./base.js";
 import type { ProviderCallOptions } from "./base.js";
 
@@ -47,10 +48,46 @@ const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as c
 // ---------------------------------------------------------------------------
 
 const LUMAAI_MODELS: ModelDescriptor[] = [
-  { id: "ray-2",           name: "Luma Ray-2",          capabilities: ["video"] },
-  { id: "ray-2-720p",      name: "Luma Ray-2 720p",     capabilities: ["video"] },
-  { id: "ray-flash-2",     name: "Luma Ray-Flash-2",    capabilities: ["video"] },
-  { id: "ray-flash-2-720p", name: "Luma Ray-Flash-2 720p", capabilities: ["video"] },
+  {
+    id: "ray-2",
+    name: "Luma Ray-2",
+    capabilities: ["video"],
+    aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
+    resolutions: ["720p", "1080p"],
+    durationRange: { min: 1, max: 9 },
+    fpsOptions: [24],
+    qualityOptions: ["standard", "high"],
+  },
+  {
+    id: "ray-2-720p",
+    name: "Luma Ray-2 720p",
+    capabilities: ["video"],
+    aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+    resolutions: ["720p"],
+    durationRange: { min: 1, max: 9 },
+    fpsOptions: [24],
+    qualityOptions: ["standard"],
+  },
+  {
+    id: "ray-flash-2",
+    name: "Luma Ray-Flash-2",
+    capabilities: ["video"],
+    aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
+    resolutions: ["720p", "1080p"],
+    durationRange: { min: 1, max: 9 },
+    fpsOptions: [24],
+    qualityOptions: ["draft", "standard"],
+  },
+  {
+    id: "ray-flash-2-720p",
+    name: "Luma Ray-Flash-2 720p",
+    capabilities: ["video"],
+    aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+    resolutions: ["720p"],
+    durationRange: { min: 1, max: 9 },
+    fpsOptions: [24],
+    qualityOptions: ["draft"],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -75,9 +112,7 @@ export class LumaAIProvider extends BaseProvider {
     super(config);
     const apiKey = config.apiKey ?? process.env["LUMAAI_API_KEY"] ?? "";
     if (!apiKey) {
-      throw new Error(
-        "Luma AI API key is required. Set LUMAAI_API_KEY or config.apiKey.",
-      );
+      throw new Error("Luma AI API key is required. Set LUMAAI_API_KEY or config.apiKey.");
     }
     getLogger().debug({ apiKey: maskApiKey(apiKey) }, "LumaAIProvider: initialised");
     // Disable SDK-level retries; the framework resilience layer handles them.
@@ -102,7 +137,30 @@ export class LumaAIProvider extends BaseProvider {
     const model = this._resolveModel();
     const start = Date.now();
 
-    const gen = await this._submit({ model, prompt, aspect_ratio: "16:9" }, options?.signal);
+    const aspectRatio = options?.aspectRatio ?? "16:9";
+    const durationSecs = options?.duration;
+
+    // Validate aspect ratio and duration against Luma model config.
+    LimitsValidator.validateVideo("lumaai", model, {
+      aspectRatio,
+      ...(durationSecs !== undefined ? { duration: durationSecs } : {}),
+    });
+
+    // Map numeric duration (seconds) to Luma's string format (e.g. 5 → "5s").
+    const durationParam = durationSecs !== undefined ? `${durationSecs}s` : undefined;
+
+    // Runtime-validated: LimitsValidator.validateVideo ensures aspectRatio is in the supported set.
+    // Cast required: SDK union type lags behind API (omits ray-2-720p, ray-flash-2-720p variants).
+    type LumaAspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | "21:9" | "9:21";
+    const gen = await this._submit(
+      {
+        model: model as LumaAI.GenerationCreateParams["model"],
+        prompt,
+        aspect_ratio: aspectRatio as LumaAspectRatio,
+        ...(durationParam !== undefined ? { duration: durationParam } : {}),
+      },
+      options?.signal,
+    );
     const completed = await this._poll(gen.id!, options?.signal);
     const dataUri = await this._fetchAsDataUri(completed.assets?.video, options?.signal);
     const latencyMs = Date.now() - start;
@@ -113,14 +171,14 @@ export class LumaAIProvider extends BaseProvider {
     );
 
     return {
-      modality:  "video",
-      provider:  "lumaai",
+      modality: "video",
+      provider: "lumaai",
       model,
-      data:      dataUri,
-      mimeType:  "video/mp4",
-      cost:      calculateCost(model, { ...ZERO_USAGE }),
+      data: dataUri,
+      mimeType: "video/mp4",
+      cost: calculateCost(model, { ...ZERO_USAGE }),
       latencyMs,
-      usage:     { ...ZERO_USAGE },
+      usage: { ...ZERO_USAGE },
     };
   }
 
@@ -144,11 +202,27 @@ export class LumaAIProvider extends BaseProvider {
     const model = this._resolveModel();
     const start = Date.now();
 
+    const aspectRatio = options?.aspectRatio ?? "16:9";
+    const durationSecs = options?.duration;
+
+    // Validate aspect ratio and duration against Luma model config.
+    LimitsValidator.validateVideo("lumaai", model, {
+      aspectRatio,
+      ...(durationSecs !== undefined ? { duration: durationSecs } : {}),
+    });
+
+    // Map numeric duration (seconds) to Luma's string format (e.g. 5 → "5s").
+    const durationParam = durationSecs !== undefined ? `${durationSecs}s` : undefined;
+
+    // Runtime-validated: LimitsValidator.validateVideo ensures aspectRatio is in the supported set.
+    // Cast required: SDK union type lags behind API (omits ray-2-720p, ray-flash-2-720p variants).
+    type LumaAspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | "21:9" | "9:21";
     const gen = await this._submit(
       {
-        model,
+        model: model as LumaAI.GenerationCreateParams["model"],
         ...(prompt !== undefined ? { prompt } : {}),
-        aspect_ratio: "16:9",
+        aspect_ratio: aspectRatio as LumaAspectRatio,
+        ...(durationParam !== undefined ? { duration: durationParam } : {}),
         keyframes: { frame0: { type: "image", url: imageUrl } },
       },
       options?.signal,
@@ -163,14 +237,14 @@ export class LumaAIProvider extends BaseProvider {
     );
 
     return {
-      modality:  "video",
-      provider:  "lumaai",
+      modality: "video",
+      provider: "lumaai",
       model,
-      data:      dataUri,
-      mimeType:  "video/mp4",
-      cost:      calculateCost(model, { ...ZERO_USAGE }),
+      data: dataUri,
+      mimeType: "video/mp4",
+      cost: calculateCost(model, { ...ZERO_USAGE }),
       latencyMs,
-      usage:     { ...ZERO_USAGE },
+      usage: { ...ZERO_USAGE },
     };
   }
 
@@ -187,10 +261,17 @@ export class LumaAIProvider extends BaseProvider {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  /** Resolves which Luma model to use for generation. */
-  private _resolveModel(): "ray-2" | "ray-flash-2" {
+  /**
+   * Resolves which Luma model to use for generation.
+   *
+   * Recognised model IDs are passed through as-is.  Any other value
+   * (including undefined) falls back to the default ("ray-2").
+   */
+  private _resolveModel(): string {
     const m = this.config.model;
-    if (m === "ray-flash-2") return "ray-flash-2";
+    if (m === "ray-2" || m === "ray-2-720p" || m === "ray-flash-2" || m === "ray-flash-2-720p") {
+      return m;
+    }
     return DEFAULT_VIDEO_MODEL;
   }
 
@@ -202,7 +283,10 @@ export class LumaAIProvider extends BaseProvider {
     params: LumaAI.GenerationCreateParams,
     signal?: AbortSignal,
   ): Promise<LumaAI.Generation> {
-    getLogger().debug({ provider: "lumaai", model: params.model }, "LumaAIProvider: submitting job");
+    getLogger().debug(
+      { provider: "lumaai", model: params.model },
+      "LumaAIProvider: submitting job",
+    );
     try {
       return await this._client.generations.create(params, { signal } as LumaAI.RequestOptions);
     } catch (err) {
@@ -215,10 +299,7 @@ export class LumaAIProvider extends BaseProvider {
    * generation reaches a terminal state ('completed' or 'failed'), or until
    * POLL_TIMEOUT_MS elapses, or until the AbortSignal fires.
    */
-  private async _poll(
-    id: string,
-    signal?: AbortSignal,
-  ): Promise<LumaAI.Generation> {
+  private async _poll(id: string, signal?: AbortSignal): Promise<LumaAI.Generation> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
 
     while (true) {
@@ -266,12 +347,14 @@ export class LumaAIProvider extends BaseProvider {
    * Fetches a video from the given URL and returns it as a base64 data URI.
    * Throws ProviderError if the URL is missing or the fetch fails.
    */
-  private async _fetchAsDataUri(
-    url: string | undefined,
-    signal?: AbortSignal,
-  ): Promise<string> {
+  private async _fetchAsDataUri(url: string | undefined, signal?: AbortSignal): Promise<string> {
     if (!url) {
-      throw new ProviderError("lumaai", "Completed generation has no video asset URL", undefined, false);
+      throw new ProviderError(
+        "lumaai",
+        "Completed generation has no video asset URL",
+        undefined,
+        false,
+      );
     }
     let response: Response;
     try {
@@ -280,7 +363,12 @@ export class LumaAIProvider extends BaseProvider {
       if (err instanceof Error && err.name === "AbortError") {
         throw new ProviderError("lumaai", "Video download aborted by caller", undefined, false);
       }
-      throw new ProviderError("lumaai", `Failed to fetch video asset: ${String(err)}`, undefined, true);
+      throw new ProviderError(
+        "lumaai",
+        `Failed to fetch video asset: ${String(err)}`,
+        undefined,
+        true,
+      );
     }
     if (!response.ok) {
       throw new ProviderError(
@@ -303,10 +391,14 @@ export class LumaAIProvider extends BaseProvider {
         return reject(new ProviderError("lumaai", "Request aborted by caller", undefined, false));
       }
       const timer = setTimeout(resolve, ms);
-      signal?.addEventListener("abort", () => {
-        clearTimeout(timer);
-        reject(new ProviderError("lumaai", "Request aborted by caller", undefined, false));
-      }, { once: true });
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(new ProviderError("lumaai", "Request aborted by caller", undefined, false));
+        },
+        { once: true },
+      );
     });
   }
 

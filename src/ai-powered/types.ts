@@ -89,6 +89,8 @@ export interface VideoResult extends BaseResult {
   data: string;
   mimeType: string;
   durationSeconds?: number;
+  /** Aspect ratio used for generation (e.g. "16:9", "1:1"). */
+  aspectRatio?: string;
 }
 
 /** Result of a structured-output generation call. */
@@ -102,11 +104,24 @@ export interface StructuredResult<T = unknown> extends BaseResult {
 // Model descriptor
 // ---------------------------------------------------------------------------
 
+/** Resolution label exposed to the UI (e.g. "480p", "720p", "1080p"). */
+export type ResolutionLabel = string;
+
 export interface ModelDescriptor {
   id: string;
   name: string;
   capabilities: Modality[];
   contextWindow?: number;
+  /** Aspect ratios accepted by this model in "W:H" notation (e.g. "16:9"). */
+  aspectRatios?: string[];
+  /** Resolution labels accepted by this model (e.g. ["480p", "720p"]). */
+  resolutions?: ResolutionLabel[];
+  /** Minimum and maximum clip duration in seconds. */
+  durationRange?: { min: number; max: number; default?: number };
+  /** Supported frames-per-second values (e.g. [24, 30]). */
+  fpsOptions?: number[];
+  /** Supported quality tier strings (e.g. ["standard", "high"]). */
+  qualityOptions?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -249,13 +264,8 @@ export interface ProviderFailure {
 /** Thrown when all providers in the failover chain have been exhausted. */
 export class AllProvidersExhaustedError extends AiPoweredError {
   constructor(public readonly failures: ProviderFailure[]) {
-    const summary = failures
-      .map((f) => `${f.provider}: ${f.reason}`)
-      .join("; ");
-    super(
-      `All providers exhausted. Failures — ${summary}`,
-      "ALL_PROVIDERS_EXHAUSTED",
-    );
+    const summary = failures.map((f) => `${f.provider}: ${f.reason}`).join("; ");
+    super(`All providers exhausted. Failures — ${summary}`, "ALL_PROVIDERS_EXHAUSTED");
     this.name = "AllProvidersExhaustedError";
   }
 }
@@ -278,4 +288,3 @@ export class ValidationError extends AiPoweredError {
     this.name = "ValidationError";
   }
 }
-

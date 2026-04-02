@@ -8,7 +8,8 @@
  *   parseJsonFile(text) – parse JSON / JSONL text into shot items
  *   parseMdFile(text)   – parse Markdown text into shot items
  *
- * Each shot item has the shape: { name: string, prompt: string, modality: string }
+ * Each shot item has the shape:
+ *   { name, prompt, modality, duration?, fps?, aspectRatio?, resolution?, quality?, width?, height? }
  */
 
 /**
@@ -24,7 +25,9 @@
  * Items missing `name` are auto-named "Shot N" (1-based).
  *
  * @param {string} text - Raw file contents
- * @returns {{ name: string, prompt: string, modality: string }[]}
+ * @returns {{ name: string, prompt: string, modality: string,
+ *             duration?: number, fps?: number, aspectRatio?: string,
+ *             resolution?: string, quality?: string, width?: number, height?: number }[]}
  */
 export function parseJsonFile(text) {
   const items = [];
@@ -45,6 +48,13 @@ export function parseJsonFile(text) {
             ).trim(),
             prompt,
             modality: String(entry.modality || "video"),
+            ...(entry.duration    !== undefined ? { duration:    entry.duration    } : {}),
+            ...(entry.fps         !== undefined ? { fps:         entry.fps         } : {}),
+            ...(entry.aspectRatio !== undefined ? { aspectRatio: entry.aspectRatio } : {}),
+            ...(entry.resolution  !== undefined ? { resolution:  entry.resolution  } : {}),
+            ...(entry.quality     !== undefined ? { quality:     entry.quality     } : {}),
+            ...(entry.width       !== undefined ? { width:       entry.width       } : {}),
+            ...(entry.height      !== undefined ? { height:      entry.height      } : {}),
           });
         }
       }
@@ -64,6 +74,13 @@ export function parseJsonFile(text) {
           name: String(entry.name || entry.shot || ("Shot " + (items.length + 1))).trim(),
           prompt,
           modality: String(entry.modality || "video"),
+          ...(entry.duration    !== undefined ? { duration:    entry.duration    } : {}),
+          ...(entry.fps         !== undefined ? { fps:         entry.fps         } : {}),
+          ...(entry.aspectRatio !== undefined ? { aspectRatio: entry.aspectRatio } : {}),
+          ...(entry.resolution  !== undefined ? { resolution:  entry.resolution  } : {}),
+          ...(entry.quality     !== undefined ? { quality:     entry.quality     } : {}),
+          ...(entry.width       !== undefined ? { width:       entry.width       } : {}),
+          ...(entry.height      !== undefined ? { height:      entry.height      } : {}),
         });
       }
     } catch (_) { /* skip invalid lines */ }
@@ -87,6 +104,9 @@ export function parseJsonFile(text) {
  * @returns {{ name: string, prompt: string, modality: string }[]}
  */
 export function parseMdFile(text) {
+  // NOTE: parseMdFile() does not parse structured metadata from Markdown prose.
+  // Per-shot constraint fields (duration, fps, aspectRatio, etc.) are intentionally
+  // not supported for Markdown shot lists. Use JSON or JSONL for per-shot constraints.
   const items = [];
   const lines = text.split("\n");
   let currentName = null;

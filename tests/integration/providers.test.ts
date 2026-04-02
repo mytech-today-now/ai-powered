@@ -11,20 +11,22 @@
 
 import { z } from "zod";
 import { vi } from "vitest";
-import { AiConfigSchema } from "../../src/ai-powered/core.js";
+import { AiConfigSchema, loadConfig } from "../../src/ai-powered/core.js";
 import { AiClient } from "../../src/ai-powered/client.js";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { OpenAiProvider } from "../../src/ai-powered/providers/openai.js";
 import { AnthropicProvider } from "../../src/ai-powered/providers/anthropic.js";
 import { ProviderCapabilityError, ProviderError } from "../../src/ai-powered/types.js";
+import { getLogger } from "../../src/ai-powered/utils.js";
+import { createProvider } from "../../src/ai-powered/providers/index.js";
 
 // ---------------------------------------------------------------------------
 // Luma AI SDK mock — must be declared before any imports of lumaai
 // ---------------------------------------------------------------------------
 
 const mockGenerationsCreate = vi.hoisted(() => vi.fn());
-const mockGenerationsGet    = vi.hoisted(() => vi.fn());
+const mockGenerationsGet = vi.hoisted(() => vi.fn());
 
 vi.mock("lumaai", () => {
   /** Minimal APIError mirroring the real SDK shape. */
@@ -42,7 +44,7 @@ vi.mock("lumaai", () => {
   class MockLumaAI {
     generations = {
       create: mockGenerationsCreate,
-      get:    mockGenerationsGet,
+      get: mockGenerationsGet,
     };
   }
   (MockLumaAI as unknown as Record<string, unknown>)["APIError"] = APIError;
@@ -285,9 +287,7 @@ describe("AnthropicProvider", () => {
 describe("VeniceProvider", () => {
   it("throws when constructed without an API key", () => {
     const config = AiConfigSchema.parse({ provider: "venice" });
-    expect(() => new VeniceProvider(config)).toThrow(
-      "Venice API key is required",
-    );
+    expect(() => new VeniceProvider(config)).toThrow("Venice API key is required");
   });
 
   it("throws ProviderCapabilityError for transcribeAudio (unsupported modality)", () => {
@@ -327,7 +327,7 @@ const COMPLETED_GENERATION = {
 
 /** A base64-encoded 1-byte mp4 stub returned by the mocked fetch. */
 const STUB_VIDEO_B64 = Buffer.from("fakevideobytes").toString("base64");
-const STUB_DATA_URI  = `data:video/mp4;base64,${STUB_VIDEO_B64}`;
+const STUB_DATA_URI = `data:video/mp4;base64,${STUB_VIDEO_B64}`;
 
 describe("LumaAIProvider", () => {
   const config = AiConfigSchema.parse({ provider: "lumaai", apiKey: "luma-test-key" });
@@ -342,11 +342,14 @@ describe("LumaAIProvider", () => {
     // Buffer.prototype.buffer points to a pooled backing store and includes
     // bytes outside the buffer's own range).
     const fakeBytes = new Uint8Array(Buffer.from("fakevideobytes"));
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      arrayBuffer: () => Promise.resolve(fakeBytes.buffer),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: () => Promise.resolve(fakeBytes.buffer),
+      }),
+    );
   });
 
   afterEach(() => {
@@ -471,7 +474,10 @@ describe("LumaAIProvider", () => {
 
   it("generateVideo wraps a 429 SDK error as a retryable ProviderError", async () => {
     const { default: LumaAIModule } = await import("lumaai");
-    const ApiErrorClass = (LumaAIModule as unknown as Record<string, unknown>)["APIError"] as new (msg: string, status?: number) => Error;
+    const ApiErrorClass = (LumaAIModule as unknown as Record<string, unknown>)["APIError"] as new (
+      msg: string,
+      status?: number,
+    ) => Error;
     mockGenerationsCreate.mockRejectedValue(new ApiErrorClass("rate limited", 429));
 
     const provider = new LumaAIProvider(config);
@@ -518,6 +524,80 @@ describe("LumaAIProvider", () => {
     const callArg = mockGenerationsCreate.mock.calls[0][0] as Record<string, unknown>;
     expect(callArg).not.toHaveProperty("prompt");
   });
+
+  // --- API key masking in Pino logs ---
+
+  it("masks the API key in Pino debug log at construction — raw key never logged", () => {
+    const logger = getLogger();
+    const debugSpy = vi.spyOn(logger, "debug");
+    const rawKey = "luma-super-secret-raw-key";
+    const cfg = AiConfigSchema.parse({ provider: "lumaai", apiKey: rawKey });
+
+    new LumaAIProvider(cfg);
+
+    // Find the 'initialised' debug call emitted by the constructor.
+    const initCall = debugSpy.mock.calls.find(
+      (c) => typeof c[1] === "string" && (c[1] as string).includes("initialised"),
+    );
+    expect(initCall).toBeDefined();
+    const payload = initCall![0] as Record<string, unknown>;
+    // maskApiKey("luma-super-secret-raw-key") → "[REDACTED]" (no known prefix match)
+    expect(payload["apiKey"]).not.toBe(rawKey);
+    expect(payload["apiKey"]).toBe("[REDACTED]");
+
+    debugSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createProvider — mock routing
+// ---------------------------------------------------------------------------
+//
+// createProvider trusts config.mock exclusively.  The AI_MOCK env var is
+// mapped to config.mock by loadConfig() at Layer 5; explicit flags (Layer 6)
+// can override it.  createProvider must NOT re-read process.env["AI_MOCK"]
+// directly — doing so would bypass intentional mock:false overrides from
+// routes like GET /models?provider=lumaai.
+
+describe("createProvider — mock routing", () => {
+  it("returns MockProvider when config.mock is true, regardless of provider", () => {
+    // Explicitly set mock:true in the config (as loadConfig would do when AI_MOCK=true).
+    const cfg = AiConfigSchema.parse({ provider: "lumaai", apiKey: "luma-key", mock: true });
+    expect(cfg.mock).toBe(true);
+    const provider = createProvider(cfg);
+    expect(provider).toBeInstanceOf(MockProvider);
+  });
+
+  it("loadConfig maps AI_MOCK=true env var to config.mock=true (layered config)", () => {
+    // vitest.config.ts sets AI_MOCK=true for every test run; loadConfig picks it up.
+    expect(process.env["AI_MOCK"]).toBe("true");
+    const cfg = loadConfig({ flags: { provider: "lumaai", apiKey: "luma-key" } as never });
+    expect(cfg.mock).toBe(true);
+    const provider = createProvider(cfg);
+    expect(provider).toBeInstanceOf(MockProvider);
+  });
+
+  it("explicit mock:false flag overrides AI_MOCK env var via loadConfig layering", () => {
+    expect(process.env["AI_MOCK"]).toBe("true"); // env has AI_MOCK=true ...
+    // ... but Layer 6 flags win, so mock should be false.
+    const cfg = loadConfig({
+      flags: { provider: "lumaai", apiKey: "luma-key", mock: false } as never,
+    });
+    expect(cfg.mock).toBe(false);
+    // createProvider must honour config.mock=false and NOT fall back to mock.
+    const provider = createProvider(cfg);
+    // With a missing real API key lumaai may throw, but it will NOT be MockProvider.
+    expect(provider).not.toBeInstanceOf(MockProvider);
+  });
+
+  it("MockProvider handles video modality when config.mock=true", async () => {
+    const cfg = AiConfigSchema.parse({ provider: "lumaai", apiKey: "luma-key", mock: true });
+    const provider = createProvider(cfg);
+    // MockProvider implements video; verify result shape.
+    const result = await (provider as MockProvider).generateVideo("test prompt");
+    expect(result.modality).toBe("video");
+    expect(result.data).toMatch(/^data:video\//);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -535,9 +615,15 @@ function readBody(res: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let buf = "";
     res.setEncoding("utf-8");
-    res.on("data", (chunk: string) => { buf += chunk; });
+    res.on("data", (chunk: string) => {
+      buf += chunk;
+    });
     res.on("end", () => {
-      try { resolve(JSON.parse(buf)); } catch (e) { reject(e); }
+      try {
+        resolve(JSON.parse(buf));
+      } catch (e) {
+        reject(e);
+      }
     });
     res.on("error", reject);
   });
@@ -551,7 +637,9 @@ function readNdjson(res: http.IncomingMessage): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
     let buf = "";
     res.setEncoding("utf-8");
-    res.on("data", (chunk: string) => { buf += chunk; });
+    res.on("data", (chunk: string) => {
+      buf += chunk;
+    });
     res.on("end", () => {
       const lines = buf.split("\n").filter((l) => l.trim());
       try {
@@ -568,10 +656,7 @@ function readNdjson(res: http.IncomingMessage): Promise<unknown[]> {
  * POST JSON to a running server and return the raw IncomingMessage so tests
  * can stream NDJSON line by line.
  */
-function postBatch(
-  port: number,
-  body: unknown,
-): Promise<http.IncomingMessage> {
+function postBatch(port: number, body: unknown): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const req = http.request(
@@ -581,7 +666,7 @@ function postBatch(
         path: "/batch",
         method: "POST",
         headers: {
-          "Content-Type":   "application/json",
+          "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload),
         },
       },
@@ -620,7 +705,7 @@ describe("POST /batch — server route", () => {
   it("T-BA-01: returns 400 and Zod error when item is missing prompt", async () => {
     const res = await postBatch(port, { items: [{ modality: "video" }] });
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["issues"]).toBeDefined();
     const issues = body["issues"] as string[];
     expect(issues.some((s) => s.includes("items.0.prompt"))).toBe(true);
@@ -680,13 +765,15 @@ describe("POST /batch — server route", () => {
     // batch route writes status:"error" for that item and continues the stream.
     let callCount = 0;
     const originalFn = AiClient.prototype.generateText;
-    const spy = vi.spyOn(AiClient.prototype, "generateText").mockImplementation(
-      function (this: AiClient, prompt, options) {
-        callCount++;
-        if (callCount === 2) throw new Error("Simulated per-item failure");
-        return originalFn.call(this, prompt, options);
-      },
-    );
+    const spy = vi.spyOn(AiClient.prototype, "generateText").mockImplementation(function (
+      this: AiClient,
+      prompt,
+      options,
+    ) {
+      callCount++;
+      if (callCount === 2) throw new Error("Simulated per-item failure");
+      return originalFn.call(this, prompt, options);
+    });
 
     try {
       const items = [
@@ -706,4 +793,3 @@ describe("POST /batch — server route", () => {
     }
   });
 });
-

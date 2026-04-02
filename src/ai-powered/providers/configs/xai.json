@@ -1,0 +1,73 @@
+{
+  "provider": "xai",
+  "updatedAt": "2026-04-02",
+  "reviewNote": "Verify at https://docs.x.ai/docs/api-reference — check aurora/grok-2-image aspect_ratio enum values and resolution string options (1k/2k). Params passed via extra_body with the OpenAI-compatible SDK.",
+  "models": [
+    {
+      "id": "aurora",
+      "modalities": ["image"],
+      "aspectRatios": [
+        "1:1",
+        "16:9",
+        "9:16",
+        "4:3",
+        "3:4",
+        "3:2",
+        "2:3",
+        "2:1",
+        "1:2",
+        "9:19.5",
+        "19.5:9",
+        "9:20",
+        "20:9",
+        "auto"
+      ],
+      "resolutions": [
+        { "label": "1K", "apiValue": "1k", "width": 1024, "height": 1024 },
+        { "label": "2K", "apiValue": "2k", "width": 2048, "height": 2048 }
+      ],
+      "maxWidth": 2048,
+      "maxHeight": 2048,
+      "maxPixels": 4194304,
+      "qualityOptions": ["standard", "high"],
+      "note": "Aspect ratio and resolution are passed via extra_body as 'aspect_ratio' (string enum) and 'resolution' (string '1k' or '2k'). Raw width/height integers are not accepted."
+    },
+    {
+      "id": "grok-2-image",
+      "modalities": ["image"],
+      "aspectRatios": [
+        "1:1",
+        "16:9",
+        "9:16",
+        "4:3",
+        "3:4",
+        "3:2",
+        "2:3",
+        "2:1",
+        "1:2",
+        "9:19.5",
+        "19.5:9",
+        "9:20",
+        "20:9",
+        "auto"
+      ],
+      "resolutions": [
+        { "label": "1K", "apiValue": "1k", "width": 1024, "height": 1024 },
+        { "label": "2K", "apiValue": "2k", "width": 2048, "height": 2048 }
+      ],
+      "maxWidth": 2048,
+      "maxHeight": 2048,
+      "maxPixels": 4194304,
+      "qualityOptions": ["standard", "high"],
+      "note": "Aspect ratio and resolution are passed via extra_body as 'aspect_ratio' (string enum) and 'resolution' (string '1k' or '2k'). Raw width/height integers are not accepted."
+    },
+    {
+      "id": "grok-imagine-video",
+      "modalities": ["video"],
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+      "durationRange": { "min": 1, "max": 15, "default": 8 },
+      "resolutions": ["480p", "720p"],
+      "note": "Asynchronous: POST /v1/videos/generations returns request_id; poll GET /v1/videos/{request_id} until status='done'."
+    }
+  ]
+}

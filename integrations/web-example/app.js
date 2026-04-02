@@ -66,6 +66,11 @@
   const videoOutput        = $("video-output");
   const videoUsage         = $("video-usage");
 
+  // Global error toast
+  const globalErrorToast = $("global-error-toast");
+  const globalErrorMsg   = $("global-error-msg");
+  const globalErrorClose = $("global-error-close");
+
   // Batch UI elements
   const batchDropZone      = $("batch-drop-zone");
   const batchFileInput     = $("batch-file-input");
@@ -79,9 +84,18 @@
   const batchProgressCtr   = $("batch-progress-counter");
   const batchProgressBar   = $("batch-progress-bar");
   const batchResults       = $("batch-results");
+  const batchCostTally     = $("batch-cost-tally");
   const batchShots         = $("batch-shots");
   const btnDownloadResults = $("btn-download-results");
   const btnDownloadZip     = $("btn-download-zip");
+  const zipStatusEl        = $("zip-status");
+
+  // Batch constraint controls (default values applied to all shots)
+  const batchAspectRatioEl = $("batch-aspect-ratio");
+  const batchResolutionEl  = $("batch-resolution");
+  const batchQualityEl     = $("batch-quality");
+  const batchDurationEl    = $("batch-duration");
+  const batchFpsEl         = $("batch-fps");
 
   const structuredPromptEl    = $("structured-prompt");
   const btnStructuredGenerate = $("btn-structured-generate");
@@ -94,7 +108,24 @@
   const ttsModelSelect        = $("tts-model-select");
   const transcribeModelSelect = $("transcribe-model-select");
   const videoModelSelect      = $("video-model-select");
+  const videoProviderSelect   = $("video-provider-select"); // video-tab-specific provider picker
   const structuredModelSelect = $("structured-model-select");
+
+  // Image size controls (added for img-cntrl)
+  const imageRatioCategory  = $("image-ratio-category");
+  const imageAspectRatio    = $("image-aspect-ratio");
+  const imageQuality        = $("image-quality");
+  const imageCustomDims     = $("image-custom-dims");
+  const imageWidthInput     = $("image-width");
+  const imageHeightInput    = $("image-height");
+  const imageDimsHint       = $("image-dims-hint");
+
+  // Video size / duration controls (added for img-cntrl)
+  const videoAspectRatio    = $("video-aspect-ratio");
+  const videoResolution     = $("video-resolution");
+  const videoQuality        = $("video-quality");
+  const videoDuration       = $("video-duration");
+  const videoFps            = $("video-fps");
 
   const costTotalEl        = $("cost-total");
   const tokensTotalEl      = $("tokens-total");
@@ -102,6 +133,9 @@
 
   /* ── Provider cache (populated by loadProviders) ────────── */
   let allProviders = []; // All providers from /providers, including inactive
+
+  /* ── Video model capability cache (populated by loadVideoModels) ── */
+  let videoModelsCache = []; // Full ModelDescriptor objects for the active video provider
 
   /** Modality that each tab represents. */
   const TAB_MODALITY = {
@@ -141,6 +175,150 @@
     if ([...proxyProviderSelect.options].some((o) => o.value === prev)) {
       proxyProviderSelect.value = prev;
     }
+  }
+
+  /**
+   * Repopulates the video-tab-specific provider dropdown with only video-capable
+   * providers.  Preserves the current selection if it is still valid.
+   * Called after loadProviders() so that allProviders is already populated.
+   */
+  function refreshVideoProviderDropdown() {
+    if (!videoProviderSelect) return;
+    const prev = videoProviderSelect.value;
+    videoProviderSelect.innerHTML = '<option value="">Default</option>';
+    const compatible = allProviders.filter(
+      (p) => Array.isArray(p.modalities) && p.modalities.includes("video"),
+    );
+    compatible.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.active ? p.name + " ★" : p.name;
+      opt.title = p.active ? "API key configured" : "No API key set — add to .env to enable";
+      videoProviderSelect.appendChild(opt);
+    });
+    if ([...videoProviderSelect.options].some((o) => o.value === prev)) {
+      videoProviderSelect.value = prev;
+    }
+  }
+
+  /* ── Video constraint syncing ───────────────────────────── */
+
+  /**
+   * Filters a <select> element to only show options whose values are in
+   * `allowed`.  Options not in the list are hidden; the "Default" (value="")
+   * option is always kept visible.  If the current selection is hidden the
+   * element resets to "".
+   *
+   * @param {HTMLSelectElement|null} selectEl - Target dropdown (may be null).
+   * @param {string[]|number[]}      allowed  - Allowed values (compared as strings).
+   */
+  function _filterSelect(selectEl, allowed) {
+    if (!selectEl) return;
+    const allowedSet = new Set(allowed.map(String));
+    let anyVisible = false;
+    [...selectEl.options].forEach((opt) => {
+      if (!opt.value) { opt.hidden = false; return; } // always keep "Default"
+      opt.hidden = !allowedSet.has(opt.value);
+      if (!opt.hidden) anyVisible = true;
+    });
+    // Reset to Default if current selection is now hidden
+    if (selectEl.value && !allowedSet.has(selectEl.value)) {
+      selectEl.value = "";
+    }
+    // If no valid option is visible, also hide the whole control row gracefully
+    return anyVisible;
+  }
+
+  /**
+   * Restores all options in a <select> to visible (removes filtering).
+   *
+   * @param {HTMLSelectElement|null} selectEl - Target dropdown (may be null).
+   */
+  function _clearSelectFilter(selectEl) {
+    if (!selectEl) return;
+    [...selectEl.options].forEach((opt) => { opt.hidden = false; });
+  }
+
+  /**
+   * Syncs the video constraint dropdowns (aspect ratio, resolution, fps,
+   * quality) to the capabilities of the given model descriptor.  When no
+   * descriptor is provided (e.g. "Default" model selected), all options are
+   * restored.
+   *
+   * Applies to both the Single Video and Batch constraint controls.
+   *
+   * @param {object|null} descriptor - Full ModelDescriptor from the server.
+   */
+  function syncVideoConstraints(descriptor) {
+    const aspectSelects  = [videoAspectRatio, batchAspectRatioEl].filter(Boolean);
+    const resolutionSelects = [videoResolution, batchResolutionEl].filter(Boolean);
+    const fpsSelects     = [videoFps, batchFpsEl].filter(Boolean);
+    const qualitySelects = [videoQuality, batchQualityEl].filter(Boolean);
+
+    if (!descriptor) {
+      // No specific model — show all options
+      [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects]
+        .forEach(_clearSelectFilter);
+      return;
+    }
+
+    if (descriptor.aspectRatios && descriptor.aspectRatios.length > 0) {
+      aspectSelects.forEach((s) => _filterSelect(s, descriptor.aspectRatios));
+    } else {
+      aspectSelects.forEach(_clearSelectFilter);
+    }
+
+    if (descriptor.resolutions && descriptor.resolutions.length > 0) {
+      resolutionSelects.forEach((s) => _filterSelect(s, descriptor.resolutions));
+    } else {
+      resolutionSelects.forEach(_clearSelectFilter);
+    }
+
+    if (descriptor.fpsOptions && descriptor.fpsOptions.length > 0) {
+      fpsSelects.forEach((s) => _filterSelect(s, descriptor.fpsOptions));
+    } else {
+      fpsSelects.forEach(_clearSelectFilter);
+    }
+
+    if (descriptor.qualityOptions && descriptor.qualityOptions.length > 0) {
+      qualitySelects.forEach((s) => _filterSelect(s, descriptor.qualityOptions));
+    } else {
+      qualitySelects.forEach(_clearSelectFilter);
+    }
+  }
+
+  /**
+   * Loads video models for the given provider hint, populates the video model
+   * dropdown, caches the full descriptors, and syncs constraint dropdowns to
+   * the current (or default) model selection.
+   *
+   * @param {string} [providerHint] - Provider id for the video-tab picker (may be "").
+   */
+  async function loadVideoModels(providerHint) {
+    try {
+      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+      const provider = providerHint !== undefined ? providerHint : (videoProviderSelect?.value ?? "");
+      let url = base + "/models?modality=video";
+      if (provider) url += "&provider=" + provider;
+      const models = await fetch(url).then((r) => r.json());
+      videoModelsCache = Array.isArray(models) ? models : [];
+
+      if (videoModelSelect) {
+        videoModelSelect.innerHTML = '<option value="">Default</option>';
+        videoModelsCache.forEach((m) => {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = m.name || m.id;
+          videoModelSelect.appendChild(opt);
+        });
+      }
+    } catch (_) {
+      videoModelsCache = [];
+    }
+    // Sync constraints for current model selection (may be "Default")
+    const current = videoModelSelect?.value || "";
+    const descriptor = videoModelsCache.find((m) => m.id === current) ?? null;
+    syncVideoConstraints(descriptor);
   }
 
   /* ── Cost / usage tracking ──────────────────────────────── */
@@ -201,12 +379,51 @@
   }
 
   function showError(el, err) {
+    if (!el) return;
     el.innerHTML = "";
     const s = document.createElement("span");
     s.className   = "error-msg";
     s.textContent = "Error: " + (err instanceof Error ? err.message : String(err));
     el.appendChild(s);
   }
+
+  /**
+   * Show a dismissible sticky banner at the top of the page for system-level
+   * errors that may not be visible in any output panel (e.g., server unreachable,
+   * wrong mode selected for a feature). Auto-dismisses after 15 s.
+   */
+  function showGlobalError(msg) {
+    if (!globalErrorToast || !globalErrorMsg) return;
+    globalErrorMsg.textContent = msg;
+    globalErrorToast.classList.remove("hidden");
+    clearTimeout(showGlobalError._timer);
+    showGlobalError._timer = setTimeout(clearGlobalError, 15000);
+  }
+  showGlobalError._timer = null;
+
+  function clearGlobalError() {
+    if (globalErrorToast) globalErrorToast.classList.add("hidden");
+  }
+
+  if (globalErrorClose) {
+    globalErrorClose.addEventListener("click", clearGlobalError);
+  }
+
+  // Catch unhandled promise rejections that escape individual try/catch blocks
+  window.addEventListener("unhandledrejection", (event) => {
+    const msg = event.reason instanceof Error
+      ? event.reason.message
+      : String(event.reason ?? "Unknown error");
+    showGlobalError("Unexpected error: " + msg);
+  });
+
+  // Catch synchronous runtime exceptions (e.g., ReferenceError, TypeError)
+  window.onerror = function (_msg, _src, _line, _col, error) {
+    const msg = error instanceof Error
+      ? error.message
+      : String(_msg || "Unknown runtime error");
+    showGlobalError("Runtime error: " + msg);
+  };
 
   /**
    * Render usage + cost metadata beneath a result panel.
@@ -270,6 +487,95 @@
     if (_urls[type]) URL.revokeObjectURL(_urls[type]);
     _urls[type] = URL.createObjectURL(blob);
     return _urls[type];
+  }
+
+  /* ── Image size control helpers (img-cntrl) ─────────────── */
+
+  /**
+   * Calculates pixel dimensions from an aspect ratio string and a base
+   * resolution (applied to the longer axis).  Uses floor-rounding to match
+   * AspectRatioService behaviour on the server.
+   *
+   * Examples:
+   *   calcDims("16:9", 1080) → { w: 1920, h: 1080 }
+   *   calcDims("9:16", 1080) → { w: 607,  h: 1080 }
+   *   calcDims("1:1",  1024) → { w: 1024, h: 1024 }
+   *
+   * @param {string} ratio - Ratio string in "W:H" format.
+   * @param {number} base  - Longer-side pixel length (default 1024).
+   * @returns {{ w: number, h: number }|null}
+   */
+  function calcDims(ratio, base = 1024) {
+    const parts = ratio.split(":");
+    if (parts.length !== 2) return null;
+    const rw = parseFloat(parts[0]);
+    const rh = parseFloat(parts[1]);
+    if (!rw || !rh || rw <= 0 || rh <= 0) return null;
+    if (rw >= rh) {
+      return { w: base, h: Math.floor(base * rh / rw) };
+    }
+    return { w: Math.floor(base * rw / rh), h: base };
+  }
+
+  /** Aspect ratio values that belong to each image category. */
+  const RATIO_CATEGORIES = {
+    square:    ["1:1"],
+    landscape: ["4:3", "16:9", "3:2"],
+    portrait:  ["3:4", "9:16", "2:3"],
+  };
+
+  /**
+   * Filters the image-aspect-ratio <select> to only show ratios that belong to
+   * the selected category.  "Any" and "Custom" leave all options visible.
+   */
+  function filterRatioOptions() {
+    const cat     = imageRatioCategory.value;
+    const allowed = RATIO_CATEGORIES[cat] || null; // null = no filter
+    [...imageAspectRatio.options].forEach((opt) => {
+      if (!opt.value) return; // always keep the "Default" option
+      opt.hidden = allowed ? !allowed.includes(opt.value) : false;
+    });
+    // If the currently-selected ratio is now hidden, reset to "Default"
+    const sel = imageAspectRatio.options[imageAspectRatio.selectedIndex];
+    if (sel && sel.hidden) imageAspectRatio.value = "";
+  }
+
+  /**
+   * Keeps the custom-dimensions row and the dimension-hint <span> in sync
+   * with the current category / aspect-ratio selection.
+   *
+   * Behaviour:
+   *  - Category = "Custom"   → show row, enable inputs, hint = entered px.
+   *  - Preset ratio selected → show row (read-only), hint = calculated px.
+   *  - Neither               → hide row, clear hint.
+   */
+  function syncImageDimsPanel() {
+    filterRatioOptions();
+    const cat     = imageRatioCategory.value;
+    const ratio   = imageAspectRatio.value;
+    const isCustom = cat === "custom";
+
+    if (isCustom) {
+      imageCustomDims.classList.remove("hidden");
+      imageWidthInput.disabled  = false;
+      imageHeightInput.disabled = false;
+      const w = parseInt(imageWidthInput.value, 10);
+      const h = parseInt(imageHeightInput.value, 10);
+      imageDimsHint.textContent = (w > 0 && h > 0) ? w + " × " + h + " px" : "";
+    } else if (ratio) {
+      imageCustomDims.classList.remove("hidden");
+      imageWidthInput.disabled  = true;
+      imageHeightInput.disabled = true;
+      imageWidthInput.value     = "";
+      imageHeightInput.value    = "";
+      const dims = calcDims(ratio);
+      imageDimsHint.textContent = dims ? dims.w + " × " + dims.h + " px (est.)" : "";
+    } else {
+      imageCustomDims.classList.add("hidden");
+      imageWidthInput.disabled  = true;
+      imageHeightInput.disabled = true;
+      imageDimsHint.textContent = "";
+    }
   }
 
   /* ── Data URI / base64 → Blob helpers ──────────────────── */
@@ -399,23 +705,49 @@
     const provider = proxyProviderSelect.value || undefined;
     const payload = { ...body };
     if (provider && !payload.provider) payload.provider = provider;
-    const resp = await fetch(base + endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+
+    let resp;
+    try {
+      resp = await fetch(base + endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (_networkErr) {
+      const err = new Error(
+        "Cannot reach proxy server at " + base + ". " +
+        "Start it with: npm run serve",
+      );
+      showGlobalError(err.message);
+      throw err;
+    }
+
     if (!resp.ok) {
       let msg = resp.statusText;
-      try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
-      throw new Error("HTTP " + resp.status + " " + resp.statusText + ": " + JSON.stringify({ error: msg }));
+      try {
+        const j = await resp.json();
+        msg = j.error || (Array.isArray(j.issues) ? j.issues.join("; ") : null) || msg;
+      } catch (_) {}
+      const httpErr = new Error("Server error " + resp.status + ": " + msg);
+      showGlobalError(httpErr.message);
+      throw httpErr;
     }
     return resp.json();
   }
 
-  async function loadModels(modality, selectEl) {
+  /**
+   * Fetches models for the given modality from the proxy server and populates
+   * the given <select> element.
+   *
+   * @param {string}      modality        - "text" | "image" | "audio" | "video" | "structured"
+   * @param {HTMLElement} selectEl        - The <select> to populate.
+   * @param {string}      [providerHint]  - Explicit provider id to pass to /models?provider=.
+   *                                        Overrides the global proxyProviderSelect when given.
+   */
+  async function loadModels(modality, selectEl, providerHint) {
     try {
       const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-      const provider = proxyProviderSelect.value;
+      const provider = providerHint !== undefined ? providerHint : proxyProviderSelect.value;
       let url = base + "/models?modality=" + modality;
       if (provider) url += "&provider=" + provider;
       const models = await fetch(url).then((r) => r.json());
@@ -436,7 +768,8 @@
       loadModels("image",      imageModelSelect),
       loadModels("audio",      ttsModelSelect),
       loadModels("audio",      transcribeModelSelect),
-      loadModels("video",      videoModelSelect),
+      // Video uses its own per-tab provider dropdown + capability-aware loader.
+      loadVideoModels(videoProviderSelect?.value ?? ""),
       loadModels("structured", structuredModelSelect),
     ]);
   }
@@ -448,8 +781,27 @@
       const data = await fetch(base + "/providers").then((r) => r.json());
       allProviders = data; // cache full list (including inactive) for modality filtering
       refreshProviderDropdown(TAB_MODALITY[activeTab()] ?? "text");
+      refreshVideoProviderDropdown(); // populate the video-tab-specific dropdown
     } catch (_) { /* server not running — keep Default */ }
     await loadAllModels();
+  }
+
+  /* ── JSZip availability helper ──────────────────────────── */
+  /**
+   * Polls window.JSZip until it is available or the timeout expires.
+   * @param {number} maxMs      - Maximum wait in milliseconds (default 3000).
+   * @param {number} intervalMs - Poll interval in milliseconds (default 100).
+   * @returns {Promise<true>}
+   */
+  async function waitForJSZip(maxMs = 3000, intervalMs = 100) {
+    const deadline = Date.now() + maxMs;
+    return new Promise((resolve, reject) => {
+      (function poll() {
+        if (typeof window.JSZip === "function") { resolve(true); return; }
+        if (Date.now() >= deadline) { reject(new Error("JSZip did not load in time.")); return; }
+        setTimeout(poll, intervalMs);
+      })();
+    });
   }
 
   /* ── Mode toggle ─────────────────────────────────────────── */
@@ -468,8 +820,23 @@
     _proxyUrlTimer = setTimeout(loadProviders, 600);
   });
 
-  // Reload models when provider selection changes
+  // Reload models when global provider selection changes
   proxyProviderSelect.addEventListener("change", loadAllModels);
+
+  // Reload only video models when the video-tab provider changes
+  if (videoProviderSelect) {
+    videoProviderSelect.addEventListener("change", () => {
+      loadVideoModels(videoProviderSelect.value);
+    });
+  }
+
+  // Sync constraint dropdowns when the video model selection changes
+  if (videoModelSelect) {
+    videoModelSelect.addEventListener("change", () => {
+      const descriptor = videoModelsCache.find((m) => m.id === videoModelSelect.value) ?? null;
+      syncVideoConstraints(descriptor);
+    });
+  }
 
   applyModeUi();
 
@@ -490,6 +857,23 @@
     }
   }
   tabBtns.forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+
+  // ── Video sub-tab switcher ──────────────────────────────────────────────
+  function switchVideoTab(target) {
+    document.querySelectorAll(".video-tab-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.vtab === target);
+      b.setAttribute("aria-selected", b.dataset.vtab === target ? "true" : "false");
+    });
+    document.querySelectorAll(".video-sub-panel").forEach((p) => {
+      p.classList.toggle("hidden", p.dataset.vtab !== target);
+    });
+  }
+
+  document.querySelectorAll(".video-tab-btn").forEach((b) =>
+    b.addEventListener("click", () => switchVideoTab(b.dataset.vtab))
+  );
+
+  switchVideoTab("batch"); // Batch is the default active sub-tab
 
   /* ── Library version badge ───────────────────────────────── */
   const ver = window.AiPowered.__WEB_MODULE_VERSION__;
@@ -584,6 +968,7 @@
       addUsage(result.usage, result.cost);
     } catch (err) {
       showError(textOutput, err);
+      showGlobalError("Text generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTextGenerate, btnTextStream], false);
     }
@@ -646,6 +1031,7 @@
       addUsage(null, null); // streaming — no cost breakdown available
     } catch (err) {
       showError(textOutput, err);
+      showGlobalError("Text streaming failed: " + (err instanceof Error ? err.message : String(err)));
       assistantP.textContent = "[error]";
     } finally {
       setLoading([btnTextGenerate, btnTextStream], false);
@@ -666,7 +1052,19 @@
       let blob;
       let imgResult = null;
       if (modeSelect.value === "proxy") {
-        imgResult = await proxyPost("/image", { prompt, model: imageModelSelect.value || undefined });
+        const isCustom      = imageRatioCategory.value === "custom";
+        const imgAspectRatio = imageAspectRatio.value   || undefined;
+        const imgQuality     = imageQuality.value       || undefined;
+        const imgWidth       = isCustom ? (parseInt(imageWidthInput.value,  10) || undefined) : undefined;
+        const imgHeight      = isCustom ? (parseInt(imageHeightInput.value, 10) || undefined) : undefined;
+        imgResult = await proxyPost("/image", {
+          prompt,
+          model:       imageModelSelect.value || undefined,
+          aspectRatio: imgAspectRatio,
+          width:       imgWidth,
+          height:      imgHeight,
+          quality:     imgQuality,
+        });
         blob = dataUriToBlob(imgResult.data);
       } else {
         blob = await getClient().generateImage(prompt);
@@ -687,11 +1085,18 @@
       }
     } catch (err) {
       showError(imageOutput, err);
+      showGlobalError("Image generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnImageGenerate], false);
     }
   }
   btnImageGenerate.addEventListener("click", handleImageGenerate);
+
+  // Wire image size controls — real-time dimension preview and category filter
+  imageRatioCategory.addEventListener("change", syncImageDimsPanel);
+  imageAspectRatio.addEventListener("change", syncImageDimsPanel);
+  imageWidthInput.addEventListener("input", syncImageDimsPanel);
+  imageHeightInput.addEventListener("input", syncImageDimsPanel);
 
   /* ── AUDIO TAB — TTS ─────────────────────────────────────── */
   async function handleTtsSpeak() {
@@ -725,6 +1130,7 @@
       }
     } catch (err) {
       showError(ttsOutput, err);
+      showGlobalError("Speech synthesis failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTtsSpeak], false);
     }
@@ -772,6 +1178,7 @@
       setUsageText(audioUsage, transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
     } catch (err) {
       showError(transcribeOutput, err);
+      showGlobalError("Transcription failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTranscribe], false);
     }
@@ -904,7 +1311,28 @@
 
   /* ── BATCH UI HELPERS ─────────────────────────────────────── */
 
+  let preflightAbortController = null;
+
+  async function fetchPreflightCostEstimate(count, model) {
+    if (modeSelect.value !== "proxy") return null;
+    if (preflightAbortController) preflightAbortController.abort();
+    preflightAbortController = new AbortController();
+    try {
+      const url = `/pricing?modality=video&model=${encodeURIComponent(model)}`;
+      const res = await fetch(url, { signal: preflightAbortController.signal });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const rate = data?.perVideoUsd ?? data?.pricePerUnit;
+      if (typeof rate !== "number") return null;
+      return { total: (rate * count).toFixed(6), rate: rate.toFixed(6), count };
+    } catch { return null; }
+  }
+
   function showBatchPreflight(items) {
+    // Remove any stale cost estimate before re-rendering
+    const staleEst = batchSummary.querySelector(".batch-estimate");
+    if (staleEst) staleEst.remove();
+
     batchPreflight.classList.remove("hidden");
     batchProgress.classList.add("hidden");
     batchResults.classList.add("hidden");
@@ -950,6 +1378,18 @@
     batchSummary.appendChild(p);
     batchSummary.appendChild(ul);
     btnBatchRun.disabled = false;
+
+    // Fire cost estimate non-blocking; append result when available
+    const estimateModel = videoModelSelect.value || "";
+    fetchPreflightCostEstimate(items.length, estimateModel).then((est) => {
+      if (!est) return;
+      const estEl = document.createElement("p");
+      estEl.className = "batch-estimate";
+      estEl.textContent =
+        "Estimated cost: $" + est.total +
+        "  (" + est.count + " clips \xd7 $" + est.rate + " each, est.)";
+      batchSummary.appendChild(estEl);
+    });
   }
 
   function clearBatch() {
@@ -1001,6 +1441,11 @@
     }
   });
   btnBatchClear.addEventListener("click", clearBatch);
+
+  // Refresh preflight cost estimate when the video model selection changes
+  videoModelSelect.addEventListener("change", () => {
+    if (batchItems.length) showBatchPreflight(batchItems);
+  });
 
   /* ── SHOT CARD RENDERER ───────────────────────────────────── */
 
@@ -1067,6 +1512,14 @@
       body.appendChild(note);
     }
 
+    const costUsd = result.result?.cost?.totalUsd;
+    if (typeof costUsd === "number" && isFinite(costUsd)) {
+      const costEl = document.createElement("p");
+      costEl.className = "shot-cost";
+      costEl.textContent = "Cost: $" + costUsd.toFixed(6);
+      body.appendChild(costEl);
+    }
+
     card.appendChild(body);
     return card;
   }
@@ -1074,17 +1527,24 @@
   /* ── RESULTS HTML PAGE GENERATOR ─────────────────────────── */
 
   function buildResultsHtml(results) {
+    const totalCost = results.reduce((sum, r) =>
+      sum + (typeof r.result?.cost?.totalUsd === "number" ? r.result.cost.totalUsd : 0), 0);
+    const costSegment = totalCost > 0 ? " · Total cost: $" + totalCost.toFixed(6) : "";
+
     const shotCards = results.map((r) => {
       const videoTag = (r.status === "ok" && r.modality === "video" && r.result?.data)
         ? `<video controls style="width:100%;max-height:360px;display:block;background:#000" src="${r.result.data}"></video>`
         : (r.status === "error"
           ? `<p style="color:#b91c1c;font-weight:500">Error: ${escHtml(r.error || "")}</p>`
           : `<p style="color:#64748b">Generated (no binary preview)</p>`);
+      const costBadge = (r.status === "ok" && typeof r.result?.cost?.totalUsd === "number")
+        ? `<span class="shot-cost-badge">$${r.result.cost.totalUsd.toFixed(6)}</span>`
+        : "";
       return `
     <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:1rem">
       <div style="display:flex;justify-content:space-between;padding:.5rem .75rem;background:#fff;border-bottom:1px solid #e2e8f0">
         <strong style="font-size:.85rem">${escHtml(r.name || ("Shot " + (r.index + 1)))}</strong>
-        <span style="font-size:.75rem;color:${r.status === "ok" ? "#16a34a" : "#b91c1c"}">${r.status === "ok" ? "✓ Generated" : "✗ Error"}</span>
+        <span style="font-size:.75rem;color:${r.status === "ok" ? "#16a34a" : "#b91c1c"}">${r.status === "ok" ? "✓ Generated" : "✗ Error"}</span>${costBadge}
       </div>
       <div style="padding:.6rem .75rem;background:#f8fafc">
         <p style="font-size:.8rem;color:#64748b;margin:0 0 .4rem">${escHtml(r.prompt)}</p>
@@ -1100,11 +1560,12 @@
 <title>Batch Results — ai-powered</title>
 <style>body{margin:0;font-family:system-ui,sans-serif;background:#f8fafc;color:#1e293b;padding:1.5rem}
 h1{font-size:1.2rem;margin:0 0 1rem}
-.summary{font-size:.82rem;color:#64748b;margin-bottom:1.25rem}</style>
+.summary{font-size:.82rem;color:#64748b;margin-bottom:1.25rem}
+.shot-cost-badge{float:right;font-size:.8rem;color:#6b7280}</style>
 </head>
 <body>
 <h1>Batch Results — ai-powered</h1>
-<p class="summary">Generated ${results.length} shot${results.length !== 1 ? "s" : ""} · ${new Date().toLocaleString()}</p>
+<p class="summary">Generated ${results.length} shot${results.length !== 1 ? "s" : ""} · ${new Date().toLocaleString()}${costSegment}</p>
 ${shotCards}
 </body></html>`;
   }
@@ -1128,31 +1589,45 @@ ${shotCards}
   });
 
   btnDownloadZip.addEventListener("click", async () => {
-    if (!batchResultItems.length) return;
-    if (typeof JSZip === "undefined") {
-      alert("JSZip library not loaded. Check your internet connection.");
+    // Clear any previous status message at the start of each attempt.
+    zipStatusEl.textContent = "";
+
+    // Wait for JSZip to be available (defence-in-depth: handles late-arriving scripts).
+    try {
+      await waitForJSZip();
+    } catch (err) {
+      zipStatusEl.textContent = "Unable to create ZIP: " + err.message;
       return;
     }
-    const zip = new JSZip();
-    for (const r of batchResultItems) {
-      if (r.status === "ok" && r.modality === "video" && r.result?.data) {
-        const b64 = r.result.data.replace(/^data:[^,]+,/, "");
-        const filename = (r.name || ("shot-" + r.index)).replace(/[^a-z0-9_\-]/gi, "_") + ".mp4";
-        zip.file(filename, b64, { base64: true });
-      }
-    }
-    // Also include the HTML results page
-    zip.file("results.html", buildResultsHtml(batchResultItems));
+
+    // Nothing to zip — silent no-op.
+    if (!batchResultItems.length) return;
+
     try {
-      const content = await zip.generateAsync({ type: "blob" });
-      const url     = URL.createObjectURL(content);
-      const a       = document.createElement("a");
-      a.href        = url;
-      a.download    = "batch-videos.zip";
+      const zip = new window.JSZip();
+
+      for (const r of batchResultItems) {
+        if (r.status !== "ok" || r.modality !== "video" || !r.result?.data) continue;
+        // Strip data-URI prefix if present; add raw bytes to avoid double-encoding.
+        const b64  = r.result.data.replace(/^data:[^,]+,/, "");
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const filename = (r.name || ("shot-" + r.index)).replace(/[^a-z0-9_\-]/gi, "_") + ".mp4";
+        zip.file(filename, bytes);
+      }
+
+      // Include the HTML results summary page in the archive.
+      zip.file("results.html", buildResultsHtml(batchResultItems));
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement("a"), {
+        href: url,
+        download: "batch-videos.zip",
+      });
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert("ZIP generation failed: " + (err.message || err));
+      zipStatusEl.textContent = "ZIP generation failed: " + (err.message || String(err));
     }
   });
 
@@ -1165,6 +1640,8 @@ ${shotCards}
       return;
     }
 
+    let batchCost = 0;
+
     const total = batchItems.length;
     batchResultItems = [];
     batchShots.innerHTML = "";
@@ -1176,18 +1653,47 @@ ${shotCards}
     batchProgressLabel.textContent = "Processing…";
     batchProgressCtr.textContent   = "0 / " + total;
     batchProgressBar.style.width   = "0%";
+    batchCostTally.classList.add("hidden");
 
     const proxyBase = (proxyUrlInput.value || "http://localhost:3001").replace(/\/$/, "");
-    const provider  = proxyProviderSelect.value || undefined;
+    // Use the video-tab-specific provider (not the global one) for batch video runs.
+    const provider  = (videoProviderSelect?.value || proxyProviderSelect.value) || undefined;
     const model     = videoModelSelect.value || undefined;
+
+    // Batch constraint defaults — read once and spread into every item
+    const batchAspectRatio = batchAspectRatioEl?.value || undefined;
+    const batchResolution  = batchResolutionEl?.value  || undefined;
+    const batchQuality     = batchQualityEl?.value     || undefined;
+    const batchDuration    = batchDurationEl?.value
+      ? parseFloat(batchDurationEl.value) || undefined
+      : undefined;
+    const batchFps         = batchFpsEl?.value
+      ? parseInt(batchFpsEl.value, 10) || undefined
+      : undefined;
 
     const payload = {
       items: batchItems.map((item) => ({
+        // Identity fields — always from the shot item
         modality: item.modality || "video",
         name:     item.name,
         prompt:   item.prompt,
+        // Connection overrides — from UI globals
         ...(provider ? { provider } : {}),
         ...(model    ? { model }    : {}),
+        // Global batch constraint defaults (lowest precedence)
+        ...(batchAspectRatio ? { aspectRatio: batchAspectRatio } : {}),
+        ...(batchResolution  ? { resolution:  batchResolution  } : {}),
+        ...(batchQuality     ? { quality:     batchQuality     } : {}),
+        ...(batchDuration    ? { duration:    batchDuration    } : {}),
+        ...(batchFps         ? { fps:         batchFps         } : {}),
+        // Per-shot values override globals — applied last so they always win
+        ...(item.aspectRatio !== undefined ? { aspectRatio: item.aspectRatio } : {}),
+        ...(item.resolution  !== undefined ? { resolution:  item.resolution  } : {}),
+        ...(item.quality     !== undefined ? { quality:     item.quality     } : {}),
+        ...(item.duration    !== undefined ? { duration:    item.duration    } : {}),
+        ...(item.fps         !== undefined ? { fps:         item.fps         } : {}),
+        ...(item.width       !== undefined ? { width:       item.width       } : {}),
+        ...(item.height      !== undefined ? { height:      item.height      } : {}),
       })),
     };
 
@@ -1227,6 +1733,12 @@ ${shotCards}
             batchResultItems.push(result);
             batchShots.appendChild(renderShotCard(result));
             addUsage(result.result?.usage ?? null, result.result?.cost ?? null);
+            const clipCost = result.result?.cost?.totalUsd;
+            if (typeof clipCost === "number") {
+              batchCost += clipCost;
+              batchCostTally.classList.remove("hidden");
+              batchCostTally.textContent = "Batch cost so far: $" + batchCost.toFixed(6);
+            }
             done_count++;
             const pct = Math.round((done_count / total) * 100);
             batchProgressBar.style.width   = pct + "%";
@@ -1242,11 +1754,21 @@ ${shotCards}
           batchResultItems.push(result);
           batchShots.appendChild(renderShotCard(result));
           addUsage(result.result?.usage ?? null, result.result?.cost ?? null);
+          const clipCost = result.result?.cost?.totalUsd;
+          if (typeof clipCost === "number") {
+            batchCost += clipCost;
+            batchCostTally.classList.remove("hidden");
+            batchCostTally.textContent = "Batch cost so far: $" + batchCost.toFixed(6);
+          }
         } catch (_) {}
       }
 
       batchProgressLabel.textContent = "Complete — " + batchResultItems.length + " of " + total + " processed";
       batchProgressBar.style.width   = "100%";
+      if (batchCost > 0) {
+        batchCostTally.classList.remove("hidden");
+        batchCostTally.textContent = "Total batch cost: $" + batchCost.toFixed(6);
+      }
     } catch (err) {
       batchProgressLabel.textContent = "Error: " + (err.message || err);
       batchProgress.classList.remove("hidden");
@@ -1257,34 +1779,64 @@ ${shotCards}
 
   /* ── VIDEO TAB ───────────────────────────────────────────── */
   async function handleVideoGenerate() {
-    const prompt = videoPromptEl.value.trim();
-    if (!prompt) return;
+    // Guard 1: prompt must be non-empty
+    const prompt = videoPromptEl ? videoPromptEl.value.trim() : "";
+    if (!prompt) {
+      showError(videoOutput, new Error("Please enter a prompt before generating."));
+      return;
+    }
+
+    // Guard 2: video generation is proxy-only — fail fast with a clear message
+    if (modeSelect.value !== "proxy") {
+      const modeMsg =
+        "Proxy mode required - start the server with: node dist/ai-powered/cli/index.js serve";
+      showGlobalError(modeMsg);
+      showError(videoOutput, new Error(modeMsg));
+      return;
+    }
+
     setLoading([btnVideoGenerate], true);
     showSpinner(videoOutput, "Generating video — this may take a moment…");
-    videoUsage.textContent = "";
+    if (videoUsage) videoUsage.textContent = "";
+
     try {
       let blob;
       let vidResult = null;
 
-      if (modeSelect.value === "proxy") {
-        vidResult = await proxyPost("/video", { prompt, model: videoModelSelect.value || undefined });
+      // Use optional chaining on all control refs so the handler is robust
+      // even if a control element is missing from the DOM.
+      const vidAspectRatio = videoAspectRatio?.value    || undefined;
+      const vidResolution  = videoResolution?.value     || undefined;
+      const vidQuality     = videoQuality?.value        || undefined;
+      const vidDuration    = videoDuration?.value ? parseFloat(videoDuration.value) || undefined : undefined;
+      const vidFps         = videoFps?.value      ? parseInt(videoFps.value, 10)    || undefined : undefined;
 
-        if (vidResult.data && isStubVideoData(vidResult.data)) {
-          // Mock stub — generate a real playable preview via Canvas
-          showSpinner(videoOutput, "Encoding preview…");
-          blob = await generatePlaceholderVideoBlob(prompt, 2000);
-        } else if (vidResult.data) {
-          blob = dataUriToBlob(vidResult.data);
-        } else {
-          // Provider returned no binary data at all
-          videoOutput.innerHTML =
-            '<p style="padding:1rem;color:var(--text-muted)">✓ Video generated (no binary preview available)</p>';
-          addUsage(vidResult?.usage ?? null, vidResult?.cost ?? null);
-          setUsageText(videoUsage, vidResult?.usage ?? null, vidResult?.cost ?? null);
-          return;
-        }
+      vidResult = await proxyPost("/video", {
+        prompt,
+        // Explicit provider ensures the video-tab picker is honoured even when
+        // the global proxy provider is set to a non-video provider.
+        provider:    videoProviderSelect?.value || undefined,
+        model:       videoModelSelect?.value || undefined,
+        aspectRatio: vidAspectRatio,
+        resolution:  vidResolution,
+        quality:     vidQuality,
+        duration:    vidDuration,
+        fps:         vidFps,
+      });
+
+      if (vidResult.data && isStubVideoData(vidResult.data)) {
+        // Mock stub — generate a real playable preview via Canvas
+        showSpinner(videoOutput, "Encoding preview…");
+        blob = await generatePlaceholderVideoBlob(prompt, 2000);
+      } else if (vidResult.data) {
+        blob = dataUriToBlob(vidResult.data);
       } else {
-        blob = await getClient().generateVideo(prompt);
+        // Provider returned no binary data at all
+        videoOutput.innerHTML =
+          '<p style="padding:1rem;color:var(--text-muted)">✓ Video generated (no binary preview available)</p>';
+        addUsage(vidResult?.usage ?? null, vidResult?.cost ?? null);
+        setUsageText(videoUsage, vidResult?.usage ?? null, vidResult?.cost ?? null);
+        return;
       }
 
       const url = blobUrl("video", blob);
@@ -1297,12 +1849,13 @@ ${shotCards}
       addUsage(vidResult?.usage ?? null, vidResult?.cost ?? null);
       setUsageText(videoUsage, vidResult?.usage ?? null, vidResult?.cost ?? null);
       if (!vidResult?.cost) {
-        videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
+        if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
       } else {
-        videoUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
+        if (videoUsage) videoUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
       }
     } catch (err) {
       showError(videoOutput, err);
+      showGlobalError("Video generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnVideoGenerate], false);
     }
@@ -1334,6 +1887,7 @@ ${shotCards}
     } catch (err) {
       structuredOutput.classList.remove("json-output");
       showError(structuredOutput, err);
+      showGlobalError("Structured generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnStructuredGenerate], false);
     }

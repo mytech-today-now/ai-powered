@@ -9,6 +9,7 @@
   --border:        #e2e8f0;
   --text:          #1e293b;
   --muted:         #64748b;
+  --text-muted:    #6b7280;
   --primary:       #2563eb;
   --primary-h:     #1d4ed8;
   --danger:        #b91c1c;
@@ -392,6 +393,24 @@ button.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 .drop-text strong { color: var(--text); }
 .drop-or   { font-size: .72rem; color: var(--border); }
 
+/* ── Batch constraint defaults panel ─────────────────── */
+.batch-constraints {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: .75rem 1rem;
+  margin-bottom: .75rem;
+}
+.batch-constraints-label {
+  display: block;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: .5rem;
+}
+
 /* ── Batch pre-flight panel ───────────────────────────── */
 .batch-preflight {
   border: 1px solid var(--border);
@@ -625,4 +644,146 @@ textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37,99,235,.15);
 }
+
+/* ── Cost display ─────────────────────────────────────── */
+.batch-estimate        { font-size: .85rem; color: var(--text-muted, #6b7280); margin: .25rem 0 0; }
+.shot-cost             { font-size: .8rem;  color: var(--text-muted, #6b7280); margin: .2rem 0 0; }
+.batch-cost-tally      { font-size: .85rem; font-weight: 500; margin: .4rem 0 0; }
+.batch-cost-tally.hidden { display: none; }
+
+/* ── Video settings bar (shared model picker) ─────────── */
+.video-settings-bar {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: .75rem;
+}
+.video-settings-bar label {
+  font-size: .8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.video-settings-bar select { min-width: 180px; }
+
+/* ── Video sub-tab bar ────────────────────────────────── */
+.video-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: .75rem;
+}
+.video-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: .45rem .9rem;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.video-tab-btn:hover { color: var(--text); }
+.video-tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* ── Video sub-panels ─────────────────────────────────── */
+.video-sub-panel.hidden { display: none; }
+
+/* ── Image / Video size controls (T17-T19) ────────────── */
+
+/*
+ * .size-controls-row / .ratio-row
+ * Horizontal flex row used for aspect-ratio, resolution, quality, and
+ * duration controls inside the Image and Video tab panels.
+ * .ratio-row is a semantic alias with a slightly tighter bottom margin.
+ */
+.size-controls-row,
+.ratio-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .4rem;
+}
+
+.size-controls-row label,
+.ratio-row label {
+  font-size: .8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.size-controls-row select,
+.ratio-row select {
+  min-width: 120px;
+}
+
+/*
+ * .dim-input
+ * Compact number input for pixel width / height and numeric duration.
+ */
+.dim-input {
+  width: 90px;
+  height: 2rem;
+  padding: 0 .5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .85rem;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.dim-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+}
+
+/*
+ * .dimension-preview
+ * Inline read-only label showing the resolved pixel dimensions
+ * (e.g. "1 280 × 720 px") next to the ratio/resolution selectors.
+ * Updated dynamically by app.js when the user picks an aspect ratio
+ * or resolution preset.
+ */
+.dimension-preview {
+  font-size: .78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 5rem;
+}
+
+/* ── Global error toast ─────────────────────────────── */
+.global-error-toast {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: var(--danger-bg);
+  border-bottom: 2px solid var(--danger);
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem 1.5rem;
+  font-size: .9rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.global-error-toast.hidden { display: none; }
+.global-error-text { flex: 1; }
+.global-error-toast button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--danger);
+  padding: 0 .25rem;
+  line-height: 1;
+}
+.global-error-toast button:hover { opacity: .7; }
 

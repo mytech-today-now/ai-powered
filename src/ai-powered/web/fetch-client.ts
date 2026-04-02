@@ -29,6 +29,15 @@ export interface WebCallOptions {
   model?: string;
 }
 
+/** Video-generation controls accepted by WebAiClient.generateVideo(). */
+export interface WebVideoOptions extends WebCallOptions {
+  aspectRatio?: string;
+  resolution?: string;
+  quality?: "draft" | "standard" | "high";
+  duration?: number;
+  fps?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Result types (browser-compatible — no Buffer, no Node types)
 // ---------------------------------------------------------------------------
@@ -141,9 +150,7 @@ function renderSecurityBanner(): void {
     };
     body: { prepend(node: unknown): void };
   };
-  const doc = (globalThis as Record<string, unknown>)["document"] as
-    | MinimalDoc
-    | undefined;
+  const doc = (globalThis as Record<string, unknown>)["document"] as MinimalDoc | undefined;
   if (!doc) return;
   if (doc.getElementById("__ai_powered_security_warning__")) return;
   const banner = doc.createElement("div");
@@ -226,10 +233,7 @@ export class BrowserConversationSession {
   }
 
   /** Stream the assistant reply, persisting both turns on completion. */
-  async *stream(
-    userMessage: string,
-    options?: WebCallOptions,
-  ): AsyncIterable<string> {
+  async *stream(userMessage: string, options?: WebCallOptions): AsyncIterable<string> {
     this.appendMessage({ role: "user", content: userMessage });
     const history = this.getHistory();
     const historyPrompt = history
@@ -314,11 +318,7 @@ export class WebAiClient {
   private resolveModel(modality: string, callModel?: string): string {
     if (callModel) return callModel;
     if (this.opts.mode === "direct") {
-      return (
-        this.opts.model ??
-        DEFAULT_MODELS[this.opts.provider]?.[modality] ??
-        ""
-      );
+      return this.opts.model ?? DEFAULT_MODELS[this.opts.provider]?.[modality] ?? "";
     }
     return "";
   }
@@ -338,10 +338,7 @@ export class WebAiClient {
   // -------------------------------------------------------------------------
 
   /** Generate text from a prompt. */
-  async generateText(
-    prompt: string,
-    options?: WebCallOptions,
-  ): Promise<WebTextResult> {
+  async generateText(prompt: string, options?: WebCallOptions): Promise<WebTextResult> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
@@ -456,10 +453,7 @@ export class WebAiClient {
    * In proxy mode the server returns `text/plain` chunks directly.
    * In direct mode the provider returns `text/event-stream` SSE (`data: {...}`).
    */
-  async *streamText(
-    prompt: string,
-    options?: WebCallOptions,
-  ): AsyncIterable<string> {
+  async *streamText(prompt: string, options?: WebCallOptions): AsyncIterable<string> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt, stream: true };
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
@@ -529,15 +523,14 @@ export class WebAiClient {
         try {
           const evt = JSON.parse(payload) as Record<string, unknown>;
           // OpenAI-compatible (including Venice, xAI)
-          const choices = evt["choices"] as
-            | Array<{ delta?: { content?: string } }>
-            | undefined;
+          const choices = evt["choices"] as Array<{ delta?: { content?: string } }> | undefined;
           const delta = choices?.[0]?.delta?.content;
-          if (delta) { yield delta; continue; }
+          if (delta) {
+            yield delta;
+            continue;
+          }
           // Anthropic streaming
-          const anthropicDelta = (
-            evt["delta"] as { type?: string; text?: string } | undefined
-          );
+          const anthropicDelta = evt["delta"] as { type?: string; text?: string } | undefined;
           if (anthropicDelta?.type === "text_delta" && anthropicDelta.text) {
             yield anthropicDelta.text;
           }
@@ -568,7 +561,12 @@ export class WebAiClient {
         signal: options?.signal ?? null,
       });
       await this.assertOk(res);
-      const data = (await res.json()) as { url?: string; b64_json?: string; data?: string; mimeType?: string };
+      const data = (await res.json()) as {
+        url?: string;
+        b64_json?: string;
+        data?: string;
+        mimeType?: string;
+      };
       if (data.url) {
         const imgRes = await fetch(data.url, { signal: options?.signal ?? null });
         return imgRes.blob();
@@ -613,7 +611,6 @@ export class WebAiClient {
     }
     throw new Error("generateImage: no image data in provider response");
   }
-
 
   // -------------------------------------------------------------------------
   // transcribeAudio
@@ -706,10 +703,15 @@ export class WebAiClient {
   // -------------------------------------------------------------------------
 
   /** Generate video and return it as a `Blob`. Only supported via proxy. */
-  async generateVideo(prompt: string, options?: WebCallOptions): Promise<Blob> {
+  async generateVideo(prompt: string, options?: WebVideoOptions): Promise<Blob> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
+      if (options?.aspectRatio !== undefined) body["aspectRatio"] = options.aspectRatio;
+      if (options?.resolution !== undefined) body["resolution"] = options.resolution;
+      if (options?.quality !== undefined) body["quality"] = options.quality;
+      if (options?.duration !== undefined) body["duration"] = options.duration;
+      if (options?.fps !== undefined) body["fps"] = options.fps;
       const res = await fetch(`${this.proxyBase}/video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -717,7 +719,12 @@ export class WebAiClient {
         signal: options?.signal ?? null,
       });
       await this.assertOk(res);
-      const data = (await res.json()) as { url?: string; b64_json?: string; data?: string; mimeType?: string };
+      const data = (await res.json()) as {
+        url?: string;
+        b64_json?: string;
+        data?: string;
+        mimeType?: string;
+      };
       if (data.url) {
         const vidRes = await fetch(data.url, { signal: options?.signal ?? null });
         return vidRes.blob();
@@ -737,9 +744,7 @@ export class WebAiClient {
       }
       throw new Error("generateVideo: no video data in proxy response");
     }
-    throw new Error(
-      "generateVideo is not supported in direct mode. Use proxy mode instead.",
-    );
+    throw new Error("generateVideo is not supported in direct mode. Use proxy mode instead.");
   }
 
   // -------------------------------------------------------------------------
@@ -784,8 +789,7 @@ export class WebAiClient {
     const result = await this.generateText(jsonPrompt, {
       ...options,
       systemPrompt:
-        options?.systemPrompt ??
-        "You are a helpful assistant that responds only with valid JSON.",
+        options?.systemPrompt ?? "You are a helpful assistant that responds only with valid JSON.",
     });
 
     let parsed: T;
@@ -813,7 +817,7 @@ export class WebAiClient {
       return res.json() as Promise<WebModelInfo[]>;
     }
 
-    const { provider, apiKey } = this.opts;
+    const { provider, apiKey: _apiKey } = this.opts;
     const endpoint =
       provider === "anthropic"
         ? `${PROVIDER_BASE_URLS[provider]}/models`

@@ -27,6 +27,7 @@ import { GrokProvider } from "./xai.js";
 import { VeniceProvider } from "./venice.js";
 import { CustomProvider } from "./custom.js";
 import { LumaAIProvider } from "./lumaai.js";
+import { RunwayProvider } from "./runway.js";
 
 export { MockProvider } from "./mock.js";
 export { OpenAiProvider } from "./openai.js";
@@ -35,6 +36,7 @@ export { GrokProvider } from "./xai.js";
 export { VeniceProvider } from "./venice.js";
 export { CustomProvider } from "./custom.js";
 export { LumaAIProvider } from "./lumaai.js";
+export { RunwayProvider } from "./runway.js";
 
 // ---------------------------------------------------------------------------
 // Provider registry
@@ -43,13 +45,14 @@ export { LumaAIProvider } from "./lumaai.js";
 type ProviderConstructor = new (config: AiConfig) => BaseProvider;
 
 const REGISTRY = new Map<ProviderName, ProviderConstructor>([
-  ["mock",      MockProvider],
-  ["openai",    OpenAiProvider],
+  ["mock", MockProvider],
+  ["openai", OpenAiProvider],
   ["anthropic", AnthropicProvider],
-  ["xai",       GrokProvider],
-  ["venice",    VeniceProvider],
-  ["custom",    CustomProvider],
-  ["lumaai",    LumaAIProvider],
+  ["xai", GrokProvider],
+  ["venice", VeniceProvider],
+  ["custom", CustomProvider],
+  ["lumaai", LumaAIProvider],
+  ["runway", RunwayProvider],
 ]);
 
 /**
@@ -62,13 +65,19 @@ export function registerProvider(name: ProviderName, ctor: ProviderConstructor):
 
 /**
  * Instantiates the correct provider for the given config.
- * Falls back to MockProvider when config.mock is true or AI_MOCK=true.
+ * Falls back to MockProvider when config.mock is true.
+ *
+ * NOTE: Do NOT re-check process.env["AI_MOCK"] here.  loadConfig() already
+ * maps AI_MOCK into config.mock at Layer 5 (env vars), and explicit overrides
+ * such as { mock: false } applied at Layer 6 (flags) correctly win.
+ * Re-reading the env var here would bypass that layered precedence and ignore
+ * intentional mock:false overrides from routes (e.g. GET /models?provider=…).
  *
  * @throws Error if the requested provider is not registered.
  */
 export function createProvider(config: AiConfig): BaseProvider {
-  // Always mock when flag or env var says so.
-  if (config.mock || process.env["AI_MOCK"] === "true") {
+  // Trust config.mock — it already incorporates AI_MOCK via loadConfig layers.
+  if (config.mock) {
     return new MockProvider(config);
   }
 
@@ -81,4 +90,3 @@ export function createProvider(config: AiConfig): BaseProvider {
   }
   return new ProviderClass(config);
 }
-

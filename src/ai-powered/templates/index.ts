@@ -15,7 +15,7 @@
 
 import * as fs from "node:fs";
 import { ValidationError } from "../types.js";
-import { BUILT_INS, BUILT_IN_REGISTRY, TemplateSchema } from "./builtins.js";
+import { BUILT_IN_REGISTRY, TemplateSchema } from "./builtins.js";
 
 // Re-export the browser-safe subset so that callers importing from templates/index.ts
 // also receive renderTemplate, TemplateSchema, and the raw built-in data.
@@ -91,7 +91,10 @@ export function getTemplate(
     const raw = JSON.parse(fs.readFileSync(nameOrPath, "utf-8")) as unknown;
     const parsed = TemplateSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new ValidationError(parsed.error.issues.map((i) => i.message), raw);
+      throw new ValidationError(
+        parsed.error.issues.map((i) => i.message),
+        raw,
+      );
     }
     return parsed.data;
   }
@@ -107,4 +110,3 @@ export function getTemplate(
 }
 
 // renderTemplate is re-exported from ./builtins.js above — no local override needed.
-

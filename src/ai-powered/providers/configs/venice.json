@@ -1,0 +1,69 @@
+{
+  "provider": "venice",
+  "updatedAt": "2026-04-02",
+  "reviewNote": "Verify per-model constraints at https://api.venice.ai/api/v1/models — check width/height/aspect_ratio fields per model. Also consult https://docs.venice.ai/api-reference/image-generate for image generation body params.",
+  "models": [
+    {
+      "id": "fluently-xl",
+      "modalities": ["image"],
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9"],
+      "resolutions": [
+        { "label": "512×512", "width": 512, "height": 512 },
+        { "label": "768×768", "width": 768, "height": 768 },
+        { "label": "1024×1024", "width": 1024, "height": 1024 },
+        { "label": "1280×720", "width": 1280, "height": 720 },
+        { "label": "720×1280", "width": 720, "height": 1280 },
+        { "label": "1280×960", "width": 1280, "height": 960 },
+        { "label": "960×1280", "width": 960, "height": 1280 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxPixels": 1638400
+    },
+    {
+      "id": "venice-sd-3.5",
+      "modalities": ["image"],
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4"],
+      "resolutions": [
+        { "label": "512×512", "width": 512, "height": 512 },
+        { "label": "1024×1024", "width": 1024, "height": 1024 },
+        { "label": "1280×720", "width": 1280, "height": 720 },
+        { "label": "720×1280", "width": 720, "height": 1280 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxPixels": 1638400
+    },
+    {
+      "id": "venice-flux-dev",
+      "modalities": ["image"],
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+      "resolutions": [
+        { "label": "512×512", "width": 512, "height": 512 },
+        { "label": "1024×1024", "width": 1024, "height": 1024 },
+        { "label": "1280×720", "width": 1280, "height": 720 },
+        { "label": "720×1280", "width": 720, "height": 1280 },
+        { "label": "1280×1280", "width": 1280, "height": 1280 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxPixels": 1638400
+    },
+    {
+      "id": "venice-video-01",
+      "modalities": ["video"],
+      "aspectRatios": ["16:9", "9:16", "1:1", "4:3"],
+      "resolutions": [
+        { "label": "480p", "width": 854, "height": 480 },
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "maxWidth": 1920,
+      "maxHeight": 1080,
+      "maxPixels": 2073600,
+      "maxDurationSecs": 10,
+      "fpsOptions": [24, 30],
+      "qualityOptions": ["standard", "high"]
+    }
+  ]
+}

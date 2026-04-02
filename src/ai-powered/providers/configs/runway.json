@@ -1,0 +1,49 @@
+{
+  "provider": "runway",
+  "updatedAt": "2026-04-02",
+  "reviewNote": "Verify at https://docs.dev.runwayml.com — gen4.5 supports text-to-video (5 or 10s). gen4_turbo requires an image keyframe. Ratios are WIDTHxHEIGHT strings (e.g. '1280:720'). Pricing: 1 credit = $0.01; gen4.5 = 12 credits/sec, gen4_turbo = 5 credits/sec, gen3a_turbo = 5 credits/sec.",
+  "models": [
+    {
+      "id": "gen4.5",
+      "modalities": ["video"],
+      "aspectRatios": ["1280:720", "720:1280"],
+      "resolutions": [
+        { "label": "landscape-720p", "width": 1280, "height": 720 },
+        { "label": "portrait-720p", "width": 720, "height": 1280 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxDurationSecs": 10,
+      "fpsOptions": [24],
+      "qualityOptions": ["standard"]
+    },
+    {
+      "id": "gen4_turbo",
+      "modalities": ["video"],
+      "aspectRatios": ["1280:768", "768:1280"],
+      "resolutions": [
+        { "label": "landscape", "width": 1280, "height": 768 },
+        { "label": "portrait", "width": 768, "height": 1280 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxDurationSecs": 10,
+      "fpsOptions": [24],
+      "qualityOptions": ["standard"]
+    },
+    {
+      "id": "gen3a_turbo",
+      "modalities": ["video"],
+      "aspectRatios": ["1280:768", "768:1280"],
+      "resolutions": [
+        { "label": "landscape", "width": 1280, "height": 768 },
+        { "label": "portrait", "width": 768, "height": 1280 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxDurationSecs": 10,
+      "fpsOptions": [24],
+      "qualityOptions": ["standard"]
+    }
+  ]
+}

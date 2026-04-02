@@ -59,6 +59,7 @@ export const ProviderNameSchema = z.enum([
   "xai",
   "venice",
   "lumaai",
+  "runway",
   "custom",
   "mock",
 ]);
@@ -191,7 +192,9 @@ export const AiConfigSchema = z
      *   "other"              — generic HTTP; only text generation is supported
      * Defaults to "openai-compatible".
      */
-    customProviderType: z.enum(["openai-compatible", "ollama", "other"]).default("openai-compatible"),
+    customProviderType: z
+      .enum(["openai-compatible", "ollama", "other"])
+      .default("openai-compatible"),
 
     /**
      * Extra HTTP headers forwarded on every request made by the "custom"
@@ -333,17 +336,14 @@ function backupConfigFile(configPath: string): string {
  *
  * Returns the (possibly migrated) raw config object.
  */
-function handleVersionMismatch(
-  raw: PlainObject,
-  configPath: string,
-): PlainObject {
+function handleVersionMismatch(raw: PlainObject, configPath: string): PlainObject {
   const storedVersion = typeof raw["version"] === "string" ? raw["version"] : null;
   if (storedVersion === null || storedVersion === CURRENT_VERSION) {
     return raw;
   }
   // Mismatch — back up the file and migrate.
   const backupPath = backupConfigFile(configPath);
-  // eslint-disable-next-line no-console
+
   console.warn(
     `[ai-powered] Config version mismatch in ${configPath}: ` +
       `stored=${storedVersion}, current=${CURRENT_VERSION}. ` +
@@ -401,6 +401,7 @@ function resolveApiKey(merged: PlainObject): string | undefined {
     xai: "XAI_API_KEY",
     venice: "VENICE_API_KEY",
     lumaai: "LUMAAI_API_KEY",
+    runway: "RUNWAYML_API_SECRET",
     custom: "AI_CUSTOM_API_KEY",
     mock: "",
   };
@@ -511,9 +512,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AiConfig {
     const profileLayer = extractProfile(profileSource, profileName);
     merged = deepMerge(merged, profileLayer);
   } else if (profileName !== "default") {
-    throw new ConfigError(
-      `Profile "${profileName}" requested but no config file found.`,
-    );
+    throw new ConfigError(`Profile "${profileName}" requested but no config file found.`);
   }
 
   // --- Layer 5: environment variables ---
@@ -569,5 +568,3 @@ export function writeConfig(configPath: string, config: Partial<AiConfig>): void
 // Re-export paths for callers that need them (e.g. config sub-commands)
 // ---------------------------------------------------------------------------
 export { GLOBAL_CONFIG_PATH, LOCAL_CONFIG_PATH, CURRENT_VERSION };
-
-

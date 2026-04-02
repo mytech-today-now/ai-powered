@@ -49,27 +49,27 @@ function openAiError(res: Response, status: number, message: string, type: strin
  * `provider` and `mock`.
  */
 export const ChatCompletionsBodySchema = z.object({
-  model:           z.string().optional(),
-  messages:        z
+  model: z.string().optional(),
+  messages: z
     .array(z.object({ role: z.enum(["system", "user", "assistant"]), content: z.string() }))
     .min(1),
-  temperature:     z.number().min(0).max(2).optional(),
-  max_tokens:      z.number().int().positive().optional(),
-  stream:          z.boolean().optional().default(false),
+  temperature: z.number().min(0).max(2).optional(),
+  max_tokens: z.number().int().positive().optional(),
+  stream: z.boolean().optional().default(false),
   response_format: z
     .union([
       z.object({ type: z.literal("text") }),
       z.object({ type: z.literal("json_object") }),
       z.object({
-        type:        z.literal("json_schema"),
+        type: z.literal("json_schema"),
         json_schema: z.object({ schema: z.record(z.unknown()) }),
       }),
     ])
     .optional(),
   // ai-powered extension fields (ignored by standard clients)
   provider: z.string().optional(),
-  mock:     z.boolean().optional(),
-  profile:  z.string().optional(),
+  mock: z.boolean().optional(),
+  profile: z.string().optional(),
 });
 
 export type ChatCompletionsBody = z.infer<typeof ChatCompletionsBodySchema>;
@@ -84,16 +84,18 @@ export type ChatCompletionsBody = z.infer<typeof ChatCompletionsBodySchema>;
  * Only n=1 is supported — ai-powered generates one image per request.
  */
 export const ImageGenerationsBodySchema = z.object({
-  prompt:          z.string().min(1),
-  model:           z.string().optional(),
-  n:               z.number().int().min(1).max(1).optional().default(1),
-  size:            z
-    .enum(["256x256", "512x512", "1024x1024", "1792x1024", "1024x1792"])
-    .optional(),
+  prompt: z.string().min(1),
+  model: z.string().optional(),
+  n: z.number().int().min(1).max(1).optional().default(1),
+  size: z.enum(["256x256", "512x512", "1024x1024", "1792x1024", "1024x1792"]).optional(),
   response_format: z.enum(["url", "b64_json"]).optional().default("url"),
+  // img-cntrl: size / ratio extension fields (snake_case per OpenAI convention)
+  aspect_ratio: z.string().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
   // ai-powered extension fields
   provider: z.string().optional(),
-  mock:     z.boolean().optional(),
+  mock: z.boolean().optional(),
 });
 
 export type ImageGenerationsBody = z.infer<typeof ImageGenerationsBodySchema>;
@@ -109,21 +111,21 @@ export type ImageGenerationsBody = z.infer<typeof ImageGenerationsBodySchema>;
  */
 export function toOpenAiChatResponse(result: TextResult): object {
   return {
-    id:      `chatcmpl-${randomUUID()}`,
-    object:  "chat.completion",
+    id: `chatcmpl-${randomUUID()}`,
+    object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
-    model:   result.model,
+    model: result.model,
     choices: [
       {
-        index:         0,
-        message:       { role: "assistant", content: result.content },
+        index: 0,
+        message: { role: "assistant", content: result.content },
         finish_reason: result.finishReason,
       },
     ],
     usage: {
-      prompt_tokens:     result.usage.promptTokens,
+      prompt_tokens: result.usage.promptTokens,
       completion_tokens: result.usage.completionTokens,
-      total_tokens:      result.usage.totalTokens,
+      total_tokens: result.usage.totalTokens,
     },
   };
 }
@@ -146,8 +148,8 @@ export function toOpenAiImageResponse(
   responseFormat: "url" | "b64_json",
   res: Response,
 ): object {
-  const isUrl    = /^https?:\/\//.test(result.data);
-  const actual   = isUrl ? "url" : "b64_json";
+  const isUrl = /^https?:\/\//.test(result.data);
+  const actual = isUrl ? "url" : "b64_json";
 
   if (actual !== responseFormat) {
     res.setHeader(
@@ -159,14 +161,14 @@ export function toOpenAiImageResponse(
 
   const entry: Record<string, string> = {};
   if (isUrl) {
-    entry["url"]      = result.data;
+    entry["url"] = result.data;
   } else {
     entry["b64_json"] = result.data;
   }
 
   return {
     created: Math.floor(Date.now() / 1000),
-    data:    [entry],
+    data: [entry],
   };
 }
 
@@ -196,24 +198,24 @@ export function handleChatCompletions(opts: ServeOptions) {
     const body = parsed.data;
 
     // Extract system prompt and build user/assistant conversation prompt.
-    const systemMsg  = body.messages.find((m) => m.role === "system");
-    const otherMsgs  = body.messages.filter((m) => m.role !== "system");
-    const prompt     = otherMsgs.map((m) => m.content).join("\n\n");
+    const systemMsg = body.messages.find((m) => m.role === "system");
+    const otherMsgs = body.messages.filter((m) => m.role !== "system");
+    const prompt = otherMsgs.map((m) => m.content).join("\n\n");
 
     // Infer provider from model name (explicit body.provider takes precedence).
-    const effectiveMock     = opts.mock || body.mock;
-    const inferredProvider  = body.model ? inferProviderFromModel(body.model) : undefined;
+    const effectiveMock = opts.mock || body.mock;
+    const inferredProvider = body.model ? inferProviderFromModel(body.model) : undefined;
     const effectiveProvider = body.provider ?? inferredProvider;
 
     const overrides = {
       ...opts.configOverrides,
-      ...(effectiveMock       ? { mock: true }                                  : {}),
-      ...(opts.profile ?? body.profile ? { profile: body.profile ?? opts.profile } : {}),
-      ...(effectiveProvider   ? { provider: effectiveProvider as never }        : {}),
-      ...(body.model          ? { model: body.model }                           : {}),
-      ...(body.temperature !== undefined ? { temperature: body.temperature }    : {}),
-      ...(body.max_tokens !== undefined  ? { maxTokens: body.max_tokens }       : {}),
-      ...(systemMsg           ? { systemPrompt: systemMsg.content }             : {}),
+      ...(effectiveMock ? { mock: true } : {}),
+      ...((opts.profile ?? body.profile) ? { profile: body.profile ?? opts.profile } : {}),
+      ...(effectiveProvider ? { provider: effectiveProvider as never } : {}),
+      ...(body.model ? { model: body.model } : {}),
+      ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
+      ...(body.max_tokens !== undefined ? { maxTokens: body.max_tokens } : {}),
+      ...(systemMsg ? { systemPrompt: systemMsg.content } : {}),
     };
 
     const rfType = body.response_format?.type;
@@ -232,8 +234,8 @@ export function handleChatCompletions(opts: ServeOptions) {
         let finishReason = "stop";
         for await (const chunk of client.streamText(prompt)) {
           const event = {
-            id:      streamId,
-            object:  "chat.completion.chunk",
+            id: streamId,
+            object: "chat.completion.chunk",
             choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
           };
           res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -241,8 +243,8 @@ export function handleChatCompletions(opts: ServeOptions) {
         }
         // Final chunk with finish_reason
         const finalEvent = {
-          id:      streamId,
-          object:  "chat.completion.chunk",
+          id: streamId,
+          object: "chat.completion.chunk",
           choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
         };
         res.write(`data: ${JSON.stringify(finalEvent)}\n\n`);
@@ -252,20 +254,26 @@ export function handleChatCompletions(opts: ServeOptions) {
         // Structured output path
         const { z: zod } = await import("zod");
         let schema: import("zod").ZodType<unknown> = zod.record(zod.unknown());
-        if (rfType === "json_schema" && body.response_format && "json_schema" in body.response_format) {
+        if (
+          rfType === "json_schema" &&
+          body.response_format &&
+          "json_schema" in body.response_format
+        ) {
           schema = zod.record(zod.unknown()); // runtime validation — use open schema
         }
         const result = await client.generateStructured(prompt, schema);
-        res.json(toOpenAiChatResponse({
-          modality:     "text",
-          provider:     result.provider,
-          model:        result.model,
-          content:      typeof result.data === "string" ? result.data : JSON.stringify(result.data),
-          usage:        result.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-          cost:         result.cost,
-          latencyMs:    result.latencyMs,
-          finishReason: "stop",
-        }));
+        res.json(
+          toOpenAiChatResponse({
+            modality: "text",
+            provider: result.provider,
+            model: result.model,
+            content: typeof result.data === "string" ? result.data : JSON.stringify(result.data),
+            usage: result.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            cost: result.cost,
+            latencyMs: result.latencyMs,
+            finishReason: "stop",
+          }),
+        );
       } else {
         // Non-streaming text path
         const result = await client.generateText(prompt);
@@ -309,21 +317,33 @@ export function handleImageGenerations(opts: ServeOptions) {
     }
     const body = parsed.data;
 
-    const effectiveMock     = opts.mock || body.mock;
-    const inferredProvider  = body.model ? inferProviderFromModel(body.model) : undefined;
+    const effectiveMock = opts.mock || body.mock;
+    const inferredProvider = body.model ? inferProviderFromModel(body.model) : undefined;
     const effectiveProvider = body.provider ?? inferredProvider;
 
     const overrides = {
       ...opts.configOverrides,
-      ...(effectiveMock       ? { mock: true }                           : {}),
-      ...(opts.profile        ? { profile: opts.profile }                : {}),
-      ...(effectiveProvider   ? { provider: effectiveProvider as never } : {}),
-      ...(body.model          ? { model: body.model }                    : {}),
+      ...(effectiveMock ? { mock: true } : {}),
+      ...(opts.profile ? { profile: opts.profile } : {}),
+      ...(effectiveProvider ? { provider: effectiveProvider as never } : {}),
+      ...(body.model ? { model: body.model } : {}),
     };
 
     try {
       const client = await getAiClient("compat-image", overrides as never);
-      const result = await client.generateImage(body.prompt);
+
+      // Map snake_case body fields to camelCase ProviderCallOptions.
+      const callOptions = {
+        ...(body.aspect_ratio !== undefined ? { aspectRatio: body.aspect_ratio } : {}),
+        ...(body.width !== undefined ? { width: body.width } : {}),
+        ...(body.height !== undefined ? { height: body.height } : {}),
+      };
+      const hasCallOptions = Object.keys(callOptions).length > 0;
+
+      const result = await client.generateImage(
+        body.prompt,
+        hasCallOptions ? callOptions : undefined,
+      );
       res.json(toOpenAiImageResponse(result, body.response_format, res));
     } catch (err) {
       if (err instanceof BudgetExceededError) {
@@ -345,23 +365,23 @@ export function handleImageGenerations(opts: ServeOptions) {
 
 /** Content-Type header for each audio response_format value. */
 const AUDIO_CONTENT_TYPES: Record<string, string> = {
-  mp3:  "audio/mpeg",
+  mp3: "audio/mpeg",
   opus: "audio/ogg",
-  aac:  "audio/aac",
+  aac: "audio/aac",
   flac: "audio/flac",
-  wav:  "audio/wav",
-  pcm:  "audio/pcm",
+  wav: "audio/wav",
+  pcm: "audio/pcm",
 };
 
 export const AudioSpeechBodySchema = z.object({
-  model:           z.enum(["tts-1", "tts-1-hd"]).default("tts-1"),
-  input:           z.string().min(1).max(4096),
-  voice:           z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).default("alloy"),
+  model: z.enum(["tts-1", "tts-1-hd"]).default("tts-1"),
+  input: z.string().min(1).max(4096),
+  voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).default("alloy"),
   response_format: z.enum(["mp3", "opus", "aac", "flac", "wav", "pcm"]).optional().default("mp3"),
-  speed:           z.number().min(0.25).max(4.0).optional().default(1.0),
+  speed: z.number().min(0.25).max(4.0).optional().default(1.0),
   // ai-powered extensions
   provider: z.string().optional(),
-  mock:     z.boolean().optional(),
+  mock: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -390,15 +410,15 @@ export function handleAudioSpeech(opts: ServeOptions) {
     const body = parsed.data;
 
     // Determine effective provider — only openai/mock support TTS.
-    const effectiveMock     = opts.mock || body.mock;
+    const effectiveMock = opts.mock || body.mock;
     const effectiveProvider = body.provider ?? (effectiveMock ? "mock" : "openai");
 
     const overrides = {
       ...opts.configOverrides,
-      ...(effectiveMock  ? { mock: true }                           : {}),
-      ...(opts.profile   ? { profile: opts.profile }                : {}),
+      ...(effectiveMock ? { mock: true } : {}),
+      ...(opts.profile ? { profile: opts.profile } : {}),
       provider: effectiveProvider as never,
-      model:    body.model,
+      model: body.model,
     };
 
     try {
@@ -459,9 +479,7 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
     }
 
     const responseFormat =
-      typeof req.body?.response_format === "string"
-        ? req.body.response_format
-        : "json";
+      typeof req.body?.response_format === "string" ? req.body.response_format : "json";
 
     // srt/vtt require per-segment timestamps not exposed by TranscriptionResult.
     if (responseFormat === "srt" || responseFormat === "vtt") {
@@ -476,16 +494,14 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
     }
 
     // Determine effective provider — only openai/mock support transcription.
-    const effectiveMock =
-      opts.mock || req.body?.mock === true || req.body?.mock === "true";
-    const bodyProvider =
-      typeof req.body?.provider === "string" ? req.body.provider : undefined;
+    const effectiveMock = opts.mock || req.body?.mock === true || req.body?.mock === "true";
+    const bodyProvider = typeof req.body?.provider === "string" ? req.body.provider : undefined;
     const effectiveProvider = bodyProvider ?? (effectiveMock ? "mock" : "openai");
 
     const overrides = {
       ...opts.configOverrides,
-      ...(effectiveMock  ? { mock: true }                : {}),
-      ...(opts.profile   ? { profile: opts.profile }     : {}),
+      ...(effectiveMock ? { mock: true } : {}),
+      ...(opts.profile ? { profile: opts.profile } : {}),
       provider: effectiveProvider as never,
     };
 
@@ -500,8 +516,8 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
         res.send(result.text);
       } else if (responseFormat === "verbose_json") {
         res.json({
-          text:     result.text,
-          language: result.language  ?? null,
+          text: result.text,
+          language: result.language ?? null,
           duration: result.durationSeconds ?? null,
           segments: [],
         });
@@ -532,42 +548,42 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
 /** Flat list of every model ID across all registered providers. */
 const STATIC_MODELS: ReadonlyArray<{ id: string; owned_by: string }> = [
   // OpenAI — text
-  { id: "gpt-4o",                         owned_by: "openai"    },
-  { id: "gpt-4o-mini",                    owned_by: "openai"    },
-  { id: "o1",                             owned_by: "openai"    },
-  { id: "o1-mini",                        owned_by: "openai"    },
-  { id: "gpt-4-turbo",                    owned_by: "openai"    },
-  { id: "gpt-3.5-turbo",                  owned_by: "openai"    },
+  { id: "gpt-4o", owned_by: "openai" },
+  { id: "gpt-4o-mini", owned_by: "openai" },
+  { id: "o1", owned_by: "openai" },
+  { id: "o1-mini", owned_by: "openai" },
+  { id: "gpt-4-turbo", owned_by: "openai" },
+  { id: "gpt-3.5-turbo", owned_by: "openai" },
   // OpenAI — image
-  { id: "dall-e-3",                       owned_by: "openai"    },
-  { id: "dall-e-2",                       owned_by: "openai"    },
+  { id: "dall-e-3", owned_by: "openai" },
+  { id: "dall-e-2", owned_by: "openai" },
   // OpenAI — audio
-  { id: "whisper-1",                      owned_by: "openai"    },
-  { id: "tts-1",                          owned_by: "openai"    },
-  { id: "tts-1-hd",                       owned_by: "openai"    },
+  { id: "whisper-1", owned_by: "openai" },
+  { id: "tts-1", owned_by: "openai" },
+  { id: "tts-1-hd", owned_by: "openai" },
   // Anthropic
-  { id: "claude-3-5-sonnet-20241022",     owned_by: "anthropic" },
-  { id: "claude-3-5-haiku-20241022",      owned_by: "anthropic" },
-  { id: "claude-3-opus-20240229",         owned_by: "anthropic" },
-  { id: "claude-3-sonnet-20240229",       owned_by: "anthropic" },
-  { id: "claude-3-haiku-20240307",        owned_by: "anthropic" },
+  { id: "claude-3-5-sonnet-20241022", owned_by: "anthropic" },
+  { id: "claude-3-5-haiku-20241022", owned_by: "anthropic" },
+  { id: "claude-3-opus-20240229", owned_by: "anthropic" },
+  { id: "claude-3-sonnet-20240229", owned_by: "anthropic" },
+  { id: "claude-3-haiku-20240307", owned_by: "anthropic" },
   // xAI / Grok
-  { id: "grok-2",                         owned_by: "xai"       },
-  { id: "grok-2-latest",                  owned_by: "xai"       },
-  { id: "grok-2-mini",                    owned_by: "xai"       },
-  { id: "grok-beta",                      owned_by: "xai"       },
-  { id: "grok-vision-beta",               owned_by: "xai"       },
+  { id: "grok-2", owned_by: "xai" },
+  { id: "grok-2-latest", owned_by: "xai" },
+  { id: "grok-2-mini", owned_by: "xai" },
+  { id: "grok-beta", owned_by: "xai" },
+  { id: "grok-vision-beta", owned_by: "xai" },
   // Venice
-  { id: "llama-3.3-70b",                  owned_by: "venice"    },
-  { id: "mistral-31-24b",                 owned_by: "venice"    },
-  { id: "qwen-2.5-vl",                    owned_by: "venice"    },
-  { id: "venice-sd-3.5",                  owned_by: "venice"    },
-  { id: "fluently-xl",                    owned_by: "venice"    },
+  { id: "llama-3.3-70b", owned_by: "venice" },
+  { id: "mistral-31-24b", owned_by: "venice" },
+  { id: "qwen-2.5-vl", owned_by: "venice" },
+  { id: "venice-sd-3.5", owned_by: "venice" },
+  { id: "fluently-xl", owned_by: "venice" },
   // Luma AI
-  { id: "ray-2",                          owned_by: "lumaai"    },
-  { id: "ray-2-720p",                     owned_by: "lumaai"    },
-  { id: "ray-flash-2",                    owned_by: "lumaai"    },
-  { id: "ray-flash-2-720p",               owned_by: "lumaai"    },
+  { id: "ray-2", owned_by: "lumaai" },
+  { id: "ray-2-720p", owned_by: "lumaai" },
+  { id: "ray-flash-2", owned_by: "lumaai" },
+  { id: "ray-flash-2-720p", owned_by: "lumaai" },
 ];
 
 /**
@@ -581,12 +597,11 @@ export function handleModels() {
     res.json({
       object: "list",
       data: STATIC_MODELS.map((m) => ({
-        id:       m.id,
-        object:   "model",
+        id: m.id,
+        object: "model",
         owned_by: m.owned_by,
-        created:  0,
+        created: 0,
       })),
     });
   };
 }
-

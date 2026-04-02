@@ -42,6 +42,7 @@ import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger } from "../utils.js";
 import type { ServeOptions } from "./index.js";
 import { mountCompatRoutes } from "./compat/index.js";
+import { inferProviderFromModel } from "./compat/model-router.js";
 
 // ---------------------------------------------------------------------------
 // Provider metadata — used by GET /providers
@@ -65,7 +66,7 @@ const PROVIDER_META = [
     id: "xai",
     name: "xAI / Grok",
     envKey: "XAI_API_KEY",
-    modalities: ["text", "structured"],
+    modalities: ["text", "structured", "video"],
   },
   {
     id: "venice",
@@ -77,6 +78,12 @@ const PROVIDER_META = [
     id: "lumaai",
     name: "Luma AI",
     envKey: "LUMAAI_API_KEY",
+    modalities: ["video"],
+  },
+  {
+    id: "runway",
+    name: "Runway",
+    envKey: "RUNWAYML_API_SECRET",
     modalities: ["video"],
   },
   {
@@ -93,18 +100,18 @@ const PROVIDER_META = [
 
 /** Shared per-request overrides forwarded to getAiClient(). */
 const ClientOverrideSchema = z.object({
-  provider:    z.string().optional(),
-  model:       z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
-  maxTokens:   z.number().int().positive().optional(),
-  systemPrompt:z.string().optional(),
-  profile:     z.string().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  systemPrompt: z.string().optional(),
+  profile: z.string().optional(),
 });
 
 /** Template rendering inputs included on text/structured routes. */
 const TemplateSchema = z.object({
   template: z.string().optional(),
-  vars:     z.record(z.string()).optional(),
+  vars: z.record(z.string()).optional(),
 });
 
 const TextBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
@@ -112,9 +119,20 @@ const TextBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
   stream: z.boolean().optional(),
 });
 
-const ImageBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
-  prompt: z.string().min(1, "prompt must not be empty"),
+/** Image-generation size controls forwarded into ProviderCallOptions. */
+const ImageSizeSchema = z.object({
+  aspectRatio: z.string().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  resolution: z.string().optional(),
+  quality: z.enum(["draft", "standard", "high"]).optional(),
 });
+
+const ImageBodySchema = ClientOverrideSchema.merge(TemplateSchema)
+  .merge(ImageSizeSchema)
+  .extend({
+    prompt: z.string().min(1, "prompt must not be empty"),
+  });
 
 const TranscribeBodySchema = ClientOverrideSchema.extend({
   audioBase64: z.string().min(1, "audioBase64 must not be empty"),
@@ -124,21 +142,36 @@ const SpeakBodySchema = ClientOverrideSchema.extend({
   text: z.string().min(1, "text must not be empty"),
 });
 
-const VideoBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
-  prompt: z.string().min(1, "prompt must not be empty"),
+/** Video-generation size/duration controls forwarded into ProviderCallOptions. */
+const VideoSizeSchema = z.object({
+  aspectRatio: z.string().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  resolution: z.string().optional(),
+  duration: z.number().positive().optional(),
+  fps: z.number().int().positive().optional(),
+  quality: z.enum(["draft", "standard", "high"]).optional(),
 });
+
+const VideoBodySchema = ClientOverrideSchema.merge(TemplateSchema)
+  .merge(VideoSizeSchema)
+  .extend({
+    prompt: z.string().min(1, "prompt must not be empty"),
+  });
 
 const StructuredBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
   prompt: z.string().min(1, "prompt must not be empty"),
 });
 
 /** A single item inside a batch request. */
-const BatchItemSchema = ClientOverrideSchema.merge(TemplateSchema).extend({
-  modality: z.enum(["text", "image", "video", "structured"]).default("video"),
-  prompt:   z.string().min(1, "prompt must not be empty"),
-  /** Optional human-readable name used as the output filename. */
-  name:     z.string().optional(),
-});
+const BatchItemSchema = ClientOverrideSchema.merge(TemplateSchema)
+  .merge(VideoSizeSchema)
+  .extend({
+    modality: z.enum(["text", "image", "video", "structured"]).default("video"),
+    prompt: z.string().min(1, "prompt must not be empty"),
+    /** Optional human-readable name used as the output filename. */
+    name: z.string().optional(),
+  });
 
 /** Body for POST /batch — base overrides plus an ordered item list. */
 const BatchBodySchema = ClientOverrideSchema.extend({
@@ -150,11 +183,7 @@ const BatchBodySchema = ClientOverrideSchema.extend({
 // ---------------------------------------------------------------------------
 
 /** Validate request body with a Zod schema; send 400 on failure. */
-function parseBody<T>(
-  schema: z.ZodSchema<T>,
-  req: Request,
-  res: Response,
-): T | null {
+function parseBody<T>(schema: z.ZodSchema<T>, req: Request, res: Response): T | null {
   const result = schema.safeParse(req.body);
   if (!result.success) {
     res.status(400).json({
@@ -167,9 +196,7 @@ function parseBody<T>(
 }
 
 /** Wrap async route handlers so uncaught errors flow to the error handler. */
-function wrap(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-) {
+function wrap(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction): void => {
     fn(req, res, next).catch(next);
   };
@@ -180,11 +207,7 @@ function wrap(
  * render it with `vars`, treating the original `prompt` as the `{{prompt}}`
  * variable.  Falls through to `prompt` unchanged when no template is given.
  */
-function resolvePrompt(
-  prompt: string,
-  template?: string,
-  vars?: Record<string, string>,
-): string {
+function resolvePrompt(prompt: string, template?: string, vars?: Record<string, string>): string {
   if (!template) return prompt;
   try {
     const tpl = getTemplate(template);
@@ -196,19 +219,27 @@ function resolvePrompt(
 }
 
 /** Build config overrides from the validated body + serve-level options. */
-function buildOverrides(
-  body: z.infer<typeof ClientOverrideSchema>,
-  opts: ServeOptions,
-) {
+function buildOverrides(body: z.infer<typeof ClientOverrideSchema>, opts: ServeOptions) {
+  // Auto-infer the provider from the model string when no explicit provider
+  // is given — mirrors the same logic used by the /v1/ compat routes so that
+  // native endpoints (POST /video, POST /batch, …) route to the correct
+  // provider without requiring the caller to set the provider field manually.
+  const inferredProvider =
+    !body.provider && body.model ? inferProviderFromModel(body.model) : undefined;
+  const effectiveProvider = body.provider ?? inferredProvider;
+
   return {
     ...opts.configOverrides,
-    ...(opts.mock                 ? { mock: true }             : {}),
-    ...(body.provider             ? { provider: body.provider as never } : {}),
-    ...(body.model                ? { model: body.model }      : {}),
+    // Always propagate the server-level mock flag explicitly (true or false) so
+    // that a stale AI_MOCK=true env var in the process environment cannot
+    // override a server that was started without --mock (live mode).
+    mock: opts.mock === true,
+    ...(effectiveProvider ? { provider: effectiveProvider as never } : {}),
+    ...(body.model ? { model: body.model } : {}),
     ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
-    ...(body.maxTokens !== undefined   ? { maxTokens: body.maxTokens }    : {}),
-    ...(body.systemPrompt         ? { systemPrompt: body.systemPrompt } : {}),
-    ...(body.profile ?? opts.profile  ? { profile: body.profile ?? opts.profile } : {}),
+    ...(body.maxTokens !== undefined ? { maxTokens: body.maxTokens } : {}),
+    ...(body.systemPrompt ? { systemPrompt: body.systemPrompt } : {}),
+    ...((body.profile ?? opts.profile) ? { profile: body.profile ?? opts.profile } : {}),
   };
 }
 
@@ -252,7 +283,7 @@ export function createRouter(opts: ServeOptions): Router {
     try {
       const overrides = {
         ...opts.configOverrides,
-        ...(opts.mock    ? { mock: true }          : {}),
+        mock: opts.mock === true,
         ...(opts.profile ? { profile: opts.profile } : {}),
       };
       const cfg = loadConfig({ flags: overrides as never });
@@ -271,10 +302,7 @@ export function createRouter(opts: ServeOptions): Router {
     const providerList = PROVIDER_META.map((p) => ({
       id: p.id,
       name: p.name,
-      active:
-        p.id === "mock"
-          ? Boolean(opts.mock)
-          : Boolean(process.env[p.envKey]),
+      active: p.id === "mock" ? Boolean(opts.mock) : Boolean(process.env[p.envKey]),
       modalities: [...p.modalities],
     }));
     res.json(providerList);
@@ -286,10 +314,10 @@ export function createRouter(opts: ServeOptions): Router {
   // ?model= (substring match) query parameters to narrow results.
   router.get("/pricing", (req, res) => {
     const modality = req.query["modality"] as string | undefined;
-    const model    = req.query["model"]    as string | undefined;
+    const model = req.query["model"] as string | undefined;
 
     const validModalities = ["text", "image", "audio", "video"] as const;
-    type ModalityFilter = typeof validModalities[number];
+    type ModalityFilter = (typeof validModalities)[number];
 
     if (modality && !validModalities.includes(modality as ModalityFilter)) {
       res.status(400).json({
@@ -300,7 +328,7 @@ export function createRouter(opts: ServeOptions): Router {
 
     const entries = listPricing({
       ...(modality ? { modality: modality as ModalityFilter } : {}),
-      ...(model    ? { model }                                : {}),
+      ...(model ? { model } : {}),
     });
 
     res.json(entries);
@@ -322,9 +350,12 @@ export function createRouter(opts: ServeOptions): Router {
       // Honour an explicit ?provider= override even in mock mode so that the
       // UI can display models from all configured real providers.  listModels
       // for every built-in provider is static (no network calls), so this is safe.
+      // Honour an explicit ?provider= to always fetch real models.
+      // Otherwise propagate the server-level mock flag explicitly so a stale
+      // AI_MOCK=true env var cannot force mock models when the server is live.
       const overrides = providerOverride
         ? { ...opts.configOverrides, provider: providerOverride as never, mock: false as const }
-        : { ...opts.configOverrides, ...(opts.mock ? { mock: true as const } : {}) };
+        : { ...opts.configOverrides, mock: opts.mock === true };
 
       try {
         const client = await getAiClient("serve-models", overrides as never);
@@ -405,9 +436,19 @@ export function createRouter(opts: ServeOptions): Router {
       if (!body) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
       const overrides = buildOverrides(body, opts);
+      const callOpts = {
+        ...(body.aspectRatio !== undefined ? { aspectRatio: body.aspectRatio } : {}),
+        ...(body.width !== undefined ? { width: body.width } : {}),
+        ...(body.height !== undefined ? { height: body.height } : {}),
+        ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
+        ...(body.quality !== undefined ? { quality: body.quality } : {}),
+      };
       try {
         const client = await getAiClient("serve-image", overrides as never);
-        const result = await client.generateImage(prompt);
+        const result = await client.generateImage(
+          prompt,
+          Object.keys(callOpts).length ? callOpts : undefined,
+        );
         res.json(result);
       } catch (err) {
         if (!mapError(err, res)) next(err);
@@ -458,9 +499,21 @@ export function createRouter(opts: ServeOptions): Router {
       if (!body) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
       const overrides = buildOverrides(body, opts);
+      const callOpts = {
+        ...(body.aspectRatio !== undefined ? { aspectRatio: body.aspectRatio } : {}),
+        ...(body.width !== undefined ? { width: body.width } : {}),
+        ...(body.height !== undefined ? { height: body.height } : {}),
+        ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
+        ...(body.duration !== undefined ? { duration: body.duration } : {}),
+        ...(body.fps !== undefined ? { fps: body.fps } : {}),
+        ...(body.quality !== undefined ? { quality: body.quality } : {}),
+      };
       try {
         const client = await getAiClient("serve-video", overrides as never);
-        const result = await client.generateVideo(prompt);
+        const result = await client.generateVideo(
+          prompt,
+          Object.keys(callOpts).length ? callOpts : undefined,
+        );
         res.json(result);
       } catch (err) {
         if (!mapError(err, res)) next(err);
@@ -515,7 +568,19 @@ export function createRouter(opts: ServeOptions): Router {
           let result: unknown;
 
           if (item.modality === "video") {
-            result = await client.generateVideo(prompt);
+            const batchVideoOpts = {
+              ...(item.aspectRatio !== undefined ? { aspectRatio: item.aspectRatio } : {}),
+              ...(item.width !== undefined ? { width: item.width } : {}),
+              ...(item.height !== undefined ? { height: item.height } : {}),
+              ...(item.resolution !== undefined ? { resolution: item.resolution } : {}),
+              ...(item.duration !== undefined ? { duration: item.duration } : {}),
+              ...(item.fps !== undefined ? { fps: item.fps } : {}),
+              ...(item.quality !== undefined ? { quality: item.quality } : {}),
+            };
+            result = await client.generateVideo(
+              prompt,
+              Object.keys(batchVideoOpts).length ? batchVideoOpts : undefined,
+            );
           } else if (item.modality === "image") {
             result = await client.generateImage(prompt);
           } else if (item.modality === "structured") {
@@ -569,4 +634,3 @@ export function createRouter(opts: ServeOptions): Router {
 
   return router;
 }
-

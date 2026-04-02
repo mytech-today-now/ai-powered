@@ -43,6 +43,47 @@ export interface ProviderCallOptions {
   systemPrompt?: string;
   /** Whether to stream the response. */
   stream?: boolean;
+
+  // ── Image / Video generation controls ──────────────────────────────────
+  /**
+   * Desired aspect ratio as a colon-separated string (e.g. "16:9", "1:1").
+   * Providers that accept aspect ratio natively (xAI aurora, Luma Ray) use
+   * this value directly. Providers that accept pixel dimensions (Venice,
+   * DALL-E 3) derive width/height from this ratio when explicit dimensions
+   * are not supplied.
+   */
+  aspectRatio?: string;
+  /**
+   * Output width in pixels. When provided together with `height`, takes
+   * precedence over `aspectRatio` for providers that accept pixel dimensions.
+   */
+  width?: number;
+  /**
+   * Output height in pixels. When provided together with `width`, takes
+   * precedence over `aspectRatio` for providers that accept pixel dimensions.
+   */
+  height?: number;
+  /**
+   * Named resolution preset (e.g. "720p", "1080p", "4k", "1k", "2k").
+   * Providers that accept a resolution string (xAI aurora) use this value
+   * directly; others may map it to pixel dimensions.
+   */
+  resolution?: string;
+  /**
+   * Requested video duration in seconds.
+   * Ignored for image-only providers.
+   */
+  duration?: number;
+  /**
+   * Requested frames per second for video output.
+   * Ignored for image-only providers.
+   */
+  fps?: number;
+  /**
+   * Generation quality hint: "draft" | "standard" | "high".
+   * Maps to provider-specific quality/style parameters where supported.
+   */
+  quality?: "draft" | "standard" | "high";
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +140,6 @@ export abstract class BaseProvider {
     throw new ProviderCapabilityError(this.name, "video");
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   streamText(_prompt: string, _options?: ProviderCallOptions): AsyncIterable<string> {
     throw new ProviderCapabilityError(this.name, "text");
   }
@@ -118,4 +158,3 @@ export abstract class BaseProvider {
    */
   abstract listModels(modality?: Modality): Promise<ModelDescriptor[]>;
 }
-

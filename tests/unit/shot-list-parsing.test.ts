@@ -179,3 +179,89 @@ describe("parseMdFile — Markdown shot-list parsing", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Suite: parseJsonFile — constraint field preservation (ST-4.1, ST-4.2, ST-4.3)
+// ---------------------------------------------------------------------------
+
+describe("parseJsonFile — constraint field preservation", () => {
+  // T-SP-21 (ST-4.1)
+  it("T-SP-21: JSON array entry with duration is preserved on the returned item", () => {
+    const input = JSON.stringify([
+      { name: "A", prompt: "Ocean", duration: 9 },
+      { name: "B", prompt: "Forest" },
+    ]);
+    const result = parseJsonFile(input);
+    expect(result[0].duration).toBe(9);
+    expect("duration" in result[1]).toBe(false); // absent, not undefined
+  });
+
+  // T-SP-22 (ST-4.2)
+  it("T-SP-22: JSON array entry with all seven constraint fields passes them through", () => {
+    const entry = {
+      name: "Hero",
+      prompt: "Landscape",
+      duration: 10,
+      fps: 30,
+      aspectRatio: "16:9",
+      resolution: "4k",
+      quality: "high",
+      width: 3840,
+      height: 2160,
+    };
+    const result = parseJsonFile(JSON.stringify([entry]));
+    const item = result[0];
+    expect(item.duration).toBe(10);
+    expect(item.fps).toBe(30);
+    expect(item.aspectRatio).toBe("16:9");
+    expect(item.resolution).toBe("4k");
+    expect(item.quality).toBe("high");
+    expect(item.width).toBe(3840);
+    expect(item.height).toBe(2160);
+  });
+
+  // T-SP-23 (ST-4.3)
+  it("T-SP-23: NDJSON (non-array) lines preserve duration per shot", () => {
+    // Simulate NDJSON: not a valid JSON array, triggers line-by-line fallback
+    const input = [
+      JSON.stringify({ name: "A", prompt: "P1", duration: 4 }),
+      JSON.stringify({ name: "B", prompt: "P2", duration: 7 }),
+    ].join("\n");
+    const result = parseJsonFile(input);
+    expect(result[0].duration).toBe(4);
+    expect(result[1].duration).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: parseMdFile — no constraint fields (ST-4.4)
+// Suite: parseJsonFile — absent fields are truly absent (ST-4.5)
+// ---------------------------------------------------------------------------
+
+describe("parseMdFile — constraint fields absent (ST-4.4)", () => {
+  // T-SP-24 (ST-4.4)
+  it("T-SP-24: parseMdFile() items have no constraint fields", () => {
+    const md = "# Shot A\n\nBeautiful sunrise.\n\n# Shot B\n\nOcean waves.\n";
+    const result = parseMdFile(md);
+    expect(result.length).toBe(2);
+    expect("duration" in result[0]).toBe(false);
+    expect("fps" in result[0]).toBe(false);
+    expect("aspectRatio" in result[0]).toBe(false);
+  });
+});
+
+describe("parseJsonFile — absent constraint fields are truly absent (ST-4.5)", () => {
+  // T-SP-25 (ST-4.5)
+  it("T-SP-25: parseJsonFile() absent constraint field is absent from item, not undefined", () => {
+    const input = JSON.stringify([{ name: "X", prompt: "Test" }]);
+    const result = parseJsonFile(input);
+    const item = result[0];
+    // Key must be absent entirely (not set to undefined)
+    expect("duration" in item).toBe(false);
+    expect("fps" in item).toBe(false);
+    expect("aspectRatio" in item).toBe(false);
+    expect("resolution" in item).toBe(false);
+    expect("quality" in item).toBe(false);
+    expect("width" in item).toBe(false);
+    expect("height" in item).toBe(false);
+  });
+});

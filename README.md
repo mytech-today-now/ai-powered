@@ -30,7 +30,7 @@ console.log(result.content);
 | Feature           | Detail                                                                                              |
 | ----------------- | --------------------------------------------------------------------------------------------------- |
 | **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                 |
-| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Custom/Ollama · Mock                                  |
+| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Luma AI · Runway · Custom/Ollama · Mock               |
 | **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                    |
 | **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings |
 | **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                             |
@@ -103,19 +103,21 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 
 ### Environment variables
 
-| Variable            | Config key           | Example      |
-| ------------------- | -------------------- | ------------ |
-| `OPENAI_API_KEY`    | `apiKey` (OpenAI)    | `sk-…`       |
-| `ANTHROPIC_API_KEY` | `apiKey` (Anthropic) | `sk-ant-…`   |
-| `XAI_API_KEY`       | `apiKey` (xAI)       | `xai-…`      |
-| `VENICE_API_KEY`    | `apiKey` (Venice)    | `ven-…`      |
-| `AI_CUSTOM_API_KEY` | `apiKey` (custom)    | any          |
-| `AI_PROVIDER`       | `provider`           | `openai`     |
-| `AI_MODEL`          | `model`              | `gpt-4o`     |
-| `AI_PROFILE`        | `profile`            | `production` |
-| `AI_MOCK`           | `mock`               | `true`       |
-| `AI_BUDGET_SESSION` | `budgetSession`      | `1.00`       |
-| `LOG_LEVEL`         | `debug`              | `debug`      |
+| Variable              | Config key           | Example           |
+| --------------------- | -------------------- | ----------------- |
+| `OPENAI_API_KEY`      | `apiKey` (OpenAI)    | `sk-…`            |
+| `ANTHROPIC_API_KEY`   | `apiKey` (Anthropic) | `sk-ant-…`        |
+| `XAI_API_KEY`         | `apiKey` (xAI)       | `xai-…`           |
+| `VENICE_API_KEY`      | `apiKey` (Venice)    | `ven-…`           |
+| `LUMAAI_API_KEY`      | `apiKey` (Luma AI)   | `luma-…`          |
+| `RUNWAYML_API_SECRET` | `apiKey` (Runway)    | (from Runway app) |
+| `AI_CUSTOM_API_KEY`   | `apiKey` (custom)    | any               |
+| `AI_PROVIDER`         | `provider`           | `openai`          |
+| `AI_MODEL`            | `model`              | `gpt-4o`          |
+| `AI_PROFILE`          | `profile`            | `production`      |
+| `AI_MOCK`             | `mock`               | `true`            |
+| `AI_BUDGET_SESSION`   | `budgetSession`      | `1.00`            |
+| `LOG_LEVEL`           | `debug`              | `debug`           |
 
 ### Example config file
 
@@ -165,19 +167,19 @@ All examples use `--mock` to avoid real API calls. Remove `--mock` and set your 
 
 ### Global flags
 
-| Flag                | Description                                                                  |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `venice`, `custom`, `mock`) |
-| `--model <id>`      | Override model identifier                                                    |
-| `--profile <name>`  | Use named profile from config                                                |
-| `--mock`            | Force mock provider                                                          |
-| `--dry-run`         | Estimate cost; skip API call                                                 |
-| `--quiet`           | Print raw content only (no decorators)                                       |
-| `--json`            | Print JSON envelope                                                          |
-| `--session <id>`    | Attach request to a named conversation session                               |
-| `--log <path>`      | Write structured JSONL log to file                                           |
-| `--debug`           | Enable verbose debug logging                                                 |
-| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                      |
+| Flag                | Description                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `venice`, `lumaai`, `runway`, `custom`, `mock`) |
+| `--model <id>`      | Override model identifier                                                                        |
+| `--profile <name>`  | Use named profile from config                                                                    |
+| `--mock`            | Force mock provider                                                                              |
+| `--dry-run`         | Estimate cost; skip API call                                                                     |
+| `--quiet`           | Print raw content only (no decorators)                                                           |
+| `--json`            | Print JSON envelope                                                                              |
+| `--session <id>`    | Attach request to a named conversation session                                                   |
+| `--log <path>`      | Write structured JSONL log to file                                                               |
+| `--debug`           | Enable verbose debug logging                                                                     |
+| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                                          |
 
 ### `text` — Generate text
 
@@ -845,28 +847,29 @@ All endpoints accept per-request overrides (`provider`, `model`, `temperature`, 
 
 ### Endpoint table
 
-| Route | Standard | Providers | Streaming |
-| --- | --- | --- | --- |
-| `POST /v1/chat/completions` | OpenAI Chat | openai · anthropic · xai · venice · mock | ✅ SSE (`stream: true`) |
-| `POST /v1/messages` | Anthropic Messages | openai · anthropic · xai · venice · mock | ✅ SSE (6-event sequence) |
-| `GET  /v1/models` | OpenAI Models | all active providers | — |
-| `POST /v1/images/generations` | OpenAI Images | openai · venice · mock | — |
-| `POST /v1/audio/transcriptions` | OpenAI Audio | openai · mock | — |
-| `POST /v1/audio/speech` | OpenAI TTS | openai · mock | — |
-| `POST /v1/video/generations` | **ai-powered-native** | lumaai · mock | — |
+| Route                           | Standard              | Providers                                | Streaming                 |
+| ------------------------------- | --------------------- | ---------------------------------------- | ------------------------- |
+| `POST /v1/chat/completions`     | OpenAI Chat           | openai · anthropic · xai · venice · mock | ✅ SSE (`stream: true`)   |
+| `POST /v1/messages`             | Anthropic Messages    | openai · anthropic · xai · venice · mock | ✅ SSE (6-event sequence) |
+| `GET  /v1/models`               | OpenAI Models         | all active providers                     | —                         |
+| `POST /v1/images/generations`   | OpenAI Images         | openai · venice · mock                   | —                         |
+| `POST /v1/audio/transcriptions` | OpenAI Audio          | openai · mock                            | —                         |
+| `POST /v1/audio/speech`         | OpenAI TTS            | openai · mock                            | —                         |
+| `POST /v1/video/generations`    | **ai-powered-native** | xai · lumaai · runway · mock             | —                         |
 
 > ⚠️ `/v1/video/generations` uses an `ai-powered`-native request/response shape. There is no external industry standard for video generation; the route exists to give proxy consumers a consistent `/v1/` namespace.
 
 ### Provider × modality support matrix
 
-| Provider | text | image | audio | video | structured |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| openai | ✅ | ✅ | ✅ | — | ✅ |
-| anthropic | ✅ | — | — | — | ✅ |
-| xai | ✅ | — | — | — | ✅ |
-| venice | ✅ | ✅ | — | — | — |
-| lumaai | — | — | — | ✅ | — |
-| mock | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Provider  | text | image | audio | video | structured |
+| --------- | :--: | :---: | :---: | :---: | :--------: |
+| openai    |  ✅  |  ✅   |  ✅   |   —   |     ✅     |
+| anthropic |  ✅  |   —   |   —   |   —   |     ✅     |
+| xai       |  ✅  |   —   |   —   |  ✅   |     ✅     |
+| venice    |  ✅  |  ✅   |   —   |   —   |     —      |
+| lumaai    |  —   |   —   |   —   |  ✅   |     —      |
+| runway    |  —   |   —   |   —   |  ✅   |     —      |
+| mock      |  ✅  |  ✅   |  ✅   |  ✅   |     ✅     |
 
 ### OpenAI client quick-start (FilmBuff pattern)
 
@@ -877,11 +880,11 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "http://localhost:3001/v1",
-  apiKey:  "not-used", // ai-powered manages credentials
+  apiKey: "not-used", // ai-powered manages credentials
 });
 
 const response = await client.chat.completions.create({
-  model:    "gpt-4",
+  model: "gpt-4",
   messages: [{ role: "user", content: "Summarise the plot of Metropolis." }],
 });
 
@@ -896,14 +899,14 @@ Override `baseURL` on the official Anthropic SDK so requests hit the proxy inste
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL:  "http://localhost:3001/v1",
-  apiKey:   "not-used", // ai-powered manages credentials
+  baseURL: "http://localhost:3001/v1",
+  apiKey: "not-used", // ai-powered manages credentials
 });
 
 const message = await client.messages.create({
-  model:      "claude-3-5-sonnet-20241022",
+  model: "claude-3-5-sonnet-20241022",
   max_tokens: 1024,
-  messages:   [{ role: "user", content: "What is the golden ratio?" }],
+  messages: [{ role: "user", content: "What is the golden ratio?" }],
 });
 
 console.log(message.content[0]?.type === "text" ? message.content[0].text : "");
@@ -1318,7 +1321,8 @@ A `BudgetExceededError` is thrown _before_ the API call if the projected cost wo
           ┌─────────────┼─────────────┐
           ▼             ▼             ▼
     OpenAiProvider  AnthropicProvider  VeniceProvider
-    GrokProvider    CustomProvider     MockProvider
+    GrokProvider    LumaAiProvider     RunwayProvider
+    CustomProvider  MockProvider
 ```
 
 ### Config layers (lowest → highest precedence)

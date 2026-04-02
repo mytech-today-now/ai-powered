@@ -103,56 +103,64 @@ export interface ModelPricing {
  */
 const MODEL_PRICING: Record<string, ModelPricing> = {
   // --- OpenAI text -------------------------------------------------------
-  "gpt-4o":                    { promptPer1kUsd: 0.005,   completionPer1kUsd: 0.015   },
-  "gpt-4o-mini":               { promptPer1kUsd: 0.00015, completionPer1kUsd: 0.0006  },
-  "o1":                        { promptPer1kUsd: 0.015,   completionPer1kUsd: 0.06    },
-  "o1-mini":                   { promptPer1kUsd: 0.003,   completionPer1kUsd: 0.012   },
-  "gpt-4-turbo":               { promptPer1kUsd: 0.01,    completionPer1kUsd: 0.03    },
-  "gpt-4-turbo-preview":       { promptPer1kUsd: 0.01,    completionPer1kUsd: 0.03    },
-  "gpt-4":                     { promptPer1kUsd: 0.03,    completionPer1kUsd: 0.06    },
-  "gpt-3.5-turbo":             { promptPer1kUsd: 0.0005,  completionPer1kUsd: 0.0015  },
+  "gpt-4o": { promptPer1kUsd: 0.005, completionPer1kUsd: 0.015 },
+  "gpt-4o-mini": { promptPer1kUsd: 0.00015, completionPer1kUsd: 0.0006 },
+  o1: { promptPer1kUsd: 0.015, completionPer1kUsd: 0.06 },
+  "o1-mini": { promptPer1kUsd: 0.003, completionPer1kUsd: 0.012 },
+  "gpt-4-turbo": { promptPer1kUsd: 0.01, completionPer1kUsd: 0.03 },
+  "gpt-4-turbo-preview": { promptPer1kUsd: 0.01, completionPer1kUsd: 0.03 },
+  "gpt-4": { promptPer1kUsd: 0.03, completionPer1kUsd: 0.06 },
+  "gpt-3.5-turbo": { promptPer1kUsd: 0.0005, completionPer1kUsd: 0.0015 },
   // --- OpenAI image (per-image flat rate; token fields omitted) ----------
-  "dall-e-3":                  { perImage: true, perImageUsd: 0.04  },
-  "dall-e-2":                  { perImage: true, perImageUsd: 0.016 },
+  "dall-e-3": { perImage: true, perImageUsd: 0.04 },
+  "dall-e-2": { perImage: true, perImageUsd: 0.016 },
   // --- OpenAI audio ------------------------------------------------------
   // whisper: billed per minute of audio (token fields omitted)
-  "whisper-1":                 { perMinuteUsd: 0.006 },
+  "whisper-1": { perMinuteUsd: 0.006 },
   // TTS: billed per 1k characters sent as prompt; no completion tokens
-  "tts-1":                     { promptPer1kUsd: 0.015 },
-  "tts-1-hd":                  { promptPer1kUsd: 0.03  },
+  "tts-1": { promptPer1kUsd: 0.015 },
+  "tts-1-hd": { promptPer1kUsd: 0.03 },
   // --- Anthropic ---------------------------------------------------------
-  "claude-3-opus-20240229":        { promptPer1kUsd: 0.015,  completionPer1kUsd: 0.075  },
-  "claude-3-5-sonnet-20241022":    { promptPer1kUsd: 0.003,  completionPer1kUsd: 0.015  },
-  "claude-3-5-haiku-20241022":     { promptPer1kUsd: 0.0008, completionPer1kUsd: 0.004  },
-  "claude-3-sonnet-20240229":      { promptPer1kUsd: 0.003,  completionPer1kUsd: 0.015  },
-  "claude-3-haiku-20240307":       { promptPer1kUsd: 0.00025,completionPer1kUsd: 0.00125},
+  "claude-3-opus-20240229": { promptPer1kUsd: 0.015, completionPer1kUsd: 0.075 },
+  "claude-3-5-sonnet-20241022": { promptPer1kUsd: 0.003, completionPer1kUsd: 0.015 },
+  "claude-3-5-haiku-20241022": { promptPer1kUsd: 0.0008, completionPer1kUsd: 0.004 },
+  "claude-3-sonnet-20240229": { promptPer1kUsd: 0.003, completionPer1kUsd: 0.015 },
+  "claude-3-haiku-20240307": { promptPer1kUsd: 0.00025, completionPer1kUsd: 0.00125 },
   // --- xAI / Grok (2026-03-30: x.ai/api) --------------------------------
-  "grok-2":                    { promptPer1kUsd: 0.002,  completionPer1kUsd: 0.01   },
-  "grok-2-latest":             { promptPer1kUsd: 0.002,  completionPer1kUsd: 0.01   },
-  "grok-2-mini":               { promptPer1kUsd: 0.0002, completionPer1kUsd: 0.0005 },
-  "grok-beta":                 { promptPer1kUsd: 0.005,  completionPer1kUsd: 0.015  },
-  "grok-vision-beta":          { promptPer1kUsd: 0.005,  completionPer1kUsd: 0.015  },
+  "grok-2": { promptPer1kUsd: 0.002, completionPer1kUsd: 0.01 },
+  "grok-2-latest": { promptPer1kUsd: 0.002, completionPer1kUsd: 0.01 },
+  "grok-2-mini": { promptPer1kUsd: 0.0002, completionPer1kUsd: 0.0005 },
+  "grok-beta": { promptPer1kUsd: 0.005, completionPer1kUsd: 0.015 },
+  "grok-vision-beta": { promptPer1kUsd: 0.005, completionPer1kUsd: 0.015 },
+  // --- xAI video (2026-04-02: x.ai/api — pricing TBD; placeholder $0.05/clip)
+  "grok-imagine-video": { perVideoUsd: 0.05 },
   // --- Venice.ai (2026-03-30: venice.ai/pricing) --------------------------
-  "llama-3.3-70b":             { promptPer1kUsd: 0.001,  completionPer1kUsd: 0.003  },
-  "mistral-31-24b":            { promptPer1kUsd: 0.0007, completionPer1kUsd: 0.002  },
-  "qwen-2.5-vl":               { promptPer1kUsd: 0.001,  completionPer1kUsd: 0.003  },
+  "llama-3.3-70b": { promptPer1kUsd: 0.001, completionPer1kUsd: 0.003 },
+  "mistral-31-24b": { promptPer1kUsd: 0.0007, completionPer1kUsd: 0.002 },
+  "qwen-2.5-vl": { promptPer1kUsd: 0.001, completionPer1kUsd: 0.003 },
   // Venice image generation (per-image flat rate; token fields omitted)
-  "fluently-xl":               { perImage: true, perImageUsd: 0.05 },
-  "venice-sd-3.5":             { perImage: true, perImageUsd: 0.05 },
+  "fluently-xl": { perImage: true, perImageUsd: 0.05 },
+  "venice-sd-3.5": { perImage: true, perImageUsd: 0.05 },
   // --- Luma AI video (2026-03-30: lumalabs.ai/dream-machine/api/pricing) -
   // Per video clip (~5-second output); token fields omitted.
-  "ray-2":                     { perVideoUsd: 0.14 },
-  "ray-flash-2":               { perVideoUsd: 0.04 },
-  "ray-2-720p":                { perVideoUsd: 0.14 },
-  "ray-flash-2-720p":          { perVideoUsd: 0.04 },
-  "dream-machine":             { perVideoUsd: 0.14 },
+  "ray-2": { perVideoUsd: 0.14 },
+  "ray-flash-2": { perVideoUsd: 0.04 },
+  "ray-2-720p": { perVideoUsd: 0.14 },
+  "ray-flash-2-720p": { perVideoUsd: 0.04 },
+  "dream-machine": { perVideoUsd: 0.14 },
+  // --- Runway video (2026-04-02: docs.dev.runwayml.com/guides/pricing) ------
+  // 1 credit = $0.01; per-video cost based on 5-second default clip.
+  // gen4.5: 12 credits/sec → $0.60/5s; gen4_turbo/gen3a_turbo: 5 → $0.25/5s
+  "gen4.5": { perVideoUsd: 0.6 },
+  gen4_turbo: { perVideoUsd: 0.25 },
+  gen3a_turbo: { perVideoUsd: 0.25 },
   // --- Mock models (plausible fixture values matching real-world scale) --
-  "mock-text-v1":              { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
-  "mock-image-v1":             { perImage: true, perImageUsd: 0.04  },
-  "mock-whisper-v1":           { perMinuteUsd: 0.006 },
-  "mock-tts-v1":               { promptPer1kUsd: 0.015 },
-  "mock-video-v1":             { perVideoUsd: 0.05 },
-  "mock-structured-v1":        { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
+  "mock-text-v1": { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
+  "mock-image-v1": { perImage: true, perImageUsd: 0.04 },
+  "mock-whisper-v1": { perMinuteUsd: 0.006 },
+  "mock-tts-v1": { promptPer1kUsd: 0.015 },
+  "mock-video-v1": { perVideoUsd: 0.05 },
+  "mock-structured-v1": { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
 };
 
 /** Fallback when no exact or prefix match exists in MODEL_PRICING. */
@@ -290,13 +298,11 @@ export function calculateCost(
   } else if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
     raw = pricing.perImageUsd;
   } else if (pricing.perMinuteUsd !== undefined) {
-    const minutes = durationSeconds !== undefined
-      ? durationSeconds / 60
-      : usage.totalTokens / 1000; // last-resort heuristic
+    const minutes = durationSeconds !== undefined ? durationSeconds / 60 : usage.totalTokens / 1000; // last-resort heuristic
     raw = minutes * pricing.perMinuteUsd;
   } else {
     raw =
-      (usage.promptTokens     / 1000) * (pricing.promptPer1kUsd     ?? 0) +
+      (usage.promptTokens / 1000) * (pricing.promptPer1kUsd ?? 0) +
       (usage.completionTokens / 1000) * (pricing.completionPer1kUsd ?? 0);
   }
 
@@ -336,7 +342,7 @@ export function estimateCost(model: string, promptText: string): CostBreakdown {
   const estimatedCompletion = Math.ceil(estimatedPrompt * 0.5); // heuristic: ~50% completion
 
   const raw =
-    (estimatedPrompt     / 1000) * (pricing.promptPer1kUsd     ?? 0) +
+    (estimatedPrompt / 1000) * (pricing.promptPer1kUsd ?? 0) +
     (estimatedCompletion / 1000) * (pricing.completionPer1kUsd ?? 0);
 
   return {
@@ -456,4 +462,3 @@ export function initLogger(options: AiLoggerOptions): Logger {
   _logger = createLogger(options);
   return _logger;
 }
-

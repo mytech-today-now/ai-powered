@@ -1,0 +1,67 @@
+{
+  "provider": "openai",
+  "updatedAt": "2026-04-02",
+  "reviewNote": "Verify at https://platform.openai.com/docs/api-reference/images — check size enums for dall-e-3 and gpt-image-1; check Sora aspect ratios and max duration at https://platform.openai.com/docs/guides/video",
+  "models": [
+    {
+      "id": "dall-e-3",
+      "modalities": ["image"],
+      "aspectRatios": ["1:1", "16:9", "9:16"],
+      "resolutions": [
+        { "label": "1024×1024", "width": 1024, "height": 1024 },
+        { "label": "1792×1024", "width": 1792, "height": 1024 },
+        { "label": "1024×1792", "width": 1024, "height": 1792 }
+      ],
+      "maxWidth": 1792,
+      "maxHeight": 1792,
+      "maxPixels": 1835008,
+      "qualityOptions": ["standard", "hd"]
+    },
+    {
+      "id": "gpt-image-1",
+      "modalities": ["image"],
+      "aspectRatios": ["1:1", "16:9", "9:16"],
+      "resolutions": [
+        { "label": "1024×1024", "width": 1024, "height": 1024 },
+        { "label": "1536×1024", "width": 1536, "height": 1024 },
+        { "label": "1024×1536", "width": 1024, "height": 1536 },
+        { "label": "auto", "width": null, "height": null }
+      ],
+      "maxWidth": 1536,
+      "maxHeight": 1536,
+      "maxPixels": 2359296,
+      "qualityOptions": ["low", "medium", "high", "auto"]
+    },
+    {
+      "id": "sora",
+      "modalities": ["video"],
+      "aspectRatios": ["16:9", "9:16", "1:1"],
+      "resolutions": [
+        { "label": "480p", "width": 854, "height": 480 },
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "maxWidth": 1920,
+      "maxHeight": 1920,
+      "maxPixels": 2073600,
+      "maxDurationSecs": 20,
+      "fpsOptions": [24, 30],
+      "qualityOptions": ["draft", "standard", "high"]
+    },
+    {
+      "id": "sora-turbo",
+      "modalities": ["video"],
+      "aspectRatios": ["16:9", "9:16", "1:1"],
+      "resolutions": [
+        { "label": "480p", "width": 854, "height": 480 },
+        { "label": "720p", "width": 1280, "height": 720 }
+      ],
+      "maxWidth": 1280,
+      "maxHeight": 1280,
+      "maxPixels": 921600,
+      "maxDurationSecs": 10,
+      "fpsOptions": [24, 30],
+      "qualityOptions": ["draft", "standard"]
+    }
+  ]
+}
