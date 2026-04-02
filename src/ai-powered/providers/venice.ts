@@ -70,18 +70,33 @@ export class VeniceProvider extends BaseProvider {
   readonly name = "venice" as const;
   readonly supportedModalities: Modality[] = ["text", "image", "structured"];
 
-  private readonly _client: OpenAI;
+  private readonly _client: OpenAI | null;
   private readonly _apiKey: string;
 
   constructor(config: AiConfig) {
     super(config);
-    const apiKey = config.apiKey;
-    if (!apiKey) {
+    const apiKey = config.apiKey ?? "";
+    this._apiKey = apiKey;
+    if (apiKey) {
+      getLogger().debug({ apiKey: maskApiKey(apiKey) }, "VeniceProvider: initialised");
+      this._client = new OpenAI({ apiKey, baseURL: VENICE_BASE_URL });
+    } else {
+      getLogger().debug(
+        "VeniceProvider: no API key configured — model listing will use static fallback list",
+      );
+      this._client = null;
+    }
+  }
+
+  /**
+   * Throws a descriptive error when a generation method is called without an
+   * API key.  `listModels()` deliberately does NOT call this so that the proxy
+   * `/models` endpoint can return the static model list even when no key is set.
+   */
+  private _requireKey(): void {
+    if (!this._apiKey || !this._client) {
       throw new Error("Venice API key is required. Set VENICE_API_KEY or config.apiKey.");
     }
-    this._apiKey = apiKey;
-    getLogger().debug({ apiKey: maskApiKey(apiKey) }, "VeniceProvider: initialised");
-    this._client = new OpenAI({ apiKey, baseURL: VENICE_BASE_URL });
   }
 
   // -------------------------------------------------------------------------
@@ -89,6 +104,7 @@ export class VeniceProvider extends BaseProvider {
   // -------------------------------------------------------------------------
 
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
+    this._requireKey();
     this.assertCapability("text");
     const model = this.config.model ?? DEFAULT_TEXT_MODEL;
     const start = Date.now();
@@ -98,7 +114,7 @@ export class VeniceProvider extends BaseProvider {
     messages.push({ role: "user", content: prompt });
 
     try {
-      const response = await this._client.chat.completions.create({
+      const response = await this._client!.chat.completions.create({
         model,
         messages,
         temperature: options?.temperature ?? this.config.temperature,
@@ -130,6 +146,7 @@ export class VeniceProvider extends BaseProvider {
   // -------------------------------------------------------------------------
 
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
+    this._requireKey();
     this.assertCapability("text");
     const model = this.config.model ?? DEFAULT_TEXT_MODEL;
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
@@ -138,7 +155,7 @@ export class VeniceProvider extends BaseProvider {
     messages.push({ role: "user", content: prompt });
 
     try {
-      const stream = await this._client.chat.completions.create({
+      const stream = await this._client!.chat.completions.create({
         model,
         messages,
         stream: true,
@@ -162,6 +179,7 @@ export class VeniceProvider extends BaseProvider {
     prompt: string,
     options?: ProviderCallOptions,
   ): Promise<ImageResult> {
+    this._requireKey();
     this.assertCapability("image");
     const model = this.config.model ?? DEFAULT_IMAGE_MODEL;
     const start = Date.now();
@@ -191,6 +209,18 @@ export class VeniceProvider extends BaseProvider {
           "VeniceProvider: invalid aspectRatio, using default",
         );
       }
+    }
+
+    // Snap to the nearest resolution that Venice actually accepts.
+    // Venice returns HTTP 404 for arbitrary/unsupported dimension pairs.
+    const snapped = LimitsValidator.snapImage("venice", model, width, height);
+    if (snapped.width !== width || snapped.height !== height) {
+      getLogger().debug(
+        { requested: `${width}×${height}`, snapped: `${snapped.width}×${snapped.height}`, model },
+        "VeniceProvider: snapped dimensions to nearest supported resolution",
+      );
+      width = snapped.width;
+      height = snapped.height;
     }
 
     // Validate against Venice's static constraints.
@@ -262,6 +292,7 @@ export class VeniceProvider extends BaseProvider {
     schema: z.ZodType<T>,
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
+    this._requireKey();
     this.assertCapability("structured");
     const model = this.config.model ?? DEFAULT_TEXT_MODEL;
     const start = Date.now();
@@ -275,7 +306,7 @@ export class VeniceProvider extends BaseProvider {
     });
 
     try {
-      const response = await this._client.chat.completions.create({
+      const response = await this._client!.chat.completions.create({
         model,
         messages,
         temperature: options?.temperature ?? this.config.temperature,
@@ -309,8 +340,17 @@ export class VeniceProvider extends BaseProvider {
   // -------------------------------------------------------------------------
 
   override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
+    // No API key — skip the live fetch and use the built-in static list so that
+    // the proxy /models endpoint can still populate the UI even without a key.
+    if (!this._apiKey) {
+      return this._filteredStatic(modality);
+    }
     try {
-      const resp = await fetch(`${VENICE_BASE_URL}/models`, {
+      // Venice uses ?type=image to return only image-capable models.
+      // Without this filter the endpoint returns mostly text models,
+      // so the image modality dropdown would remain empty.
+      const typeParam = modality === "image" ? "?type=image" : "";
+      const resp = await fetch(`${VENICE_BASE_URL}/models${typeParam}`, {
         headers: { Authorization: `Bearer ${this._apiKey}` },
       });
       if (!resp.ok) return this._filteredStatic(modality);
@@ -323,8 +363,15 @@ export class VeniceProvider extends BaseProvider {
       const raw = body.data ?? [];
 
       const descriptors: ModelDescriptor[] = raw.map((m) => {
-        const type = typeof m["type"] === "string" ? (m["type"] as string) : "text";
-        const caps: Modality[] = type === "image" ? ["image"] : ["text", "structured"];
+        // When ?type=image is used every returned model is an image model.
+        // Otherwise fall back to the `type` field on each entry.
+        const caps: Modality[] =
+          modality === "image"
+            ? ["image"]
+            : (() => {
+                const type = typeof m["type"] === "string" ? (m["type"] as string) : "text";
+                return type === "image" ? ["image"] : (["text", "structured"] as Modality[]);
+              })();
         return { id: m.id, name: m.id, capabilities: caps };
       });
 

@@ -1035,3 +1035,6 @@
 {"id":"bd-midv","status":"closed","close_reason":"T-SP-24 and T-SP-25 added to tests/unit/shot-list-parsing.test.ts. T-SP-24: parseMdFile() items have no constraint fields (duration, fps, aspectRatio all absent). T-SP-25: parseJsonFile() absent constraint field is absent from item (not undefined) for all seven fields. All 25 tests pass.","updated_at":"2026-04-02T13:05:29Z"}
 {"id":"bd-8mkk","status":"closed","close_reason":"25 tests passing, 0 failing: npx vitest run tests/unit/shot-list-parsing.test.ts. All 20 pre-existing tests plus T-SP-21 through T-SP-25 pass. Confirmed via direct run output.","updated_at":"2026-04-02T13:05:41Z"}
 {"id":"bd-jbwv","status":"closed","close_reason":"ST-5.1: npm test (AI_MOCK=true) = 365 passing 0 failing (360 existing + 5 new T-SP-21 through T-SP-25). ST-5.2: npx tsc --noEmit exits 0 with zero errors. ST-5.3: npm run build exits 0. File scope: four respect-shot files present in git diff (shot-list-parsers.js, app.js, cli/index.ts, shot-list-parsing.test.ts). AC-9 and AC-10 satisfied.","updated_at":"2026-04-02T13:05:59Z"}
+{"id":"bd-cssz","updated_at":"2026-04-02T16:17:15Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-n1ia","updated_at":"2026-04-02T16:17:18Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-am8y","updated_at":"2026-04-02T16:17:20Z","status":"in-progress","claimed_by":"kyle_"}

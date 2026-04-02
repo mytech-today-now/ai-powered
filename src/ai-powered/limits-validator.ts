@@ -196,6 +196,28 @@ export const LimitsValidator = {
   },
 
   /**
+   * Snap width/height to the nearest supported resolution for the given model.
+   *
+   * Providers like Venice reject arbitrary dimensions with a 404; this helper
+   * ensures callers always send a dimension pair that appears in the model's
+   * `resolutions` list.  When no list is defined the original values are
+   * returned unchanged.
+   */
+  snapImage(
+    provider: string,
+    model: string,
+    width: number,
+    height: number,
+  ): { width: number; height: number } {
+    const cfg = _getModel(provider, model);
+    if (!cfg || !cfg.resolutions || cfg.resolutions.length === 0) {
+      return { width, height };
+    }
+    const nearest = _nearestResolution(cfg, width, height);
+    return nearest ? { width: nearest.width, height: nearest.height } : { width, height };
+  },
+
+  /**
    * Attempt to enrich the in-memory config with live provider capabilities.
    * On success, any model IDs returned by the live endpoint that are not
    * already present in the static config are added with fallback limits.
