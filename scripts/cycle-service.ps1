@@ -112,6 +112,14 @@ Write-Step "Starting proxy server on :$Port ..."
 $proxyArgs = @("dist\ai-powered\cli\index.js", "serve", "--port", $Port)
 if ($Mock) { $proxyArgs += "--mock" }
 
+# Force NODE_ENV=production so pino emits one-line JSONL to stderr instead of
+# pino-pretty's multi-line coloured output.  We save/restore the caller's value
+# so this script's own environment is not permanently changed.
+$_savedNodeEnv  = $env:NODE_ENV
+$_savedNoColor  = $env:NO_COLOR
+$env:NODE_ENV   = "production"
+$env:NO_COLOR   = "1"            # belt-and-braces: disable colour in any sub-tool
+
 # Use -WindowStyle Hidden (not -NoNewWindow) so the child process gets its own
 # console and is NOT killed when this script's console session ends.
 $proxy = Start-Process `
@@ -120,6 +128,9 @@ $proxy = Start-Process `
     -RedirectStandardOutput $proxyStdout `
     -RedirectStandardError  $proxyStderr `
     -PassThru -WindowStyle Hidden
+
+$env:NODE_ENV = $_savedNodeEnv
+$env:NO_COLOR = $_savedNoColor
 
 Write-Ok "Proxy started (PID $($proxy.Id)) - logs: $proxyStdout"
 

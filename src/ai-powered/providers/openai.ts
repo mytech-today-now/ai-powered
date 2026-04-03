@@ -387,6 +387,10 @@ export class OpenAiProvider extends BaseProvider {
     this.assertCapability("audio");
     void options;
     const model = DEFAULT_TTS_MODEL;
+    getLogger().debug(
+      { model, textLength: text.length, maxChars: 4096 },
+      "OpenAiProvider: synthesizeSpeech called",
+    );
     const start = Date.now();
     // TTS pricing: per 1k characters treated as prompt tokens
     const charTokens = Math.ceil(text.length / 4);

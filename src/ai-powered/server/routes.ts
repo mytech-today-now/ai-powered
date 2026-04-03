@@ -138,8 +138,15 @@ const TranscribeBodySchema = ClientOverrideSchema.extend({
   audioBase64: z.string().min(1, "audioBase64 must not be empty"),
 });
 
+const OPENAI_TTS_MAX_CHARS = 4096;
 const SpeakBodySchema = ClientOverrideSchema.extend({
-  text: z.string().min(1, "text must not be empty"),
+  text: z
+    .string()
+    .min(1, "text must not be empty")
+    .max(
+      OPENAI_TTS_MAX_CHARS,
+      `text must not exceed ${OPENAI_TTS_MAX_CHARS} characters (OpenAI TTS limit)`,
+    ),
 });
 
 /** Video-generation size/duration controls forwarded into ProviderCallOptions. */

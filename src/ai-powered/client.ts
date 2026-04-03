@@ -27,7 +27,12 @@ import type {
   BaseResult,
   ProviderFailure,
 } from "./types.js";
-import { AiPoweredError, BudgetExceededError, PluginError, AllProvidersExhaustedError } from "./types.js";
+import {
+  AiPoweredError,
+  BudgetExceededError,
+  PluginError,
+  AllProvidersExhaustedError,
+} from "./types.js";
 import { estimateCost, getLogger } from "./utils.js";
 import { withRetry, CircuitBreaker } from "./resilience.js";
 import type { RetryOptions } from "./resilience.js";
@@ -160,7 +165,7 @@ export class AiClient {
     if (projected / budget >= warnFraction) {
       getLogger().warn(
         { spent: projected, budget, isEstimate: true },
-        `Budget warning (pre-call estimate): ${(projected / budget * 100).toFixed(1)}% used`,
+        `Budget warning (pre-call estimate): ${((projected / budget) * 100).toFixed(1)}% used`,
       );
     }
   }
@@ -194,9 +199,9 @@ export class AiClient {
         latencyMs: result.latencyMs,
         ...(result.usage !== undefined
           ? {
-              promptTokens:     result.usage.promptTokens,
+              promptTokens: result.usage.promptTokens,
               completionTokens: result.usage.completionTokens,
-              totalTokens:      result.usage.totalTokens,
+              totalTokens: result.usage.totalTokens,
             }
           : {}),
       },
@@ -242,10 +247,7 @@ export class AiClient {
    * Wraps `fn` with the retry policy derived from the active config.
    * @internal
    */
-  private async _callWithRetry<T>(
-    fn: () => Promise<T>,
-    signal?: AbortSignal,
-  ): Promise<T> {
+  private async _callWithRetry<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const opts: RetryOptions = signal !== undefined ? { signal } : {};
     return withRetry(() => fn(), opts);
   }
@@ -295,6 +297,15 @@ export class AiClient {
           "Failover: switching to fallback provider",
         );
       }
+      log.debug(
+        {
+          provider: name,
+          model: this._config.model ?? "(default)",
+          attempt: i + 1,
+          total: chain.length,
+        },
+        "Attempting provider call",
+      );
       try {
         const cb = this._getCircuitBreaker(name);
         return await cb.call(() => this._callWithRetry(() => fn(provider), signal));
@@ -367,7 +378,11 @@ export class AiClient {
           "Plugin onRequest failed; plugin bypassed for remainder of session",
         );
         // Give the plugin a chance to clean up via its own onError hook.
-        try { await plugin.onError?.(wrapped); } catch { /* ignore secondary errors */ }
+        try {
+          await plugin.onError?.(wrapped);
+        } catch {
+          /* ignore secondary errors */
+        }
       }
     }
     return current;
@@ -412,7 +427,11 @@ export class AiClient {
           { plugin: plugin.name, err: wrapped },
           "Plugin onResponse failed; plugin bypassed for remainder of session",
         );
-        try { await plugin.onError?.(wrapped); } catch { /* ignore secondary errors */ }
+        try {
+          await plugin.onError?.(wrapped);
+        } catch {
+          /* ignore secondary errors */
+        }
       }
     }
     return current;
@@ -429,7 +448,11 @@ export class AiClient {
     if (!(error instanceof AiPoweredError)) return;
     for (const plugin of this._plugins) {
       if (!plugin.onError) continue;
-      try { await plugin.onError(error); } catch { /* ignore */ }
+      try {
+        await plugin.onError(error);
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -638,7 +661,10 @@ export class AiClient {
       await cb.call(() => Promise.resolve());
     }
     try {
-      for await (const chunk of this._provider.streamText(effectivePrompt, { ...options, stream: true })) {
+      for await (const chunk of this._provider.streamText(effectivePrompt, {
+        ...options,
+        stream: true,
+      })) {
         yield chunk;
       }
       // Successful stream — reset consecutive failure counter.
@@ -699,4 +725,3 @@ export class AiClient {
     return this._sessions.get(id)!;
   }
 }
-

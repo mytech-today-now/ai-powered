@@ -123,8 +123,8 @@ export class RunwayProvider extends BaseProvider {
     const model = this._resolveModel();
     const start = Date.now();
 
-    // Runway ratio format: "1280:720" (width:height)
-    const ratio = this._resolveRatio(options?.aspectRatio);
+    // Runway ratio format: "1280:720" (width:height) — model-specific
+    const ratio = this._resolveRatio(model, options?.aspectRatio);
     const duration = this._resolveDuration(options?.duration);
 
     LimitsValidator.validateVideo("runway", model, {
@@ -199,20 +199,35 @@ export class RunwayProvider extends BaseProvider {
 
   /**
    * Maps a colon-separated aspect ratio (e.g. "16:9") to Runway's WIDTHxHEIGHT
-   * ratio string for text-to-video (gen4.5 supports "1280:720" and "720:1280").
-   * Falls back to landscape "1280:720" if the input is absent or unrecognised.
+   * ratio string for the given model:
+   *   gen4.5        → landscape "1280:720" / portrait "720:1280"
+   *   gen4_turbo /
+   *   gen3a_turbo   → landscape "1280:768" / portrait "768:1280"
+   *
+   * Any recognisable landscape input (16:9, 1280:720, 1280:768) is mapped to
+   * the model-correct landscape string; portrait inputs map similarly.
+   * Falls back to the model's landscape default for unknown values.
    */
-  private _resolveRatio(aspectRatio?: string): string {
+  private _resolveRatio(model: string, aspectRatio?: string): string {
+    // Per-model canonical strings.
+    const landscape = model === "gen4.5" ? "1280:720" : "1280:768";
+    const portrait = model === "gen4.5" ? "720:1280" : "768:1280";
+
     const AR_MAP: Record<string, string> = {
-      "16:9": "1280:720",
-      "9:16": "720:1280",
-      "3:4": "720:1280",
-      // pass-through
-      "1280:720": "1280:720",
-      "720:1280": "720:1280",
+      // friendly names → model-correct string
+      "16:9": landscape,
+      "9:16": portrait,
+      "3:4": portrait,
+      "4:3": landscape,
+      // all possible exact pass-throughs → snap to this model's value
+      "1280:720": landscape,
+      "720:1280": portrait,
+      "1280:768": landscape,
+      "768:1280": portrait,
     };
-    if (!aspectRatio || aspectRatio === "auto") return "1280:720";
-    return AR_MAP[aspectRatio] ?? "1280:720";
+
+    if (!aspectRatio || aspectRatio === "auto") return landscape;
+    return AR_MAP[aspectRatio] ?? landscape;
   }
 
   /** Clamp requested duration to Runway's supported values (5 or 10 seconds). */

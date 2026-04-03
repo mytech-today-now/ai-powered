@@ -431,7 +431,9 @@ export function createLogger(options: AiLoggerOptions = {}): Logger {
 
   if (streams.length === 0) {
     // Default: structured JSON to stderr (production / CI).
-    return pino({ ...pinoOptions, destination: 2 } as PinoLoggerOptions);
+    // pino.destination(2) targets fd 2 (stderr); passing it as the second
+    // argument is the correct API — destination is NOT a valid options key.
+    return pino(pinoOptions, pino.destination(2));
   }
 
   if (streams.length === 1 && streams[0]) {
