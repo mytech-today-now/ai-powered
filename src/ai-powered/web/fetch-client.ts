@@ -11,6 +11,8 @@
  * `ReadableStream<string>` with SSE parsing.
  */
 
+import { withRetryFetch, CircuitBreaker } from "../shared/resilience.js";
+
 // ---------------------------------------------------------------------------
 // Call options
 // ---------------------------------------------------------------------------
@@ -109,7 +111,17 @@ export interface WebDirectOptions {
   model?: string;
 }
 
-export type WebClientOptions = WebProxyOptions | WebDirectOptions;
+/** Resilience options applicable to all WebAiClient modes. */
+export interface WebResilienceOptions {
+  /** Maximum number of retry attempts on 429/503. Default: 3. */
+  maxRetries?: number;
+  /** Base delay (ms) for Full Jitter backoff. Default: 500. */
+  backoffBase?: number;
+  /** Maximum delay cap (ms) for Full Jitter backoff. Default: 8000. */
+  backoffCap?: number;
+}
+
+export type WebClientOptions = (WebProxyOptions | WebDirectOptions) & WebResilienceOptions;
 
 // ---------------------------------------------------------------------------
 // Provider base URLs (direct mode)
@@ -270,9 +282,11 @@ export class BrowserConversationSession {
  */
 export class WebAiClient {
   private readonly opts: WebClientOptions;
+  private readonly _breaker: CircuitBreaker;
 
   constructor(opts: WebClientOptions) {
     this.opts = opts;
+    this._breaker = new CircuitBreaker();
     if (opts.mode === "direct") {
       console.warn(
         "[ai-powered] Direct mode is active. Your API key is visible in browser " +
@@ -333,6 +347,25 @@ export class WebAiClient {
     throw new Error(`HTTP ${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
   }
 
+  /**
+   * Executes a fetch thunk wrapped in Full Jitter retry and the per-instance
+   * circuit breaker.  Forwards `signal` so callers can cancel mid-flight or
+   * during a backoff delay.
+   */
+  private fetchWithResilience(
+    fn: () => Promise<Response>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    // Build RetryOptions conditionally to satisfy exactOptionalPropertyTypes:
+    // passing `undefined` for an optional field is a type error with that flag.
+    const retryOpts: import("../shared/resilience.js").RetryOptions = {
+      ...(this.opts.maxRetries !== undefined && { maxRetries: this.opts.maxRetries }),
+      ...(this.opts.backoffBase !== undefined && { backoffBase: this.opts.backoffBase }),
+      ...(this.opts.backoffCap !== undefined && { backoffCap: this.opts.backoffCap }),
+    };
+    return this._breaker.call(() => withRetryFetch(fn, retryOpts, signal));
+  }
+
   // -------------------------------------------------------------------------
   // generateText
   // -------------------------------------------------------------------------
@@ -346,12 +379,15 @@ export class WebAiClient {
       if (options?.systemPrompt !== undefined) body["systemPrompt"] = options.systemPrompt;
       if (this.opts.profile) body["profile"] = this.opts.profile;
 
-      const res = await fetch(`${this.proxyBase}/text`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/text`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
       const data = (await res.json()) as {
         content?: string;
@@ -387,14 +423,17 @@ export class WebAiClient {
     }
 
     const endpoint = `${PROVIDER_BASE_URLS[provider]}/messages`;
-    const res = await fetch(
-      provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-      {
-        method: "POST",
-        headers: this.directHeaders(),
-        body: JSON.stringify(reqBody),
-        signal: options?.signal ?? null,
-      },
+    const res = await this.fetchWithResilience(
+      () => fetch(
+        provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
+        {
+          method: "POST",
+          headers: this.directHeaders(),
+          body: JSON.stringify(reqBody),
+          signal: options?.signal ?? null,
+        },
+      ),
+      options?.signal,
     );
     await this.assertOk(res);
 
@@ -461,12 +500,15 @@ export class WebAiClient {
       if (options?.systemPrompt !== undefined) body["systemPrompt"] = options.systemPrompt;
       if (this.opts.profile) body["profile"] = this.opts.profile;
 
-      const res = await fetch(`${this.proxyBase}/text`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/text`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
 
       const reader = res.body?.getReader();
@@ -491,16 +533,19 @@ export class WebAiClient {
     if (options?.temperature !== undefined) reqBody["temperature"] = options.temperature;
     if (options?.maxTokens !== undefined) reqBody["max_tokens"] = options.maxTokens;
 
-    const res = await fetch(
-      provider === "anthropic"
-        ? `${PROVIDER_BASE_URLS[provider]}/messages`
-        : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-      {
-        method: "POST",
-        headers: this.directHeaders(),
-        body: JSON.stringify(reqBody),
-        signal: options?.signal ?? null,
-      },
+    const res = await this.fetchWithResilience(
+      () => fetch(
+        provider === "anthropic"
+          ? `${PROVIDER_BASE_URLS[provider]}/messages`
+          : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
+        {
+          method: "POST",
+          headers: this.directHeaders(),
+          body: JSON.stringify(reqBody),
+          signal: options?.signal ?? null,
+        },
+      ),
+      options?.signal,
     );
     await this.assertOk(res);
 
@@ -554,12 +599,15 @@ export class WebAiClient {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
-      const res = await fetch(`${this.proxyBase}/image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
       const data = (await res.json()) as {
         url?: string;
@@ -568,7 +616,12 @@ export class WebAiClient {
         mimeType?: string;
       };
       if (data.url) {
-        const imgRes = await fetch(data.url, { signal: options?.signal ?? null });
+        // Capture into const so TypeScript preserves the string narrowing inside the closure.
+        const imgUrl = data.url;
+        const imgRes = await this.fetchWithResilience(
+          () => fetch(imgUrl, { signal: options?.signal ?? null }),
+          options?.signal,
+        );
         return imgRes.blob();
       }
       if (data.b64_json) {
@@ -590,12 +643,15 @@ export class WebAiClient {
     // Direct mode — OpenAI / Venice images endpoint
     const { provider, apiKey } = this.opts;
     const model = this.resolveModel("image", options?.model);
-    const res = await fetch(`${PROVIDER_BASE_URLS[provider]}/images/generations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, prompt, response_format: "b64_json" }),
-      signal: options?.signal ?? null,
-    });
+    const res = await this.fetchWithResilience(
+      () => fetch(`${PROVIDER_BASE_URLS[provider]}/images/generations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, prompt, response_format: "b64_json" }),
+        signal: options?.signal ?? null,
+      }),
+      options?.signal,
+    );
     await this.assertOk(res);
     const data = (await res.json()) as {
       data: Array<{ b64_json?: string; url?: string }>;
@@ -606,7 +662,12 @@ export class WebAiClient {
       return new Blob([bytes], { type: "image/png" });
     }
     if (item?.url) {
-      const imgRes = await fetch(item.url, { signal: options?.signal ?? null });
+      // Capture into const so TypeScript preserves the string narrowing inside the closure.
+      const directImgUrl = item.url;
+      const imgRes = await this.fetchWithResilience(
+        () => fetch(directImgUrl, { signal: options?.signal ?? null }),
+        options?.signal,
+      );
       return imgRes.blob();
     }
     throw new Error("generateImage: no image data in provider response");
@@ -631,12 +692,15 @@ export class WebAiClient {
 
       const body: Record<string, unknown> = { audioBase64: b64 };
       if (this.opts.profile) body["profile"] = this.opts.profile;
-      const res = await fetch(`${this.proxyBase}/audio/transcribe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/audio/transcribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
       const data = (await res.json()) as { text?: string; transcript?: string };
       return data.text ?? data.transcript ?? "";
@@ -649,12 +713,15 @@ export class WebAiClient {
     form.append("file", audio, "audio.webm");
     form.append("model", model || "whisper-1");
 
-    const res = await fetch(`${PROVIDER_BASE_URLS[provider]}/audio/transcriptions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-      signal: options?.signal ?? null,
-    });
+    const res = await this.fetchWithResilience(
+      () => fetch(`${PROVIDER_BASE_URLS[provider]}/audio/transcriptions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+        signal: options?.signal ?? null,
+      }),
+      options?.signal,
+    );
     await this.assertOk(res);
     const data = (await res.json()) as { text?: string };
     return data.text ?? "";
@@ -669,12 +736,15 @@ export class WebAiClient {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { text };
       if (this.opts.profile) body["profile"] = this.opts.profile;
-      const res = await fetch(`${this.proxyBase}/audio/speak`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/audio/speak`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
       // Proxy returns { audio: "<base64>" }
       const data = (await res.json()) as { audio?: string };
@@ -688,12 +758,15 @@ export class WebAiClient {
     // Direct mode — OpenAI TTS endpoint
     const { provider, apiKey } = this.opts;
     const model = this.resolveModel("audio", options?.model) || "tts-1";
-    const res = await fetch(`${PROVIDER_BASE_URLS[provider]}/audio/speech`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, input: text, voice: "alloy" }),
-      signal: options?.signal ?? null,
-    });
+    const res = await this.fetchWithResilience(
+      () => fetch(`${PROVIDER_BASE_URLS[provider]}/audio/speech`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, input: text, voice: "alloy" }),
+        signal: options?.signal ?? null,
+      }),
+      options?.signal,
+    );
     await this.assertOk(res);
     return res.blob();
   }
@@ -712,12 +785,15 @@ export class WebAiClient {
       if (options?.quality !== undefined) body["quality"] = options.quality;
       if (options?.duration !== undefined) body["duration"] = options.duration;
       if (options?.fps !== undefined) body["fps"] = options.fps;
-      const res = await fetch(`${this.proxyBase}/video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/video`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
       const data = (await res.json()) as {
         url?: string;
@@ -726,7 +802,12 @@ export class WebAiClient {
         mimeType?: string;
       };
       if (data.url) {
-        const vidRes = await fetch(data.url, { signal: options?.signal ?? null });
+        // Capture into const so TypeScript preserves the string narrowing inside the closure.
+        const vidUrl = data.url;
+        const vidRes = await this.fetchWithResilience(
+          () => fetch(vidUrl, { signal: options?.signal ?? null }),
+          options?.signal,
+        );
         return vidRes.blob();
       }
       if (data.b64_json) {
@@ -763,12 +844,15 @@ export class WebAiClient {
       if (options?.systemPrompt !== undefined) body["systemPrompt"] = options.systemPrompt;
       if (this.opts.profile) body["profile"] = this.opts.profile;
 
-      const res = await fetch(`${this.proxyBase}/structured`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options?.signal ?? null,
-      });
+      const res = await this.fetchWithResilience(
+        () => fetch(`${this.proxyBase}/structured`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+        options?.signal,
+      );
       await this.assertOk(res);
       const data = (await res.json()) as {
         data?: T;
@@ -808,11 +892,14 @@ export class WebAiClient {
   // -------------------------------------------------------------------------
 
   /** List models available from the configured provider or proxy. */
-  async listModels(modality?: string): Promise<WebModelInfo[]> {
+  async listModels(modality?: string, options?: WebCallOptions): Promise<WebModelInfo[]> {
     if (this.opts.mode === "proxy") {
       const url = new URL(`${this.proxyBase}/models`);
       if (modality) url.searchParams.set("modality", modality);
-      const res = await fetch(url.toString());
+      const res = await this.fetchWithResilience(
+        () => fetch(url.toString(), { signal: options?.signal ?? null }),
+        options?.signal,
+      );
       await this.assertOk(res);
       return res.json() as Promise<WebModelInfo[]>;
     }
@@ -823,9 +910,13 @@ export class WebAiClient {
         ? `${PROVIDER_BASE_URLS[provider]}/models`
         : `${PROVIDER_BASE_URLS[provider]}/models`;
 
-    const res = await fetch(endpoint, {
-      headers: this.directHeaders(),
-    });
+    const res = await this.fetchWithResilience(
+      () => fetch(endpoint, {
+        headers: this.directHeaders(),
+        signal: options?.signal ?? null,
+      }),
+      options?.signal,
+    );
     await this.assertOk(res);
 
     if (provider === "anthropic") {

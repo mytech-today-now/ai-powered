@@ -1,0 +1,64 @@
+{
+  "id": "app-008",
+  "title": "Add circuit-breaker and exponential-backoff retry to WebAiClient",
+  "status": "implemented",
+  "created": "2026-04-04",
+  "author": "mytech-today-now",
+  "source_prompt": "ai-prompts/App-008.md",
+  "capabilities": [
+    {
+      "id": "shared-resilience",
+      "type": "new",
+      "file": "src/ai-powered/shared/resilience.ts",
+      "spec": "openspec/changes/app-008/specs/shared-resilience/spec.md",
+      "description": "Browser-safe jitterDelay, sleep, withRetryFetch, CircuitBreaker"
+    },
+    {
+      "id": "web-client-resilience",
+      "type": "modification",
+      "file": "src/ai-powered/web/fetch-client.ts",
+      "spec": "openspec/changes/app-008/specs/web-client-resilience/spec.md",
+      "description": "WebResilienceOptions on WebClientOptions + per-instance CircuitBreaker wrapping all fetch calls"
+    },
+    {
+      "id": "node-resilience-reexport",
+      "type": "modification",
+      "file": "src/ai-powered/resilience.ts",
+      "spec": "openspec/changes/app-008/specs/node-resilience-reexport/spec.md",
+      "description": "Re-export shared primitives (jitterDelay, sleep, withRetryFetch, SharedCircuitBreaker)"
+    }
+  ],
+  "files_changed": [
+    { "path": "src/ai-powered/shared/resilience.ts", "action": "create" },
+    { "path": "src/ai-powered/web/fetch-client.ts",  "action": "modify" },
+    { "path": "src/ai-powered/resilience.ts",         "action": "modify" }
+  ],
+  "artifacts": {
+    "proposal":       "openspec/changes/app-008/proposal.md",
+    "deltas":         "openspec/changes/app-008/deltas.md",
+    "design":         "openspec/changes/app-008/design.md",
+    "tasks":          "openspec/changes/app-008/tasks.md",
+    "implementation": "openspec/changes/app-008/implementation.md",
+    "specs": [
+      "openspec/changes/app-008/specs/shared-resilience/spec.md",
+      "openspec/changes/app-008/specs/web-client-resilience/spec.md",
+      "openspec/changes/app-008/specs/node-resilience-reexport/spec.md"
+    ],
+    "examples": [
+      "openspec/changes/app-008/examples/circuit-breaker-retry.js"
+    ],
+    "tests": [
+      "openspec/changes/app-008/tests/app-008.test.ts"
+    ],
+    "summary":  "openspec/changes/app-008/summary.md",
+    "readme":   "openspec/changes/app-008/README.md"
+  },
+  "dependencies": [],
+  "breaking_changes": false,
+  "new_npm_packages": [],
+  "actual_bundle_delta_kb_gzip": 0.62,
+  "test_command": "npx vitest run openspec/changes/app-008/tests/app-008.test.ts",
+  "example_command": "node openspec/changes/app-008/examples/circuit-breaker-retry.js",
+  "build_command": "npm run build"
+}
+

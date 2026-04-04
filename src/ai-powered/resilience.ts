@@ -248,3 +248,9 @@ export async function withRetry<T>(
   throw lastErr;
 }
 
+// Re-export browser-safe shared primitives so Node consumers can import
+// from this module without knowing about the shared/ sub-path.
+export { jitterDelay, sleep, withRetryFetch } from "./shared/resilience.js";
+export type { RetryOptions as WebRetryOptions } from "./shared/resilience.js";
+export { CircuitBreaker as SharedCircuitBreaker } from "./shared/resilience.js";
+

@@ -16,7 +16,7 @@ export default defineConfig({
     environment: "node",
 
     // Test file glob patterns.
-    include: ["tests/**/*.test.ts", "tests/**/*.spec.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.spec.ts", "openspec/**/*.test.js", "openspec/**/*.test.ts"],
 
     // Force mock mode in all test runs.
     env: {
