@@ -461,10 +461,14 @@
    * Show a dismissible sticky banner at the top of the page for system-level
    * errors that may not be visible in any output panel (e.g., server unreachable,
    * wrong mode selected for a feature). Auto-dismisses after 15 s.
+   *
+   * @param {string} message
+   * @param {"error"|"warning"|"info"} [severity="error"]
    */
-  function showGlobalError(msg) {
+  function showGlobalError(message, severity = "error") {
     if (!globalErrorToast || !globalErrorMsg) return;
-    globalErrorMsg.textContent = msg;
+    globalErrorMsg.textContent = message;
+    globalErrorToast.className = `global-error global-error--${severity}`;
     globalErrorToast.classList.remove("hidden");
     clearTimeout(showGlobalError._timer);
     showGlobalError._timer = setTimeout(clearGlobalError, 15000);
@@ -775,6 +779,19 @@
     container.appendChild(actions);
   }
 
+  /* ── ProxyError ──────────────────────────────────────────── */
+  class ProxyError extends Error {
+    /**
+     * @param {number} statusCode  HTTP status code from the proxy
+     * @param {string} message     Human-readable error text from the JSON body
+     */
+    constructor(statusCode, message) {
+      super(message);
+      this.name = "ProxyError";
+      this.statusCode = statusCode;
+    }
+  }
+
   /* ── Proxy fetch helpers ─────────────────────────────────── */
   async function proxyPost(endpoint, body) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
@@ -799,14 +816,12 @@
     }
 
     if (!resp.ok) {
-      let msg = resp.statusText;
+      let msg = `Server error ${resp.status}`;
       try {
         const j = await resp.json();
-        msg = (Array.isArray(j.issues) && j.issues.length ? j.issues.join("; ") : j.error) || msg;
+        msg = j.error ?? j.message ?? msg;
       } catch (_) {}
-      const httpErr = new Error("Server error " + resp.status + ": " + msg);
-      showGlobalError(httpErr.message);
-      throw httpErr;
+      throw new ProxyError(resp.status, msg);
     }
     return resp.json();
   }
@@ -824,9 +839,9 @@
       throw new Error("Network error: " + err.message);
     }
     if (!resp.ok) {
-      let msg = "Server error " + resp.status;
-      try { const j = await resp.json(); msg = j.error ?? msg; } catch (_) {}
-      throw new Error(msg);
+      let msg = `Server error ${resp.status}`;
+      try { const j = await resp.json(); msg = j.error ?? j.message ?? msg; } catch (_) {}
+      throw new ProxyError(resp.status, msg);
     }
     return resp;   // caller reads resp.body
   }
@@ -1490,14 +1505,16 @@
       addUsage(result.usage, result.cost);
     } catch (err) {
       showError(textOutput, err);
-      if (err?.name === "BudgetExceededError") {
-        showGlobalError(
-          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
-          `$${err.budgetUsd.toFixed(2)} limit.`
-        );
-        return;
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
       }
-      showGlobalError("Text generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTextGenerate, btnTextStream], false);
     }
@@ -1556,14 +1573,16 @@
       addUsage(null, null); // streaming — no cost breakdown available
     } catch (err) {
       showError(textOutput, err);
-      if (err?.name === "BudgetExceededError") {
-        showGlobalError(
-          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
-          `$${err.budgetUsd.toFixed(2)} limit.`
-        );
-        return;
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
       }
-      showGlobalError("Text streaming failed: " + (err instanceof Error ? err.message : String(err)));
       assistantP.textContent = "[error]";
     } finally {
       setLoading([btnTextGenerate, btnTextStream], false);
@@ -1642,14 +1661,16 @@
       }
     } catch (err) {
       showError(imageOutput, err);
-      if (err?.name === "BudgetExceededError") {
-        showGlobalError(
-          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
-          `$${err.budgetUsd.toFixed(2)} limit.`
-        );
-        return;
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
       }
-      showGlobalError("Image generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnImageGenerate], false);
     }
@@ -1699,14 +1720,16 @@
       }
     } catch (err) {
       showError(ttsOutput, err);
-      if (err?.name === "BudgetExceededError") {
-        showGlobalError(
-          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
-          `$${err.budgetUsd.toFixed(2)} limit.`
-        );
-        return;
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
       }
-      showGlobalError("Speech synthesis failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTtsSpeak], false);
     }
@@ -1759,14 +1782,16 @@
       setUsageText(audioUsage, transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
     } catch (err) {
       showError(transcribeOutput, err);
-      if (err?.name === "BudgetExceededError") {
-        showGlobalError(
-          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
-          `$${err.budgetUsd.toFixed(2)} limit.`
-        );
-        return;
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
       }
-      showGlobalError("Transcription failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTranscribe], false);
     }
@@ -2571,7 +2596,16 @@ ${shotCards}
         batchProgressLabel.textContent =
           `Cancelled — ${done_count} of ${total} processed`;
       } else {
-        showGlobalError("Batch failed: " + err.message);
+        if (err instanceof ProxyError) {
+          switch (err.statusCode) {
+            case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+            case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+            case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+            default:  showGlobalError(`${err.message}`, "error");
+          }
+        } else {
+          showGlobalError(err.message ?? "Unexpected error", "error");
+        }
         batchProgressBar.classList.add("progress-bar--error");
         batchProgress.classList.remove("hidden");
       }
@@ -2711,7 +2745,16 @@ ${shotCards}
       if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
     } catch (err) {
       showError(videoOutput, err);
-      showGlobalError("Video generation failed: " + (err instanceof Error ? err.message : String(err)));
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
+      }
     } finally {
       setLoading([btnVideoGenerate], false);
     }
@@ -2743,14 +2786,16 @@ ${shotCards}
     } catch (err) {
       structuredOutput.classList.remove("json-output");
       showError(structuredOutput, err);
-      if (err?.name === "BudgetExceededError") {
-        showGlobalError(
-          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
-          `$${err.budgetUsd.toFixed(2)} limit.`
-        );
-        return;
+      if (err instanceof ProxyError) {
+        switch (err.statusCode) {
+          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
+          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
+          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+          default:  showGlobalError(`${err.message}`, "error");
+        }
+      } else {
+        showGlobalError(err.message ?? "Unexpected error", "error");
       }
-      showGlobalError("Structured generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnStructuredGenerate], false);
     }

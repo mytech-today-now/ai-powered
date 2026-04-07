@@ -64,11 +64,16 @@
         padding: 0;
       }
       .file-thumb-remove:hover { background: rgba(220,38,38,0.85); }
+
+      /* Global error banner — severity modifiers */
+      .global-error--error   { background: #bf2600; color: #fff; }
+      .global-error--warning { background: #ff991f; color: #172b4d; }
+      .global-error--info    { background: #0065ff; color: #fff; }
     </style>
   </head>
   <body>
     <!-- ── Global Error Toast ───────────────────────────────────────── -->
-    <div id="global-error-toast" class="global-error-toast hidden" role="alert" aria-live="assertive">
+    <div id="global-error-toast" class="global-error hidden" role="alert" aria-live="assertive">
       <span id="global-error-msg" class="global-error-text"></span>
       <button id="global-error-close" aria-label="Dismiss error">✕</button>
     </div>
