@@ -217,14 +217,16 @@
   }
 
   /**
-   * Repopulates the provider dropdown to only show providers that support
-   * the given modality.  Mock is always shown when it supports the modality,
-   * even if the server reports it as inactive (it needs no API key).
-   * Preserves the current selection if it is still valid.
+   * Populates a provider <select> element with providers that support the
+   * given modality. Preserves the current selection if it is still valid.
+   *
+   * @param {HTMLSelectElement} selectEl  Target <select> element (may be null).
+   * @param {string}            modality  Modality string used to filter allProviders.
    */
-  function refreshProviderDropdown(modality) {
-    const prev = proxyProviderSelect.value;
-    proxyProviderSelect.innerHTML = '<option value="">Default</option>';
+  function populateProviderSelect(selectEl, modality) {
+    if (!selectEl) return;
+    const prev = selectEl.value;
+    selectEl.innerHTML = '<option value="">Default</option>';
     const compatible = allProviders.filter(
       (p) =>
         Array.isArray(p.modalities) &&
@@ -237,36 +239,21 @@
       opt.value = p.id;
       opt.textContent = p.active ? p.name + " ★" : p.name;
       opt.title = p.active ? "API key configured" : "No API key set — add to .env to enable";
-      proxyProviderSelect.appendChild(opt);
+      selectEl.appendChild(opt);
     });
-    // Preserve previous selection if still in the list, otherwise reset to Default
-    if ([...proxyProviderSelect.options].some((o) => o.value === prev)) {
-      proxyProviderSelect.value = prev;
+    if ([...selectEl.options].some((o) => o.value === prev)) {
+      selectEl.value = prev;
     }
   }
 
-  /**
-   * Repopulates the video-tab-specific provider dropdown with only video-capable
-   * providers.  Preserves the current selection if it is still valid.
-   * Called after loadProviders() so that allProviders is already populated.
-   */
+  /** @see populateProviderSelect */
+  function refreshProviderDropdown(modality) {
+    populateProviderSelect(proxyProviderSelect, modality);
+  }
+
+  /** @see populateProviderSelect */
   function refreshVideoProviderDropdown() {
-    if (!videoProviderSelect) return;
-    const prev = videoProviderSelect.value;
-    videoProviderSelect.innerHTML = '<option value="">Default</option>';
-    const compatible = allProviders.filter(
-      (p) => Array.isArray(p.modalities) && p.modalities.includes("video"),
-    );
-    compatible.forEach((p) => {
-      const opt = document.createElement("option");
-      opt.value = p.id;
-      opt.textContent = p.active ? p.name + " ★" : p.name;
-      opt.title = p.active ? "API key configured" : "No API key set — add to .env to enable";
-      videoProviderSelect.appendChild(opt);
-    });
-    if ([...videoProviderSelect.options].some((o) => o.value === prev)) {
-      videoProviderSelect.value = prev;
-    }
+    populateProviderSelect(videoProviderSelect, "video");
   }
 
   /* ── Video constraint syncing ───────────────────────────── */
