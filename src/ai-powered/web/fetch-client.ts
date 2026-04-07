@@ -12,6 +12,7 @@
  */
 
 import { withRetryFetch, CircuitBreaker } from "../shared/resilience.js";
+import { BudgetExceededError } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Call options
@@ -38,6 +39,16 @@ export interface WebVideoOptions extends WebCallOptions {
   quality?: "draft" | "standard" | "high";
   duration?: number;
   fps?: number;
+  /**
+   * UUID token returned by POST /upload.  When present, the corresponding
+   * file is resolved server-side and injected as an image reference into the
+   * video generation request (image-to-video).
+   */
+  fileRef?: string;
+  /** Override the provider for this request (e.g. "lumaai"). */
+  provider?: string;
+  /** Override the model for this request (e.g. "ray-2"). */
+  model?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +132,26 @@ export interface WebResilienceOptions {
   backoffCap?: number;
 }
 
-export type WebClientOptions = (WebProxyOptions | WebDirectOptions) & WebResilienceOptions;
+/** Budget options applicable to all WebAiClient modes. */
+export interface WebBudgetOptions {
+  /**
+   * Maximum cumulative spend in USD for this client instance.
+   * Default: Infinity (no cap). When the running total meets or exceeds this
+   * value, the next applicable call throws BudgetExceededError before any
+   * fetch is issued.
+   */
+  budgetUsd?: number;
+  /**
+   * Fraction of budgetUsd at which a console.warn is emitted (default 0.8).
+   * The warning is logged only; no banner is shown. The hard stop is
+   * BudgetExceededError when the full limit is reached.
+   */
+  warnFraction?: number;
+}
+
+export type WebClientOptions = (WebProxyOptions | WebDirectOptions) &
+  WebResilienceOptions &
+  WebBudgetOptions;
 
 // ---------------------------------------------------------------------------
 // Provider base URLs (direct mode)
@@ -283,16 +313,46 @@ export class BrowserConversationSession {
 export class WebAiClient {
   private readonly opts: WebClientOptions;
   private readonly _breaker: CircuitBreaker;
+  private _spentUsd = 0;
+  private readonly _budgetUsd: number;
+  private readonly _warnFraction: number;
 
   constructor(opts: WebClientOptions) {
     this.opts = opts;
     this._breaker = new CircuitBreaker();
+    this._budgetUsd = opts.budgetUsd ?? Infinity;
+    this._warnFraction = opts.warnFraction ?? 0.8;
     if (opts.mode === "direct") {
       console.warn(
         "[ai-powered] Direct mode is active. Your API key is visible in browser " +
           "DevTools. Use proxy mode in production.",
       );
       renderSecurityBanner();
+    }
+  }
+
+  /** Current cumulative spend in USD for this client instance. */
+  get spentUsd(): number {
+    return this._spentUsd;
+  }
+
+  /** Throws BudgetExceededError before issuing a fetch if limit is reached. */
+  private _checkBudget(estimatedUsd = 0): void {
+    if (this._spentUsd + estimatedUsd >= this._budgetUsd) {
+      throw new BudgetExceededError(this._spentUsd + estimatedUsd, this._budgetUsd);
+    }
+  }
+
+  /** Accumulates actual cost and emits a console.warn if threshold is crossed. */
+  private _accumulateCost(result: { cost?: { totalUsd: number } }): void {
+    const cost = result.cost?.totalUsd ?? 0;
+    this._spentUsd += cost;
+    if (this._budgetUsd < Infinity && this._spentUsd / this._budgetUsd >= this._warnFraction) {
+      console.warn(
+        `[WebAiClient] Budget warning: $${this._spentUsd.toFixed(4)} of ` +
+          `$${this._budgetUsd.toFixed(2)} used ` +
+          `(${((this._spentUsd / this._budgetUsd) * 100).toFixed(1)}%)`,
+      );
     }
   }
 
@@ -380,12 +440,13 @@ export class WebAiClient {
       if (this.opts.profile) body["profile"] = this.opts.profile;
 
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/text`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/text`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -422,17 +483,19 @@ export class WebAiClient {
       reqBody["max_tokens"] = options.maxTokens;
     }
 
+    this._checkBudget();
     const endpoint = `${PROVIDER_BASE_URLS[provider]}/messages`;
     const res = await this.fetchWithResilience(
-      () => fetch(
-        provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-        {
-          method: "POST",
-          headers: this.directHeaders(),
-          body: JSON.stringify(reqBody),
-          signal: options?.signal ?? null,
-        },
-      ),
+      () =>
+        fetch(
+          provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
+          {
+            method: "POST",
+            headers: this.directHeaders(),
+            body: JSON.stringify(reqBody),
+            signal: options?.signal ?? null,
+          },
+        ),
       options?.signal,
     );
     await this.assertOk(res);
@@ -445,7 +508,7 @@ export class WebAiClient {
         usage?: { input_tokens: number; output_tokens: number };
       };
       const text = data.content.find((b) => b.type === "text")?.text ?? "";
-      return {
+      const anthropicResult: WebTextResult = {
         content: text,
         model: data.model,
         provider,
@@ -458,6 +521,8 @@ export class WebAiClient {
           },
         }),
       };
+      this._accumulateCost(anthropicResult);
+      return anthropicResult;
     }
 
     // OpenAI-compatible response
@@ -467,7 +532,7 @@ export class WebAiClient {
       usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
     };
     const choice = data.choices[0];
-    return {
+    const openaiResult: WebTextResult = {
       content: choice?.message.content ?? "",
       model: data.model,
       provider,
@@ -480,6 +545,8 @@ export class WebAiClient {
         },
       }),
     };
+    this._accumulateCost(openaiResult);
+    return openaiResult;
   }
 
   // -------------------------------------------------------------------------
@@ -501,12 +568,13 @@ export class WebAiClient {
       if (this.opts.profile) body["profile"] = this.opts.profile;
 
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/text`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/text`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -534,17 +602,18 @@ export class WebAiClient {
     if (options?.maxTokens !== undefined) reqBody["max_tokens"] = options.maxTokens;
 
     const res = await this.fetchWithResilience(
-      () => fetch(
-        provider === "anthropic"
-          ? `${PROVIDER_BASE_URLS[provider]}/messages`
-          : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-        {
-          method: "POST",
-          headers: this.directHeaders(),
-          body: JSON.stringify(reqBody),
-          signal: options?.signal ?? null,
-        },
-      ),
+      () =>
+        fetch(
+          provider === "anthropic"
+            ? `${PROVIDER_BASE_URLS[provider]}/messages`
+            : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
+          {
+            method: "POST",
+            headers: this.directHeaders(),
+            body: JSON.stringify(reqBody),
+            signal: options?.signal ?? null,
+          },
+        ),
       options?.signal,
     );
     await this.assertOk(res);
@@ -600,12 +669,13 @@ export class WebAiClient {
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/image`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -641,15 +711,17 @@ export class WebAiClient {
     }
 
     // Direct mode — OpenAI / Venice images endpoint
+    this._checkBudget();
     const { provider, apiKey } = this.opts;
     const model = this.resolveModel("image", options?.model);
     const res = await this.fetchWithResilience(
-      () => fetch(`${PROVIDER_BASE_URLS[provider]}/images/generations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model, prompt, response_format: "b64_json" }),
-        signal: options?.signal ?? null,
-      }),
+      () =>
+        fetch(`${PROVIDER_BASE_URLS[provider]}/images/generations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model, prompt, response_format: "b64_json" }),
+          signal: options?.signal ?? null,
+        }),
       options?.signal,
     );
     await this.assertOk(res);
@@ -693,12 +765,13 @@ export class WebAiClient {
       const body: Record<string, unknown> = { audioBase64: b64 };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/audio/transcribe`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/audio/transcribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -714,12 +787,13 @@ export class WebAiClient {
     form.append("model", model || "whisper-1");
 
     const res = await this.fetchWithResilience(
-      () => fetch(`${PROVIDER_BASE_URLS[provider]}/audio/transcriptions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
-        signal: options?.signal ?? null,
-      }),
+      () =>
+        fetch(`${PROVIDER_BASE_URLS[provider]}/audio/transcriptions`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: form,
+          signal: options?.signal ?? null,
+        }),
       options?.signal,
     );
     await this.assertOk(res);
@@ -737,12 +811,13 @@ export class WebAiClient {
       const body: Record<string, unknown> = { text };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/audio/speak`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/audio/speak`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -756,15 +831,17 @@ export class WebAiClient {
     }
 
     // Direct mode — OpenAI TTS endpoint
+    this._checkBudget();
     const { provider, apiKey } = this.opts;
     const model = this.resolveModel("audio", options?.model) || "tts-1";
     const res = await this.fetchWithResilience(
-      () => fetch(`${PROVIDER_BASE_URLS[provider]}/audio/speech`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model, input: text, voice: "alloy" }),
-        signal: options?.signal ?? null,
-      }),
+      () =>
+        fetch(`${PROVIDER_BASE_URLS[provider]}/audio/speech`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model, input: text, voice: "alloy" }),
+          signal: options?.signal ?? null,
+        }),
       options?.signal,
     );
     await this.assertOk(res);
@@ -780,18 +857,22 @@ export class WebAiClient {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
+      if (options?.provider !== undefined) body["provider"] = options.provider;
+      if (options?.model !== undefined) body["model"] = options.model;
+      if (options?.fileRef !== undefined) body["fileRef"] = options.fileRef;
       if (options?.aspectRatio !== undefined) body["aspectRatio"] = options.aspectRatio;
       if (options?.resolution !== undefined) body["resolution"] = options.resolution;
       if (options?.quality !== undefined) body["quality"] = options.quality;
       if (options?.duration !== undefined) body["duration"] = options.duration;
       if (options?.fps !== undefined) body["fps"] = options.fps;
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/video`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/video`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -825,6 +906,7 @@ export class WebAiClient {
       }
       throw new Error("generateVideo: no video data in proxy response");
     }
+    this._checkBudget();
     throw new Error("generateVideo is not supported in direct mode. Use proxy mode instead.");
   }
 
@@ -845,12 +927,13 @@ export class WebAiClient {
       if (this.opts.profile) body["profile"] = this.opts.profile;
 
       const res = await this.fetchWithResilience(
-        () => fetch(`${this.proxyBase}/structured`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: options?.signal ?? null,
-        }),
+        () =>
+          fetch(`${this.proxyBase}/structured`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: options?.signal ?? null,
+          }),
         options?.signal,
       );
       await this.assertOk(res);
@@ -869,6 +952,7 @@ export class WebAiClient {
     }
 
     // Direct mode — instruct the model to return JSON
+    this._checkBudget();
     const jsonPrompt = `${prompt}\n\nRespond ONLY with valid JSON, no markdown or explanation.`;
     const result = await this.generateText(jsonPrompt, {
       ...options,
@@ -884,6 +968,7 @@ export class WebAiClient {
         `generateStructured: model returned non-JSON content: ${result.content.slice(0, 100)}`,
       );
     }
+    // Cost was already accumulated by the underlying generateText call.
     return { data: parsed, model: result.model, provider: result.provider };
   }
 
@@ -911,10 +996,11 @@ export class WebAiClient {
         : `${PROVIDER_BASE_URLS[provider]}/models`;
 
     const res = await this.fetchWithResilience(
-      () => fetch(endpoint, {
-        headers: this.directHeaders(),
-        signal: options?.signal ?? null,
-      }),
+      () =>
+        fetch(endpoint, {
+          headers: this.directHeaders(),
+          signal: options?.signal ?? null,
+        }),
       options?.signal,
     );
     await this.assertOk(res);

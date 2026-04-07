@@ -31,7 +31,24 @@
   const modeSelect         = $("mode-select");
   const proxyConfig        = $("proxy-config");
   const directConfig       = $("direct-config");
+  const directBudgetInput  = $("direct-budget");
   const proxyUrlInput         = $("proxy-url");
+  // Pre-fill the proxy URL when served via a public tunnel (e.g. ngrok) so
+  // remote visitors don't have to type the API URL manually.
+  //
+  // Priority order:
+  //   1. window.__AI_PROXY_URL__  — injected by the Vite plugin when
+  //      VITE_PROXY_URL is set (e.g. the -Ngrok flag in cycle-service.ps1).
+  //   2. window.location.origin   — when the page is loaded from a non-localhost
+  //      host the Vite dev-server IS the proxy (ngrok → Vite → :3001), so the
+  //      page's own origin is the correct proxy base URL.
+  //   3. HTML default ("http://localhost:3001") — local-only dev, no override.
+  {
+    const _host = window.location.hostname;
+    const _isLocal = _host === "localhost" || _host === "127.0.0.1" || _host === "";
+    const _detected = window.__AI_PROXY_URL__ || (_isLocal ? null : window.location.origin);
+    if (_detected) proxyUrlInput.value = _detected;
+  }
   const proxyProviderSelect   = $("proxy-provider-select");
   const providerSelect        = $("provider-select");
   const apiKeyInput           = $("api-key-input");
@@ -127,9 +144,39 @@
   const videoDuration       = $("video-duration");
   const videoFps            = $("video-fps");
 
+  // File upload controls (Text, Image, Video tabs)
+  const fileUploadInput        = $("file-upload-input");
+  const fileUploadStatus       = $("file-upload-status");
+  const imageFileUploadInput   = $("image-file-upload-input");
+  const imageFileUploadStatus  = $("image-file-upload-status");
+  const imageFileThumbsEl      = $("image-file-thumbs");
+  const videoFileUploadInput   = $("video-file-upload-input");
+  const videoFileUploadStatus  = $("video-file-upload-status");
+  const videoFileThumbsEl      = $("video-file-thumbs");
+
+  const attachmentNoticeEl = $("attachment-notice");
+
   const costTotalEl        = $("cost-total");
   const tokensTotalEl      = $("tokens-total");
   const callsTotalEl       = $("calls-total");
+
+  /* ── File upload state ──────────────────────────────────── */
+  /** UUID token returned by POST /upload; attached to subsequent generation requests (text tab). */
+  let currentFileRef = null;
+  /** UUID tokens for image-tab multi-image uploads. */
+  let imageFileRefs = [];
+  /** UUID tokens for video-tab multi-image uploads (up to 2 for Luma AI). */
+  let videoFileRefs = [];
+
+  /**
+   * Cached server capability: true when the proxy has PROXY_PUBLIC_BASE_URL set
+   * (required for Luma AI image-to-video).  null = not yet fetched.
+   */
+  let serverLumaImageToVideoEnabled = null;
+
+  /* ── Attachment state ───────────────────────────────────── */
+  /** True when the user has a reference image attached; drives provider/model filtering. */
+  let hasImageAttached = false;
 
   /* ── Provider cache (populated by loadProviders) ────────── */
   let allProviders = []; // All providers from /providers, including inactive
@@ -153,6 +200,23 @@
   }
 
   /**
+   * Returns the model <select> element that corresponds to the currently
+   * active tab.  Used by retriggerAttachmentDropdowns() to reload only the
+   * visible model dropdown when the attachment state changes.
+   *
+   * Audio has two model selects (TTS + transcribe); return the TTS one as the
+   * primary so loadModels is called at least once for the audio modality.
+   */
+  function activeModelSelect() {
+    const tab = activeTab();
+    if (tab === "image")      return imageModelSelect;
+    if (tab === "audio")      return ttsModelSelect;
+    if (tab === "video")      return videoModelSelect;
+    if (tab === "structured") return structuredModelSelect;
+    return textModelSelect; // "text" is the default
+  }
+
+  /**
    * Repopulates the provider dropdown to only show providers that support
    * the given modality.  Mock is always shown when it supports the modality,
    * even if the server reports it as inactive (it needs no API key).
@@ -162,7 +226,11 @@
     const prev = proxyProviderSelect.value;
     proxyProviderSelect.innerHTML = '<option value="">Default</option>';
     const compatible = allProviders.filter(
-      (p) => Array.isArray(p.modalities) && p.modalities.includes(modality),
+      (p) =>
+        Array.isArray(p.modalities) &&
+        p.modalities.includes(modality) &&
+        (!hasImageAttached ||
+          (Array.isArray(p.inputModalities) && p.inputModalities.includes("image"))),
     );
     compatible.forEach((p) => {
       const opt = document.createElement("option");
@@ -358,10 +426,12 @@
     }
     const apiKey = apiKeyInput.value.trim();
     if (!apiKey) throw new Error("API key is required for Direct mode.");
+    const budgetUsd = parseFloat(directBudgetInput?.value) || Infinity;
     return createWebClient({
       mode: "direct",
       provider: providerSelect.value,
       apiKey,
+      budgetUsd,
     });
   }
 
@@ -580,9 +650,15 @@
 
   /* ── Data URI / base64 → Blob helpers ──────────────────── */
   function dataUriToBlob(dataUri) {
-    const [header, data] = dataUri.split(",");
-    const mime = header.match(/:(.*?);/)[1];
-    return base64ToBlob(data, mime);
+    if (!dataUri) throw new Error("dataUriToBlob: empty data URI");
+    const commaIdx  = dataUri.indexOf(",");
+    const header    = commaIdx >= 0 ? dataUri.slice(0, commaIdx) : "";
+    const b64       = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
+    const mimeMatch = header.match(/:(.*?);/);
+    if (!mimeMatch) {
+      throw new Error("dataUriToBlob: not a data URI — received: " + dataUri.slice(0, 80));
+    }
+    return base64ToBlob(b64, mimeMatch[1]);
   }
 
   function base64ToBlob(b64, mimeType) {
@@ -726,13 +802,319 @@
       let msg = resp.statusText;
       try {
         const j = await resp.json();
-        msg = j.error || (Array.isArray(j.issues) ? j.issues.join("; ") : null) || msg;
+        msg = (Array.isArray(j.issues) && j.issues.length ? j.issues.join("; ") : j.error) || msg;
       } catch (_) {}
       const httpErr = new Error("Server error " + resp.status + ": " + msg);
       showGlobalError(httpErr.message);
       throw httpErr;
     }
     return resp.json();
+  }
+
+  async function proxyStream(endpoint, body) {
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    let resp;
+    try {
+      resp = await fetch(`${base}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error("Network error: " + err.message);
+    }
+    if (!resp.ok) {
+      let msg = "Server error " + resp.status;
+      try { const j = await resp.json(); msg = j.error ?? msg; } catch (_) {}
+      throw new Error(msg);
+    }
+    return resp;   // caller reads resp.body
+  }
+
+  /**
+   * Compresses and/or converts an image File before upload using an off-screen
+   * canvas.  This solves two common mobile problems:
+   *
+   *   1. **HEIC/HEIF** — iOS cameras default to HEIC.  Safari can decode it via
+   *      createImageBitmap(); the canvas then re-encodes it as JPEG.  Other
+   *      browsers (Chrome/Android) can't decode HEIC, so we throw a clear error
+   *      instead of sending a file the server will reject with a cryptic 415.
+   *
+   *   2. **Large files** — Modern phones produce 8-15 MB JPEGs.  Uploading them
+   *      raw over an ngrok tunnel is slow and can time out.  We downsample to
+   *      ≤ 2048 px on the long edge and re-encode at 85 % JPEG quality, which
+   *      typically brings a 10 MB photo to under 1.5 MB with no visible loss.
+   *
+   * Files that are already ≤ 5 MiB AND are not HEIC/HEIF are returned unchanged.
+   *
+   * @param {File} file
+   * @returns {Promise<File>} Possibly a new File compressed to JPEG.
+   */
+  async function compressImageForUpload(file) {
+    const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MiB threshold
+    const MAX_DIMENSION    = 2048;             // px on long edge
+    const JPEG_QUALITY     = 0.85;
+
+    const nameLower = file.name.toLowerCase();
+    const isHeic    = file.type === "image/heic" || file.type === "image/heif" ||
+                      nameLower.endsWith(".heic") || nameLower.endsWith(".heif");
+    const isImage   = file.type.startsWith("image/");
+    const isLarge   = file.size > MAX_UPLOAD_BYTES;
+
+    // Non-images and small non-HEIC images pass through untouched.
+    if (!isImage || (!isHeic && !isLarge)) return file;
+
+    // canvas-based conversion (createImageBitmap is broadly supported:
+    //   Chrome 50+, Firefox 42+, Safari 15+, Edge 79+).
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(file);
+    } catch (_err) {
+      if (isHeic) {
+        throw new Error(
+          "HEIC/HEIF photos are not supported by this browser. " +
+          "On iOS, please use Safari 15+ or convert the photo to JPEG in the Photos app first.",
+        );
+      }
+      // For other large images that fail to decode, pass through and let the
+      // server validate — worst case the user gets a 50 MiB limit error.
+      return file;
+    }
+
+    // Compute target dimensions preserving aspect ratio.
+    const scale  = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const width  = Math.round(bitmap.width  * scale);
+    const height = Math.round(bitmap.height * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width  = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { reject(new Error("Canvas image compression failed.")); return; }
+          // Rename HEIC → .jpg; keep original name for other compressed images.
+          const outName = isHeic
+            ? file.name.replace(/\.[^.]+$/, ".jpg")
+            : file.name;
+          resolve(new File([blob], outName, { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        JPEG_QUALITY,
+      );
+    });
+  }
+
+  /**
+   * Uploads a file to the proxy server's POST /upload endpoint.
+   * Stores the returned fileRef token in `currentFileRef` for use in
+   * subsequent generation requests.
+   *
+   * @param {File} file - The File object from an <input type="file"> element.
+   * @returns {Promise<string>} The fileRef UUID token.
+   */
+  async function uploadFile(file) {
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const provider = proxyProviderSelect.value || undefined;
+    const formData = new FormData();
+    formData.append("file", file);
+    if (provider) formData.append("provider", provider);
+
+    let resp;
+    try {
+      resp = await fetch(base + "/upload", { method: "POST", body: formData });
+    } catch (_networkErr) {
+      throw new Error(
+        "Cannot reach proxy server at " + base + ". " +
+        "Start it with: npm run serve",
+      );
+    }
+    if (!resp.ok) {
+      // Parse JSON error body (e.g. { error: "Unsupported file type…" }) so the
+      // user sees a plain sentence rather than a raw JSON string.
+      let msg = `Server error ${resp.status}`;
+      try {
+        const j = await resp.json();
+        msg = j.error ?? msg;
+      } catch (_) {
+        try { msg = await resp.text() || msg; } catch (_2) {}
+      }
+      throw new Error(msg);
+    }
+    const { fileRef } = await resp.json();
+    currentFileRef = fileRef;
+    return fileRef;
+  }
+
+  /**
+   * Wires a file <input> element to `uploadFile()`, updating a status <span>
+   * with progress feedback and storing the resulting fileRef token.
+   *
+   * Before uploading, passes the selected file through compressImageForUpload()
+   * to handle HEIC conversion and large-photo downsampling automatically.
+   *
+   * @param {HTMLInputElement|null} inputEl  - The file input element.
+   * @param {HTMLElement|null}      statusEl - The status feedback element.
+   * @param {Function|null}         onDone   - Optional callback invoked after upload completes (success or failure).
+   */
+  function wireFileUpload(inputEl, statusEl, onDone) {
+    if (!inputEl || !statusEl) return;
+    inputEl.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) {
+        // File picker was dismissed without a selection — treat as removal.
+        hasImageAttached = false;
+        await retriggerAttachmentDropdowns();
+        return;
+      }
+      statusEl.textContent = "Uploading…";
+      try {
+        const uploadReady = await compressImageForUpload(file);
+        const wasCompressed = uploadReady !== file;
+        if (wasCompressed) {
+          const kb = Math.round(uploadReady.size / 1024);
+          statusEl.textContent = `Compressing… (${kb} KB) uploading…`;
+        }
+        await uploadFile(uploadReady);
+        statusEl.textContent = `✓ ${file.name} ready`;
+        hasImageAttached = true;
+      } catch (err) {
+        statusEl.textContent = `✗ Upload failed: ${err.message}`;
+        currentFileRef = null;
+        hasImageAttached = false;
+      }
+      await retriggerAttachmentDropdowns();
+      if (onDone) onDone();
+    });
+  }
+
+  /**
+   * Uploads a single file to POST /upload without updating `currentFileRef`.
+   * Used by multi-file upload flows where refs are stored in per-tab arrays.
+   *
+   * @param {File} file
+   * @returns {Promise<string>} The fileRef UUID token.
+   */
+  async function uploadFileRaw(file) {
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const provider = proxyProviderSelect.value || undefined;
+    const formData = new FormData();
+    formData.append("file", file);
+    if (provider) formData.append("provider", provider);
+    let resp;
+    try {
+      resp = await fetch(base + "/upload", { method: "POST", body: formData });
+    } catch (_) {
+      throw new Error("Cannot reach proxy server at " + base + ". Start it with: npm run serve");
+    }
+    if (!resp.ok) {
+      let msg = `Server error ${resp.status}`;
+      try { const j = await resp.json(); msg = j.error ?? msg; } catch (_) {}
+      throw new Error(msg);
+    }
+    const { fileRef } = await resp.json();
+    return fileRef;
+  }
+
+  /**
+   * Wires a multi-file <input> for image/video tabs.
+   *
+   * Each time the user selects files the entire list is cleared and re-uploaded.
+   * A thumbnail gallery is rendered with per-item remove buttons so users can
+   * deselect individual images before generating.
+   *
+   * @param {HTMLInputElement}  inputEl    - The file input (must have `multiple`).
+   * @param {HTMLElement}       statusEl   - Status feedback <span>.
+   * @param {HTMLElement}       thumbsEl   - Container for thumbnail previews.
+   * @param {string[]}          refsArray  - Per-tab mutable array that receives UUID tokens.
+   * @param {Function|null}     onDone     - Optional callback after upload cycle completes.
+   */
+  function wireMultiFileUpload(inputEl, statusEl, thumbsEl, refsArray, onDone) {
+    if (!inputEl || !statusEl) return;
+
+    function clearThumbs() {
+      refsArray.length = 0;
+      if (thumbsEl) { thumbsEl.innerHTML = ""; thumbsEl.classList.add("hidden"); }
+    }
+
+    function addThumb(file, fileRef) {
+      if (!thumbsEl) return;
+      const wrap = document.createElement("div");
+      wrap.className = "file-thumb";
+      wrap.dataset.fileRef = fileRef;
+
+      const img = document.createElement("img");
+      img.alt = file.name;
+      const objUrl = URL.createObjectURL(file);
+      img.src = objUrl;
+      img.onload = () => URL.revokeObjectURL(objUrl);
+
+      const btn = document.createElement("button");
+      btn.className = "file-thumb-remove";
+      btn.title = "Remove " + file.name;
+      btn.textContent = "✕";
+      btn.addEventListener("click", () => {
+        const idx = refsArray.indexOf(fileRef);
+        if (idx !== -1) refsArray.splice(idx, 1);
+        wrap.remove();
+        if (!thumbsEl.children.length) thumbsEl.classList.add("hidden");
+        const count = refsArray.length;
+        statusEl.textContent = count === 0 ? "No files attached"
+          : count === 1 ? "1 file attached"
+          : count + " files attached";
+        hasImageAttached = refsArray.length > 0;
+        if (onDone) onDone();
+      });
+
+      wrap.appendChild(img);
+      wrap.appendChild(btn);
+      thumbsEl.appendChild(wrap);
+      thumbsEl.classList.remove("hidden");
+    }
+
+    inputEl.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      clearThumbs();
+      if (!files.length) {
+        statusEl.textContent = "No files attached";
+        hasImageAttached = false;
+        await retriggerAttachmentDropdowns();
+        if (onDone) onDone();
+        return;
+      }
+      statusEl.textContent = `Uploading ${files.length} file${files.length > 1 ? "s" : ""}…`;
+      let successCount = 0;
+      let lastErr = null;
+      for (const file of files) {
+        try {
+          const uploadReady = await compressImageForUpload(file);
+          const ref = await uploadFileRaw(uploadReady);
+          refsArray.push(ref);
+          addThumb(file, ref);
+          successCount++;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      if (successCount === 0) {
+        statusEl.textContent = `✗ Upload failed: ${lastErr?.message ?? "unknown error"}`;
+        hasImageAttached = false;
+      } else if (lastErr) {
+        statusEl.textContent = `⚠ ${successCount} of ${files.length} uploaded`;
+        hasImageAttached = true;
+      } else {
+        statusEl.textContent = successCount === 1 ? "1 file attached" : successCount + " files attached";
+        hasImageAttached = true;
+      }
+      // Reset input so re-selecting the same files triggers a new change event.
+      inputEl.value = "";
+      await retriggerAttachmentDropdowns();
+      if (onDone) onDone();
+    });
   }
 
   /**
@@ -745,12 +1127,26 @@
    *                                        Overrides the global proxyProviderSelect when given.
    */
   async function loadModels(modality, selectEl, providerHint) {
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
     try {
-      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
       const provider = providerHint !== undefined ? providerHint : proxyProviderSelect.value;
       let url = base + "/models?modality=" + modality;
       if (provider) url += "&provider=" + provider;
-      const models = await fetch(url).then((r) => r.json());
+      if (hasImageAttached) url += "&accepts=image";
+      let models = await fetch(url).then((r) => r.json());
+
+      // T-22 fallback: Audio and Structured tabs have no image-aware models.
+      // When the filtered list is empty (because &accepts=image yielded nothing),
+      // reload without the image filter so the dropdown is never stranded empty.
+      // The attachment notice ("image will be ignored") is shown separately via
+      // updateAttachmentNotice(), which is called by switchTab and
+      // retriggerAttachmentDropdowns after this function returns.
+      if (hasImageAttached && Array.isArray(models) && models.length === 0) {
+        const fallbackUrl = base + "/models?modality=" + modality +
+          (provider ? "&provider=" + provider : "");
+        models = await fetch(fallbackUrl).then((r) => r.json());
+      }
+
       selectEl.innerHTML = '<option value="">Default</option>';
       models.forEach((m) => {
         const opt = document.createElement("option");
@@ -758,7 +1154,18 @@
         opt.textContent = m.name || m.id;
         selectEl.appendChild(opt);
       });
-    } catch (_) { /* server not running — leave as Default */ }
+    } catch (err) {
+      if (selectEl.options.length === 1) {
+        selectEl.options[0].text = "Default (server unreachable)";
+      }
+      if (err instanceof TypeError) {
+        showGlobalError(
+          `Cannot reach proxy at ${base} — models could not be loaded`
+        );
+      }
+      // Non-TypeError errors (SyntaxError from non-JSON 502) are silent —
+      // the provider list may still load; models failing alone is less critical.
+    }
   }
 
   async function loadAllModels() {
@@ -776,14 +1183,97 @@
 
   async function loadProviders() {
     if (modeSelect.value !== "proxy") return;
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
     try {
-      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
       const data = await fetch(base + "/providers").then((r) => r.json());
       allProviders = data; // cache full list (including inactive) for modality filtering
       refreshProviderDropdown(TAB_MODALITY[activeTab()] ?? "text");
       refreshVideoProviderDropdown(); // populate the video-tab-specific dropdown
-    } catch (_) { /* server not running — keep Default */ }
+      clearGlobalError();
+    } catch (err) {
+      if (err instanceof TypeError) {
+        showGlobalError(
+          `Cannot reach proxy at ${base} — start it with: npm run serve`
+        );
+      } else {
+        showGlobalError(`Proxy error while loading providers: ${err.message}`);
+      }
+    }
     await loadAllModels();
+    await fetchServerCaps();
+  }
+
+  /**
+   * Fetches GET /health and caches the lumaImageToVideoEnabled capability flag.
+   * Called after providers load (proxy URL is known to be reachable at that point).
+   */
+  async function fetchServerCaps() {
+    if (modeSelect.value !== "proxy") return;
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    try {
+      const health = await fetch(base + "/health").then((r) => r.json());
+      serverLumaImageToVideoEnabled = health.lumaImageToVideoEnabled ?? false;
+    } catch {
+      serverLumaImageToVideoEnabled = false;
+    }
+    updateLumaTunnelWarn();
+  }
+
+  /**
+   * Shows or hides the Luma AI tunnel warning banner based on three conditions:
+   *   1. The selected video provider is "lumaai"
+   *   2. A reference image has been uploaded (currentFileRef is set)
+   *   3. The server does NOT have PROXY_PUBLIC_BASE_URL configured
+   */
+  function updateLumaTunnelWarn() {
+    const warn = document.getElementById("video-luma-tunnel-warn");
+    if (!warn) return;
+    const provider   = videoProviderSelect?.value || "";
+    const hasFile    = videoFileRefs.length > 0;
+    const needsTunnel = provider === "lumaai" && hasFile && serverLumaImageToVideoEnabled === false;
+    warn.classList.toggle("hidden", !needsTunnel);
+  }
+
+  /**
+   * Updates the attachment notice element based on the current `hasImageAttached`
+   * state and the active tab's modality.
+   *
+   * - When `hasImageAttached` is true on a modality that supports image input
+   *   (text / image / video): shows the filtering notice.
+   * - When `hasImageAttached` is true on a modality that does NOT support image
+   *   input (audio / structured): shows the "image will be ignored" fallback.
+   * - When `hasImageAttached` is false: clears the notice.
+   *
+   * Called by T-20 attachment-state handlers after `hasImageAttached` is updated.
+   */
+  function updateAttachmentNotice() {
+    if (!attachmentNoticeEl) return;
+    if (!hasImageAttached) {
+      attachmentNoticeEl.textContent = "";
+      return;
+    }
+    const modality = TAB_MODALITY[activeTab()] ?? "text";
+    const imageUnsupported = modality === "audio" || modality === "structured";
+    attachmentNoticeEl.textContent = imageUnsupported
+      ? "The attached image will be ignored for this modality."
+      : "Showing only models that accept image input. Remove the attachment to see all models.";
+  }
+
+  /**
+   * Re-populates the provider dropdown and the active tab's model dropdown to
+   * reflect the current `hasImageAttached` state.  Called whenever the user
+   * attaches or removes a reference image so that only models compatible with
+   * the new input set are shown.
+   *
+   * Only runs when the app is in proxy mode and providers have been loaded;
+   * a no-op otherwise so it is safe to call unconditionally.
+   */
+  async function retriggerAttachmentDropdowns() {
+    if (modeSelect.value !== "proxy" || allProviders.length === 0) return;
+    const modality = TAB_MODALITY[activeTab()] ?? "text";
+    refreshProviderDropdown(modality);
+    await loadModels(modality, activeModelSelect());
+    updateAttachmentNotice();
   }
 
   /* ── JSZip availability helper ──────────────────────────── */
@@ -823,10 +1313,12 @@
   // Reload models when global provider selection changes
   proxyProviderSelect.addEventListener("change", loadAllModels);
 
-  // Reload only video models when the video-tab provider changes
+  // Reload only video models when the video-tab provider changes;
+  // also refresh the Luma tunnel warning since the provider affects whether it is needed.
   if (videoProviderSelect) {
     videoProviderSelect.addEventListener("change", () => {
       loadVideoModels(videoProviderSelect.value);
+      updateLumaTunnelWarn();
     });
   }
 
@@ -837,6 +1329,13 @@
       syncVideoConstraints(descriptor);
     });
   }
+
+  // Wire file upload inputs (proxy-only feature — gracefully no-ops in direct mode).
+  // The video upload passes updateLumaTunnelWarn as a callback so the warning
+  // banner appears/disappears immediately after the image is attached or rejected.
+  wireFileUpload(fileUploadInput,       fileUploadStatus);
+  wireMultiFileUpload(imageFileUploadInput, imageFileUploadStatus, imageFileThumbsEl, imageFileRefs);
+  wireMultiFileUpload(videoFileUploadInput, videoFileUploadStatus, videoFileThumbsEl, videoFileRefs, updateLumaTunnelWarn);
 
   applyModeUi();
 
@@ -851,10 +1350,18 @@
 
     // Update provider dropdown to only show providers that support this tab's modality.
     // Then reload models so the model selects reflect the (possibly new) provider.
+    // T-22: loadModels now falls back to the unfiltered list when hasImageAttached=true
+    // yields an empty model list (e.g. Audio / Structured tabs).
     if (modeSelect.value === "proxy" && allProviders.length > 0) {
       refreshProviderDropdown(TAB_MODALITY[target] ?? "text");
       loadAllModels();
     }
+
+    // T-22: Always sync the attachment notice on tab switch so that switching to
+    // Audio or Structured while an image is attached immediately shows
+    // "The attached image will be ignored for this modality." without waiting
+    // for the async model reload to complete.
+    updateAttachmentNotice();
   }
   tabBtns.forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
@@ -903,6 +1410,13 @@
     wrap.appendChild(p);
     sessionHistory.appendChild(wrap);
     sessionHistory.scrollTop = sessionHistory.scrollHeight;
+    if (role === 'assistant') {
+      createReplyToolbar(wrap, {
+        modality: 'text', text: content,
+        dataUrl: null, srcUrl: null,
+        mimeType: 'text/plain', filename: 'ai-reply.txt'
+      });
+    }
     return p; // for streaming updates
   }
 
@@ -948,8 +1462,11 @@
       const fullPrompt = buildHistoryPrompt();
       let result;
       if (modeSelect.value === "proxy") {
-        const model = textModelSelect.value || undefined;
-        result = await proxyPost("/text", { prompt: fullPrompt, model });
+        const model   = textModelSelect.value || undefined;
+        const payload = { prompt: fullPrompt };
+        if (model)          payload.model   = model;
+        if (currentFileRef) payload.fileRef = currentFileRef;
+        result = await proxyPost("/text", payload);
       } else {
         result = await getClient().generateText(fullPrompt);
       }
@@ -963,11 +1480,23 @@
       p.style.margin = "0";
       p.textContent  = reply;
       textOutput.appendChild(p);
+      createReplyToolbar(textOutput, {
+        modality: 'text', text: reply,
+        dataUrl: null, srcUrl: null,
+        mimeType: 'text/plain', filename: 'ai-reply.txt'
+      });
 
       setUsageText(textUsage, result.usage, result.cost);
       addUsage(result.usage, result.cost);
     } catch (err) {
       showError(textOutput, err);
+      if (err?.name === "BudgetExceededError") {
+        showGlobalError(
+          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
+          `$${err.budgetUsd.toFixed(2)} limit.`
+        );
+        return;
+      }
       showGlobalError("Text generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTextGenerate, btnTextStream], false);
@@ -993,22 +1522,13 @@
     try {
       const fullPrompt = buildHistoryPrompt();
       if (modeSelect.value === "proxy") {
-        const base = proxyUrlInput.value.trim() || "http://localhost:3001";
         const provider = proxyProviderSelect.value || undefined;
         const model    = textModelSelect.value    || undefined;
         const payload  = { prompt: fullPrompt, stream: true };
-        if (provider) payload.provider = provider;
-        if (model)    payload.model    = model;
-        const resp = await fetch(base + "/text", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok) {
-          let msg = resp.statusText;
-          try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
-          throw new Error("HTTP " + resp.status + " " + resp.statusText + ": " + JSON.stringify({ error: msg }));
-        }
+        if (provider)       payload.provider = provider;
+        if (model)          payload.model    = model;
+        if (currentFileRef) payload.fileRef  = currentFileRef;
+        const resp   = await proxyStream("/text", payload);
         const reader = resp.body.getReader();
         const dec    = new TextDecoder();
         while (true) {
@@ -1028,9 +1548,21 @@
         }
       }
       appendSession("assistant", accumulated);
+      createReplyToolbar(textOutput, {
+        modality: 'text', text: accumulated,
+        dataUrl: null, srcUrl: null,
+        mimeType: 'text/plain', filename: 'ai-reply.txt'
+      });
       addUsage(null, null); // streaming — no cost breakdown available
     } catch (err) {
       showError(textOutput, err);
+      if (err?.name === "BudgetExceededError") {
+        showGlobalError(
+          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
+          `$${err.budgetUsd.toFixed(2)} limit.`
+        );
+        return;
+      }
       showGlobalError("Text streaming failed: " + (err instanceof Error ? err.message : String(err)));
       assistantP.textContent = "[error]";
     } finally {
@@ -1057,15 +1589,33 @@
         const imgQuality     = imageQuality.value       || undefined;
         const imgWidth       = isCustom ? (parseInt(imageWidthInput.value,  10) || undefined) : undefined;
         const imgHeight      = isCustom ? (parseInt(imageHeightInput.value, 10) || undefined) : undefined;
-        imgResult = await proxyPost("/image", {
+        const imgPayload = {
           prompt,
           model:       imageModelSelect.value || undefined,
           aspectRatio: imgAspectRatio,
           width:       imgWidth,
           height:      imgHeight,
           quality:     imgQuality,
-        });
-        blob = dataUriToBlob(imgResult.data);
+        };
+        if (imageFileRefs.length === 1) {
+          imgPayload.fileRef = imageFileRefs[0];
+        } else if (imageFileRefs.length > 1) {
+          imgPayload.fileRefs = imageFileRefs.slice();
+        }
+        imgResult = await proxyPost("/image", imgPayload);
+        // Proxy may return a data URI ("data:image/png;base64,…"), a plain
+        // URL ("https://…"), or raw base64 in b64_json — handle all three,
+        // mirroring the same pattern used by the video handler below.
+        if (imgResult.data && imgResult.data.startsWith("data:")) {
+          blob = dataUriToBlob(imgResult.data);
+        } else if (imgResult.data && /^https?:\/\//.test(imgResult.data)) {
+          const imgResp = await fetch(imgResult.data);
+          blob = await imgResp.blob();
+        } else if (imgResult.b64_json) {
+          blob = base64ToBlob(imgResult.b64_json, imgResult.mimeType || "image/png");
+        } else {
+          throw new Error("No image data returned from proxy.");
+        }
       } else {
         blob = await getClient().generateImage(prompt);
       }
@@ -1076,6 +1626,13 @@
       img.alt = prompt;
       img.src = url;
       imageOutput.appendChild(img);
+      createReplyToolbar(imageOutput, {
+        modality: 'image', text: null,
+        dataUrl: (imgResult?.data?.startsWith('data:') ? imgResult.data : null),
+        srcUrl: imgResult?.url ?? (imgResult?.data && /^https?:\/\//.test(imgResult.data) ? imgResult.data : url),
+        mimeType: imgResult?.mimeType ?? blob.type ?? 'image/png',
+        filename: 'ai-image.png'
+      });
       addUsage(imgResult?.usage ?? null, imgResult?.cost ?? null);
       setUsageText(imageUsage, imgResult?.usage ?? null, imgResult?.cost ?? null);
       if (!imgResult?.usage?.totalTokens && !imgResult?.cost) {
@@ -1085,6 +1642,13 @@
       }
     } catch (err) {
       showError(imageOutput, err);
+      if (err?.name === "BudgetExceededError") {
+        showGlobalError(
+          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
+          `$${err.budgetUsd.toFixed(2)} limit.`
+        );
+        return;
+      }
       showGlobalError("Image generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnImageGenerate], false);
@@ -1120,6 +1684,11 @@
       audio.controls  = true;
       audio.src       = url;
       ttsOutput.appendChild(audio);
+      createReplyToolbar(ttsOutput, {
+        modality: 'audio', text: null,
+        dataUrl: null, srcUrl: url,
+        mimeType: ttsResult?.mimeType ?? 'audio/mpeg', filename: 'ai-speech.mp3'
+      });
       audio.play().catch(() => {});
       addUsage(ttsResult?.usage ?? null, ttsResult?.cost ?? null);
       setUsageText(audioUsage, ttsResult?.usage ?? null, ttsResult?.cost ?? null);
@@ -1130,6 +1699,13 @@
       }
     } catch (err) {
       showError(ttsOutput, err);
+      if (err?.name === "BudgetExceededError") {
+        showGlobalError(
+          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
+          `$${err.budgetUsd.toFixed(2)} limit.`
+        );
+        return;
+      }
       showGlobalError("Speech synthesis failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTtsSpeak], false);
@@ -1174,10 +1750,22 @@
       p.style.margin = "0";
       p.textContent  = text;
       transcribeOutput.appendChild(p);
+      createReplyToolbar(transcribeOutput, {
+        modality: 'text', text,
+        dataUrl: null, srcUrl: null,
+        mimeType: 'text/plain', filename: 'transcript.txt'
+      });
       addUsage(transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
       setUsageText(audioUsage, transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
     } catch (err) {
       showError(transcribeOutput, err);
+      if (err?.name === "BudgetExceededError") {
+        showGlobalError(
+          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
+          `$${err.budgetUsd.toFixed(2)} limit.`
+        );
+        return;
+      }
       showGlobalError("Transcription failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnTranscribe], false);
@@ -1190,6 +1778,7 @@
   let batchItems = [];
   /** Array of completed result objects from the NDJSON stream. */
   let batchResultItems = [];
+  let batchAbortController = null;
 
   /* ── BATCH FILE PARSERS ───────────────────────────────────── */
 
@@ -1242,6 +1831,20 @@
     return items;
   }
 
+  /** Matches an optional modality tag at the end of a Markdown heading line. */
+  const MODALITY_TAG_RE = /[\[(](video|image|text|audio)[\])]\s*$/i;
+
+  /**
+   * Extract the modality from a raw heading string.
+   * Returns the matched tag value (lower-cased) or "video" if absent.
+   * @param {string} heading
+   * @returns {string}
+   */
+  function parseHeadingModality(heading) {
+    const m = MODALITY_TAG_RE.exec(heading);
+    return m ? m[1].toLowerCase() : "video";
+  }
+
   /**
    * Parse a Markdown shot-list file.
    * Looks for headings as shot names and paragraph text as prompts.
@@ -1250,13 +1853,15 @@
   function parseMdFile(text) {
     const items = [];
     const lines = text.split("\n");
-    let currentName = null;
-    let promptLines = [];
+    let currentName     = null;
+    let currentModality = "video";
+    let promptLines     = [];
 
     function flush() {
       if (!currentName) return;
       const prompt = promptLines.join(" ").replace(/\s+/g, " ").trim();
-      if (prompt) items.push({ name: currentName, prompt, modality: "video" });
+      if (prompt) items.push({ name: currentName, prompt, modality: currentModality });
+      currentModality = "video";
       promptLines = [];
     }
 
@@ -1265,7 +1870,9 @@
       const headingMatch = line.match(/^#{1,4}\s+(.+)/);
       if (headingMatch) {
         flush();
-        currentName = headingMatch[1].trim();
+        const rawHeading = headingMatch[1].trim();
+        currentModality  = parseHeadingModality(rawHeading);
+        currentName      = rawHeading.replace(MODALITY_TAG_RE, "").trim();
       } else if (line) {
         // Skip horizontal rules and metadata
         if (/^---+$/.test(line) || /^\*\*[^*]+\*\*:/.test(line)) continue;
@@ -1318,8 +1925,9 @@
     if (preflightAbortController) preflightAbortController.abort();
     preflightAbortController = new AbortController();
     try {
-      const url = `/pricing?modality=video&model=${encodeURIComponent(model)}`;
-      const res = await fetch(url, { signal: preflightAbortController.signal });
+      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+      const url  = `${base}/pricing?modality=video&model=${encodeURIComponent(model)}`;
+      const res  = await fetch(url, { signal: preflightAbortController.signal });
       if (!res.ok) return null;
       const data = await res.json();
       const rate = data?.perVideoUsd ?? data?.pricePerUnit;
@@ -1344,20 +1952,39 @@
       return;
     }
 
+    if (items.some(it => !it._id)) console.warn('[showBatchPreflight] one or more items missing _id — check parse sites');
+
     const ul = document.createElement("ul");
     ul.className = "shot-preview-list";
     items.forEach((item, i) => {
       const li = document.createElement("li");
       li.className = "shot-preview-item";
-      const modality = item.modality || "text";
+      li.dataset.shotId = item._id; // used by runPreflightProviderChecks
+      const modality = item.modality || "video";
 
       // Label + prompt excerpt (wrapped so the × button stays right-aligned)
       const labelSpan = document.createElement("span");
       labelSpan.className = "shot-preview-label";
-      labelSpan.textContent = (i + 1) + ". " + item.name + " [" + modality + "]";
+      labelSpan.textContent = (i + 1) + ". " + item.name;
+      const badge = document.createElement("span");
+      badge.className = `modality-badge modality-badge--${modality}`;
+      badge.textContent = modality;
+      labelSpan.appendChild(badge);
       const em = document.createElement("em");
       em.textContent = item.prompt.length > 80 ? item.prompt.slice(0, 80) + "…" : item.prompt;
       labelSpan.appendChild(em);
+
+      // Placeholder status icon for video items with images — updated asynchronously (AC-15)
+      if (modality === "video" && item.images && item.images.length > 0) {
+        const statusIcon = document.createElement("span");
+        statusIcon.className = "shot-preflight-status";
+        statusIcon.dataset.shotId = item._id;
+        statusIcon.textContent = "⏳";
+        statusIcon.title = "Checking provider compatibility…";
+        statusIcon.style.cssText = "margin-left:.4em;font-size:.9em";
+        labelSpan.appendChild(statusIcon);
+      }
+
       li.appendChild(labelSpan);
 
       // Remove button
@@ -1365,9 +1992,11 @@
       removeBtn.className = "shot-preview-remove";
       removeBtn.textContent = "×";
       removeBtn.title = "Remove this shot from the batch";
+      removeBtn.dataset.id = item._id;
       removeBtn.addEventListener("click", function () {
-        batchItems.splice(i, 1);
-        showBatchPreflight(batchItems);
+        const id  = this.dataset.id;
+        const idx = batchItems.findIndex(x => x._id === id);
+        if (idx !== -1) { batchItems.splice(idx, 1); showBatchPreflight(batchItems); }
       });
       li.appendChild(removeBtn);
 
@@ -1378,6 +2007,7 @@
     batchSummary.appendChild(p);
     batchSummary.appendChild(ul);
     btnBatchRun.disabled = false;
+    btnBatchRun.title = "";
 
     // Fire cost estimate non-blocking; append result when available
     const estimateModel = videoModelSelect.value || "";
@@ -1390,6 +2020,118 @@
         "  (" + est.count + " clips \xd7 $" + est.rate + " each, est.)";
       batchSummary.appendChild(estEl);
     });
+
+    // Fire provider pre-flight checks non-blocking (D3: client-side selectI2VProvider, no round-trip)
+    runPreflightProviderChecks(items, ul).catch(() => { /* silently ignore if checks fail */ });
+  }
+
+  /**
+   * Runs async I2V provider + URL reachability checks for each video shot
+   * that declares an images[] array.  Updates per-shot status icons in-place.
+   *
+   * AC-15: Uses client-side selectI2VProvider (design D3) — server re-validates on submit.
+   *
+   * Status icons:
+   *   ✅  All image URLs reachable and selected provider can handle the image count.
+   *   ⚠️  Provider will route or truncate (amber) — still runnable.
+   *   ❌  No live provider available OR at least one image URL unreachable — Run disabled.
+   */
+  async function runPreflightProviderChecks(items, listEl) {
+    const videoImageItems = items.filter(
+      item => (item.modality || "video") === "video" && item.images && item.images.length > 0,
+    );
+    if (!videoImageItems.length) return;
+
+    // Fetch live video providers from the server (best-effort; empty list if unavailable)
+    let liveProviders = [];
+    if (modeSelect.value === "proxy") {
+      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+      try {
+        const resp = await fetch(`${base}/providers`);
+        if (resp.ok) {
+          const all = await resp.json();
+          liveProviders = all
+            .filter(p => p.active && Array.isArray(p.modalities) && p.modalities.includes("video"))
+            .map(p => p.id);
+        }
+      } catch { /* server unreachable — liveProviders remains [] */ }
+    }
+
+    // Dynamically import the ESM routing module (D3: mirrors server-side logic)
+    let selectI2VProvider;
+    try {
+      const mod = await import("./smart-default.js");
+      selectI2VProvider = mod.selectI2VProvider;
+    } catch { return; /* module unavailable — skip checks silently */ }
+
+    // Determine the provider currently selected in the video-tab UI
+    const selectedProvider =
+      (videoProviderSelect ? videoProviderSelect.value : null) ||
+      (proxyProviderSelect ? proxyProviderSelect.value : null) ||
+      "openai";
+
+    let hasBlockingError = false;
+
+    // Check all items in parallel for speed
+    await Promise.all(videoImageItems.map(async (item) => {
+      const urls = item.images;
+
+      // HTTP HEAD checks — parallel per URL, 5 s timeout each
+      const headResults = await Promise.all(urls.map(async (url) => {
+        try {
+          const ac = new AbortController();
+          const timer = setTimeout(() => ac.abort(), 5000);
+          const r = await fetch(url, { method: "HEAD", signal: ac.signal });
+          clearTimeout(timer);
+          return r.ok;
+        } catch { return false; }
+      }));
+      const allUrlsOk = headResults.every(Boolean);
+      const firstBadIdx = headResults.findIndex(ok => !ok);
+
+      // Routing decision from client-side selectI2VProvider
+      const routing = selectI2VProvider(selectedProvider, urls.length, liveProviders);
+      const noLiveProvider = !liveProviders.length;
+
+      // Derive icon + tooltip
+      let icon, title, isBlocker = false;
+      if (!allUrlsOk) {
+        icon = "❌"; isBlocker = true;
+        title = "Image URL unreachable: " + urls[firstBadIdx];
+      } else if (noLiveProvider && urls.length > 0) {
+        icon = "❌"; isBlocker = true;
+        title = "No live video provider available — start the proxy with a valid API key";
+      } else if (routing.warning) {
+        icon = "⚠️";
+        title = routing.warning;
+        if (routing.alternativeProviders && routing.alternativeProviders.length) {
+          title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+        }
+      } else {
+        icon = "✅";
+        title = "Provider: " + routing.provider + " · " + urls.length + " image(s) accepted";
+      }
+
+      if (isBlocker) hasBlockingError = true;
+
+      // Update the status icon element already in the DOM
+      const statusEl = listEl.querySelector('.shot-preflight-status[data-shot-id="' + item._id + '"]');
+      if (statusEl) {
+        statusEl.textContent = icon;
+        statusEl.title = title;
+        statusEl.style.color = isBlocker
+          ? "var(--danger, #b91c1c)"
+          : (icon === "⚠️" ? "var(--amber, #d97706)" : "");
+      }
+    }));
+
+    // Disable the Run button when any shot has a hard error (AC-15)
+    if (hasBlockingError) {
+      btnBatchRun.disabled = true;
+      btnBatchRun.title =
+        "One or more shots have unreachable image URLs or no available provider. " +
+        "Remove or fix them before running.";
+    }
   }
 
   function clearBatch() {
@@ -1422,6 +2164,7 @@
     batchFilename.textContent = file.name;
     try {
       batchItems = await loadBatchFile(file);
+      batchItems.forEach(item => { item._id = item._id ?? crypto.randomUUID(); });
       showBatchPreflight(batchItems);
     } catch (err) {
       batchSummary.innerHTML = "<span style='color:var(--danger)'>Parse error: " + (err.message || err) + "</span>";
@@ -1434,6 +2177,7 @@
     batchFilename.textContent = file.name;
     try {
       batchItems = await loadBatchFile(file);
+      batchItems.forEach(item => { item._id = item._id ?? crypto.randomUUID(); });
       showBatchPreflight(batchItems);
     } catch (err) {
       batchSummary.innerHTML = "<span style='color:var(--danger)'>Parse error: " + (err.message || err) + "</span>";
@@ -1518,6 +2262,49 @@
       costEl.className = "shot-cost";
       costEl.textContent = "Cost: $" + costUsd.toFixed(6);
       body.appendChild(costEl);
+    }
+
+    // ── Routing metadata (from NDJSON routingMeta fields added by the batch handler) ──
+    // These fields are only present when provider selection differed from the request
+    // or when routing produced a warning / informational note (D6: absent ≠ null).
+    if (result.providerUsed || result.warning || result.info || result.alternativeProviders?.length) {
+      const metaSection = document.createElement("div");
+      metaSection.className = "shot-routing-meta";
+      metaSection.style.cssText =
+        "margin-top:.5rem;padding:.4rem .6rem;border-radius:.35rem;" +
+        "background:var(--surface2,#f1f5f9);font-size:.78rem;line-height:1.5;";
+
+      if (result.providerUsed) {
+        const row = document.createElement("p");
+        row.style.margin = "0";
+        row.innerHTML = "<strong>Provider used:</strong> " + escHtml(result.providerUsed);
+        metaSection.appendChild(row);
+      }
+
+      if (result.warning) {
+        const row = document.createElement("p");
+        row.style.cssText = "margin:0;color:var(--amber,#b45309)";
+        row.innerHTML = "⚠️ <strong>Warning:</strong> " + escHtml(result.warning);
+        metaSection.appendChild(row);
+      }
+
+      if (result.info) {
+        const row = document.createElement("p");
+        row.style.cssText = "margin:0;color:var(--muted,#6b7280)";
+        row.innerHTML = "ℹ️ " + escHtml(result.info);
+        metaSection.appendChild(row);
+      }
+
+      if (result.alternativeProviders && result.alternativeProviders.length) {
+        const row = document.createElement("p");
+        row.style.margin = "0";
+        row.innerHTML =
+          "<strong>Alternatives:</strong> " +
+          result.alternativeProviders.map(escHtml).join(", ");
+        metaSection.appendChild(row);
+      }
+
+      body.appendChild(metaSection);
     }
 
     card.appendChild(body);
@@ -1640,7 +2427,12 @@ ${shotCards}
       return;
     }
 
+    batchAbortController = new AbortController();
     let batchCost = 0;
+    let malformedCount = 0;
+    let done_count = 0;
+    btnBatchRun.disabled = true;
+    btnCancelBatch.style.display = "inline-flex";
 
     const total = batchItems.length;
     batchResultItems = [];
@@ -1653,6 +2445,7 @@ ${shotCards}
     batchProgressLabel.textContent = "Processing…";
     batchProgressCtr.textContent   = "0 / " + total;
     batchProgressBar.style.width   = "0%";
+    batchProgressBar.classList.remove("progress-bar--error");
     batchCostTally.classList.add("hidden");
 
     const proxyBase = (proxyUrlInput.value || "http://localhost:3001").replace(/\/$/, "");
@@ -1694,6 +2487,8 @@ ${shotCards}
         ...(item.fps         !== undefined ? { fps:         item.fps         } : {}),
         ...(item.width       !== undefined ? { width:       item.width       } : {}),
         ...(item.height      !== undefined ? { height:      item.height      } : {}),
+        // Image URLs for I2V routing — passed through verbatim; server trims to effectiveImageCount
+        ...(item.images && item.images.length ? { images: item.images } : {}),
       })),
     };
 
@@ -1702,6 +2497,7 @@ ${shotCards}
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: batchAbortController.signal,
       });
 
       if (!resp.ok) {
@@ -1714,8 +2510,6 @@ ${shotCards}
       const reader = resp.body.getReader();
       const dec    = new TextDecoder();
       let buf      = "";
-      let done_count = 0;
-
       // Show results panel immediately so cards populate live
       batchResults.classList.remove("hidden");
 
@@ -1744,7 +2538,7 @@ ${shotCards}
             batchProgressBar.style.width   = pct + "%";
             batchProgressCtr.textContent   = done_count + " / " + total;
             batchProgressLabel.textContent = done_count < total ? "Processing…" : "Complete!";
-          } catch (_) { /* skip malformed lines */ }
+          } catch (_) { malformedCount++; }
         }
       }
       // Handle any trailing data in buffer
@@ -1764,18 +2558,35 @@ ${shotCards}
       }
 
       batchProgressLabel.textContent = "Complete — " + batchResultItems.length + " of " + total + " processed";
+      if (malformedCount > 0) {
+        batchProgressLabel.textContent += ` · ⚠ ${malformedCount} malformed line(s) skipped`;
+      }
       batchProgressBar.style.width   = "100%";
       if (batchCost > 0) {
         batchCostTally.classList.remove("hidden");
         batchCostTally.textContent = "Total batch cost: $" + batchCost.toFixed(6);
       }
     } catch (err) {
-      batchProgressLabel.textContent = "Error: " + (err.message || err);
-      batchProgress.classList.remove("hidden");
+      if (err.name === "AbortError") {
+        batchProgressLabel.textContent =
+          `Cancelled — ${done_count} of ${total} processed`;
+      } else {
+        showGlobalError("Batch failed: " + err.message);
+        batchProgressBar.classList.add("progress-bar--error");
+        batchProgress.classList.remove("hidden");
+      }
+    } finally {
+      btnBatchRun.disabled = false;
+      btnCancelBatch.style.display = "none";
     }
   }
 
   btnBatchRun.addEventListener("click", runBatch);
+
+  const btnCancelBatch = document.getElementById("btn-cancel-batch");
+  btnCancelBatch.addEventListener("click", () => {
+    batchAbortController?.abort();
+  });
 
   /* ── VIDEO TAB ───────────────────────────────────────────── */
   async function handleVideoGenerate() {
@@ -1795,47 +2606,90 @@ ${shotCards}
       return;
     }
 
+    // Guard 3: Luma AI image-to-video requires PROXY_PUBLIC_BASE_URL to be set.
+    // Fail fast before the API call so the user gets an actionable message immediately.
+    const _videoProvider = videoProviderSelect?.value || "";
+    if (_videoProvider === "lumaai" && videoFileRefs.length > 0 && serverLumaImageToVideoEnabled === false) {
+      showError(
+        videoOutput,
+        new Error(
+          "Luma AI image-to-video requires a public tunnel.\n" +
+          "Restart the proxy with:  .\\scripts\\cycle-service.ps1 -Ngrok\n" +
+          "Or set PROXY_PUBLIC_BASE_URL to your server's public address before starting.",
+        ),
+      );
+      return;
+    }
+
     setLoading([btnVideoGenerate], true);
     showSpinner(videoOutput, "Generating video — this may take a moment…");
     if (videoUsage) videoUsage.textContent = "";
 
     try {
+      // Collect video controls from DOM elements (use optional chaining so the
+      // handler is robust even if a control element is missing from the DOM).
+      const videoOptions = {};
+      const ar = videoAspectRatio?.value;
+      if (ar)   videoOptions.aspectRatio = ar;
+      const vidRes = videoResolution?.value;
+      if (vidRes)  videoOptions.resolution  = vidRes;
+      const qual = videoQuality?.value;
+      if (qual) videoOptions.quality     = qual;
+      const dur = Number(videoDuration?.value);
+      if (dur > 0) videoOptions.duration = dur;
+      const fpsVal = Number(videoFps?.value);
+      if (fpsVal > 0) videoOptions.fps   = fpsVal;
+
+      // Forward the video-tab-specific provider and model to the proxy so the
+      // correct provider (e.g. Luma AI) is selected instead of the server default.
+      // proxyPost() also injects the global provider when the payload lacks one.
+      const videoProvider = videoProviderSelect?.value || undefined;
+      const videoModel    = videoModelSelect?.value || undefined;
+      if (videoProvider)  videoOptions.provider = videoProvider;
+      if (videoModel)     videoOptions.model    = videoModel;
+      // Attach the uploaded image references for image-to-video generation.
+      if (videoFileRefs.length === 1) {
+        videoOptions.fileRef = videoFileRefs[0];
+      } else if (videoFileRefs.length > 1) {
+        videoOptions.fileRefs = videoFileRefs.slice();
+      }
+
+      // Call proxyPost directly (like image/audio/structured tabs) so the request
+      // is not funnelled through the pre-built UMD bundle, which would silently
+      // drop the provider/model/fileRef fields added above.
+      const videoResult = await proxyPost("/video", { prompt, ...videoOptions });
+
+      // Convert the JSON response to a Blob.  The proxy may return:
+      //   • data   – data URI  ("data:video/mp4;base64,…")  — Luma, mock
+      //   • b64_json + mimeType – raw base64 with separate mime field
+      //   • url    – public URL (fetch it client-side)
       let blob;
-      let vidResult = null;
-
-      // Use optional chaining on all control refs so the handler is robust
-      // even if a control element is missing from the DOM.
-      const vidAspectRatio = videoAspectRatio?.value    || undefined;
-      const vidResolution  = videoResolution?.value     || undefined;
-      const vidQuality     = videoQuality?.value        || undefined;
-      const vidDuration    = videoDuration?.value ? parseFloat(videoDuration.value) || undefined : undefined;
-      const vidFps         = videoFps?.value      ? parseInt(videoFps.value, 10)    || undefined : undefined;
-
-      vidResult = await proxyPost("/video", {
-        prompt,
-        // Explicit provider ensures the video-tab picker is honoured even when
-        // the global proxy provider is set to a non-video provider.
-        provider:    videoProviderSelect?.value || undefined,
-        model:       videoModelSelect?.value || undefined,
-        aspectRatio: vidAspectRatio,
-        resolution:  vidResolution,
-        quality:     vidQuality,
-        duration:    vidDuration,
-        fps:         vidFps,
-      });
-
-      if (vidResult.data && isStubVideoData(vidResult.data)) {
-        // Mock stub — generate a real playable preview via Canvas
-        showSpinner(videoOutput, "Encoding preview…");
-        blob = await generatePlaceholderVideoBlob(prompt, 2000);
-      } else if (vidResult.data) {
-        blob = dataUriToBlob(vidResult.data);
+      if (videoResult.data) {
+        blob = dataUriToBlob(videoResult.data);
+      } else if (videoResult.b64_json) {
+        blob = base64ToBlob(videoResult.b64_json, videoResult.mimeType || "video/mp4");
+      } else if (videoResult.url) {
+        const vidResp = await fetch(videoResult.url);
+        blob = await vidResp.blob();
       } else {
-        // Provider returned no binary data at all
-        videoOutput.innerHTML =
-          '<p style="padding:1rem;color:var(--text-muted)">✓ Video generated (no binary preview available)</p>';
-        addUsage(vidResult?.usage ?? null, vidResult?.cost ?? null);
-        setUsageText(videoUsage, vidResult?.usage ?? null, vidResult?.cost ?? null);
+        throw new Error("No video data returned from proxy.");
+      }
+
+      // Stub detection: mock providers return a tiny payload (≤ 6 decoded bytes).
+      // Generate a real playable Canvas preview so the UI has something to show.
+      if (blob.size <= 6) {
+        showSpinner(videoOutput, "Encoding preview…");
+        const placeholderBlob = await generatePlaceholderVideoBlob(prompt, 2000);
+        const url = blobUrl("video", placeholderBlob);
+        videoOutput.innerHTML = "";
+        const video = document.createElement("video");
+        video.className = "output-video";
+        video.controls  = true;
+        video.src       = url;
+        videoOutput.appendChild(video);
+        addUsage(null, null);
+        setUsageText(videoUsage, null, null);
+        if (videoUsage) videoUsage.textContent = "Video · " + Math.round(placeholderBlob.size / 1024) + " KB (preview)";
         return;
       }
 
@@ -1846,13 +2700,15 @@ ${shotCards}
       video.controls  = true;
       video.src       = url;
       videoOutput.appendChild(video);
-      addUsage(vidResult?.usage ?? null, vidResult?.cost ?? null);
-      setUsageText(videoUsage, vidResult?.usage ?? null, vidResult?.cost ?? null);
-      if (!vidResult?.cost) {
-        if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
-      } else {
-        if (videoUsage) videoUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
-      }
+      createReplyToolbar(videoOutput, {
+        modality: 'video', text: null,
+        dataUrl: videoResult?.data ?? null,
+        srcUrl: videoResult?.url ?? null,
+        mimeType: 'video/mp4', filename: 'ai-video.mp4'
+      });
+      addUsage(videoResult?.usage ?? null, videoResult?.cost ?? null);
+      setUsageText(videoUsage, videoResult?.usage ?? null, videoResult?.cost ?? null);
+      if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
     } catch (err) {
       showError(videoOutput, err);
       showGlobalError("Video generation failed: " + (err instanceof Error ? err.message : String(err)));
@@ -1887,12 +2743,346 @@ ${shotCards}
     } catch (err) {
       structuredOutput.classList.remove("json-output");
       showError(structuredOutput, err);
+      if (err?.name === "BudgetExceededError") {
+        showGlobalError(
+          `Budget exceeded: $${err.spentUsd.toFixed(4)} spent of ` +
+          `$${err.budgetUsd.toFixed(2)} limit.`
+        );
+        return;
+      }
       showGlobalError("Structured generation failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading([btnStructuredGenerate], false);
     }
   }
   btnStructuredGenerate.addEventListener("click", handleStructuredGenerate);
+
+  /* ── Live character counters ─────────────────────────────── */
+  /**
+   * Wires a live character counter to every <textarea> that has a
+   * matching <span id="<textarea-id>-counter">.
+   *
+   * If the counter span has a data-maxlength attribute the display shows
+   * "<current> / <max>" and the span gains:
+   *   .char-counter--warn  when > 80 % of the limit is used
+   *   .char-counter--over  when the limit is exceeded
+   */
+  function initCharCounters() {
+    document.querySelectorAll("textarea").forEach(function (ta) {
+      const counter = document.getElementById(ta.id + "-counter");
+      if (!counter) return;
+      const max = counter.dataset.maxlength ? parseInt(counter.dataset.maxlength, 10) : null;
+
+      function update() {
+        const len = ta.value.length;
+        counter.textContent = max !== null ? len + " / " + max : len;
+        if (max !== null) {
+          counter.classList.toggle("char-counter--over", len > max);
+          counter.classList.toggle("char-counter--warn", len > max * 0.8 && len <= max);
+        }
+      }
+
+      ta.addEventListener("input", update);
+      update(); // populate immediately with initial value
+    });
+  }
+
+  initCharCounters();
+
+  /* ── Reply Toolbar ─────────────────────────────────────────────── */
+
+  /**
+   * @typedef {Object} ReplyDescriptor
+   * @property {'text'|'image'|'audio'|'video'} modality
+   * @property {string|null} text     Raw reply text (text and transcript replies)
+   * @property {string|null} dataUrl  base-64 data URL (blobs returned by provider)
+   * @property {string|null} srcUrl   Remote HTTPS URL to the asset
+   * @property {string|null} mimeType e.g. 'image/png', 'video/mp4', 'audio/mpeg'
+   * @property {string|null} filename Suggested download filename, e.g. 'ai-reply.txt'
+   */
+
+  /**
+   * Inject a floating action toolbar into the top-right corner of `container`.
+   * @param {HTMLElement} container   The visible output wrapper element.
+   * @param {ReplyDescriptor} descriptor
+   */
+  function createReplyToolbar(container, descriptor) {
+    container.style.position = 'relative';
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'reply-toolbar';
+
+    const { modality } = descriptor;
+    const isSecure = window.isSecureContext;
+
+    // Copy button
+    if (modality === 'text' || modality === 'image' ||
+        (modality === 'audio' && descriptor.text)) {
+      const copyBtn = createToolbarBtn('⎘',
+        modality === 'image' && !isSecure
+          ? 'Copy unavailable (requires HTTPS)'
+          : modality === 'audio' ? 'Copy transcript' : 'Copy reply',
+        async () => { await copyReplyContent(descriptor, copyBtn); }
+      );
+      if (modality === 'image' && !isSecure) copyBtn.style.display = 'none';
+      toolbar.appendChild(copyBtn);
+    }
+
+    // Save button
+    const saveBtn = createToolbarBtn('⬇', 'Save reply',
+      async () => { await saveReplyContent(descriptor, saveBtn); }
+    );
+    if (modality === 'video' && typeof isStubVideoData === 'function' &&
+        isStubVideoData(descriptor.dataUrl)) {
+      saveBtn.disabled = true;
+      saveBtn.title = 'Save unavailable (stub data)';
+    }
+    toolbar.appendChild(saveBtn);
+
+    // Search button (text only)
+    if (modality === 'text') {
+      const searchBar = createSearchBar(container);
+      const searchBtn = createToolbarBtn('🔍', 'Search reply', () => {
+        activateInlineSearch(container, searchBtn);
+      });
+      toolbar.appendChild(searchBtn);
+      container.insertBefore(toolbar, container.firstChild);
+      container.insertBefore(searchBar, toolbar.nextSibling);
+      return;
+    }
+
+    container.insertBefore(toolbar, container.firstChild);
+  }
+
+  function createToolbarBtn(label, title, onClick) {
+    const btn = document.createElement('button');
+    btn.className = 'reply-toolbar-btn';
+    btn.textContent = label;
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function createSearchBar(container) {
+    const bar = document.createElement('div');
+    bar.className = 'reply-search-bar hidden';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'reply-search-input';
+    input.placeholder = 'Regex search…';
+    input.setAttribute('aria-label', 'Search within reply');
+
+    const counter = document.createElement('span');
+    counter.className = 'reply-search-counter';
+    counter.setAttribute('aria-live', 'polite');
+    counter.setAttribute('aria-atomic', 'true');
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'reply-toolbar-btn';
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close search');
+    closeBtn.addEventListener('click', () => {
+      bar.classList.add('hidden');
+      clearSearchHighlights(container);
+      counter.textContent = '';
+    });
+
+    let debounceTimer;
+    input.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => applySearchHighlights(container, input, counter), 500);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        bar.classList.add('hidden');
+        clearSearchHighlights(container);
+        counter.textContent = '';
+      }
+    });
+
+    bar.appendChild(input);
+    bar.appendChild(counter);
+    bar.appendChild(closeBtn);
+    return bar;
+  }
+
+  async function copyReplyContent(descriptor, btn) {
+    try {
+      if (descriptor.modality === 'text' || descriptor.modality === 'audio') {
+        const text = descriptor.text ?? '';
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        showToolbarFeedback(btn, '✓ Copied');
+      } else if (descriptor.modality === 'image') {
+        const blob = descriptor.dataUrl
+          ? dataUrlToBlob(descriptor.dataUrl)
+          : await fetch(descriptor.srcUrl).then(r => r.blob());
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        showToolbarFeedback(btn, '✓ Copied');
+      }
+    } catch (err) {
+      console.error('[reply-toolbar] copy failed:', err);
+      showToolbarFeedback(btn, '⚠ Failed');
+    }
+  }
+
+  async function saveReplyContent(descriptor, btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      let blob;
+      if (descriptor.dataUrl) {
+        blob = dataUrlToBlob(descriptor.dataUrl);
+      } else if (descriptor.srcUrl) {
+        const resp = await fetch(descriptor.srcUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        blob = await resp.blob();
+      } else {
+        showToolbarFeedback(btn, '⚠ No data'); return;
+      }
+      const filename = descriptor.filename ??
+        `ai-reply.${mimeToExt(descriptor.mimeType ?? blob.type)}`;
+      const file = new File([blob], filename, { type: blob.type });
+      if (supportsShare([file])) {
+        await navigator.share({ files: [file], title: filename });
+      } else {
+        triggerDownload(blob, filename);
+      }
+      showToolbarFeedback(btn, '✓ Saved');
+    } catch (err) {
+      console.error('[reply-toolbar] save failed:', err);
+      showToolbarFeedback(btn, '⚠ Failed');
+    }
+  }
+
+  function activateInlineSearch(container, searchBtn) {
+    const bar = container.querySelector('.reply-search-bar');
+    if (!bar) return;
+    const isHidden = bar.classList.contains('hidden');
+    if (isHidden) {
+      bar.classList.remove('hidden');
+      bar.querySelector('.reply-search-input')?.focus();
+    } else {
+      bar.classList.add('hidden');
+      clearSearchHighlights(container);
+      searchBtn.focus();
+    }
+  }
+
+  function applySearchHighlights(container, input, counter) {
+    clearSearchHighlights(container);
+    const query = input.value.trim();
+    input.classList.remove('reply-search-input--invalid');
+    if (!query) { counter.textContent = ''; return; }
+
+    let re;
+    try { re = new RegExp(query, 'gi'); }
+    catch {
+      input.classList.add('reply-search-input--invalid');
+      counter.textContent = '⚠ invalid regex'; return;
+    }
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.parentElement?.closest('.reply-toolbar, .reply-search-bar')) continue;
+      nodes.push(node);
+    }
+
+    let total = 0;
+    for (const textNode of nodes) {
+      const text = textNode.nodeValue;
+      const matches = [...text.matchAll(re)];
+      if (!matches.length) continue;
+      total += matches.length;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      for (const m of matches) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'reply-search-highlight';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      textNode.parentNode.replaceChild(frag, textNode);
+    }
+    counter.textContent = total ? `${total} match${total === 1 ? '' : 'es'}` : 'no matches';
+  }
+
+  function clearSearchHighlights(container) {
+    container.querySelectorAll('mark.reply-search-highlight').forEach(mark => {
+      mark.parentNode.replaceChild(document.createTextNode(mark.textContent), mark);
+    });
+    container.querySelectorAll('*').forEach(el => {
+      try { el.normalize(); } catch { /* ignore */ }
+    });
+  }
+
+  function showToolbarFeedback(btn, message, durationMs = 1800) {
+    const orig = btn.textContent;
+    btn.textContent = message;
+    btn.classList.add('reply-toolbar-btn--feedback');
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.remove('reply-toolbar-btn--feedback');
+      btn.disabled = false;
+    }, durationMs);
+  }
+
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const [header, b64] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)[1];
+    const bytes = atob(b64);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+
+  function mimeToExt(mimeType) {
+    const map = {
+      'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+      'image/gif': 'gif', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg',
+      'audio/wav': 'wav', 'video/mp4': 'mp4', 'video/webm': 'webm',
+      'text/plain': 'txt',
+    };
+    return map[mimeType] ?? 'bin';
+  }
+
+  function isMobile() {
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  }
+
+  function supportsShare(files) {
+    if (typeof navigator.share !== 'function') return false;
+    if (files && typeof navigator.canShare === 'function') {
+      return navigator.canShare({ files });
+    }
+    return true;
+  }
 
 })(); // end IIFE
 

@@ -5,6 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ai-powered — web demo</title>
     <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* Modality badges — preflight shot list */
+      .modality-badge {
+        display: inline-block;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 1px 5px;
+        border-radius: 3px;
+        margin-left: 5px;
+        vertical-align: middle;
+        color: #fff;
+      }
+      .modality-badge--video  { background: #2563eb; }
+      .modality-badge--image  { background: #7c3aed; }
+      .modality-badge--text   { background: #16a34a; }
+      .modality-badge--audio  { background: #ea580c; }
+
+      /* Multi-file thumbnail gallery */
+      .file-thumbs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .file-thumbs.hidden { display: none; }
+      .file-thumb {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        flex-shrink: 0;
+      }
+      .file-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .file-thumb-remove {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        background: rgba(0,0,0,0.6);
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        font-size: 11px;
+        line-height: 18px;
+        text-align: center;
+        cursor: pointer;
+        padding: 0;
+      }
+      .file-thumb-remove:hover { background: rgba(220,38,38,0.85); }
+    </style>
   </head>
   <body>
     <!-- ── Global Error Toast ───────────────────────────────────────── -->
@@ -40,6 +100,7 @@
             <option value="">Default</option>
           </select>
           <span class="hint">Run <code>npm run serve</code> to start the proxy server.</span>
+          <small id="attachment-notice" style="color:#888;display:block;margin-top:4px"></small>
         </div>
 
         <!-- Direct config (shown only when Direct is selected) -->
@@ -55,6 +116,9 @@
             <label for="api-key-input">API Key:</label>
             <input id="api-key-input" type="password" placeholder="sk-…"
                    spellcheck="false" autocomplete="off" style="width:220px" />
+            <label for="direct-budget">Budget (USD):</label>
+            <input id="direct-budget" type="number" min="0" step="0.01"
+                   placeholder="∞ (no limit)" style="width:8rem">
           </div>
           <div class="security-warning" role="alert">
             ⚠ WARNING: Direct mode exposes your API key in browser DevTools and
@@ -87,10 +151,18 @@
         <div class="input-group">
           <textarea id="text-prompt" rows="3"
             placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
+          <span class="char-counter" id="text-prompt-counter"></span>
         </div>
         <div class="model-row">
           <label for="text-model-select">Model:</label>
           <select id="text-model-select"><option value="">Default</option></select>
+        </div>
+        <div class="input-group file-input-group">
+          <label for="file-upload-input" class="file-label">Attach file</label>
+          <input id="file-upload-input" type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/html,text/csv,.html,.docx,.xlsx,.pptx"
+            class="file-input" />
+          <span id="file-upload-status" class="filename-display">No file attached</span>
         </div>
         <div class="btn-row">
           <button id="btn-text-generate" class="btn-primary">Generate</button>
@@ -105,6 +177,7 @@
         <div class="input-group">
           <textarea id="image-prompt" rows="2"
             placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
+          <span class="char-counter" id="image-prompt-counter"></span>
         </div>
         <div class="model-row">
           <label for="image-model-select">Model:</label>
@@ -154,6 +227,14 @@
           <span id="image-dims-hint" class="hint"></span>
         </div>
 
+        <div class="input-group file-input-group">
+          <label for="image-file-upload-input" class="file-label">Attach reference images</label>
+          <input id="image-file-upload-input" type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+            class="file-input" multiple />
+          <span id="image-file-upload-status" class="filename-display">No files attached</span>
+        </div>
+        <div id="image-file-thumbs" class="file-thumbs hidden"></div>
         <div class="btn-row">
           <button id="btn-image-generate" class="btn-primary">Generate Image</button>
         </div>
@@ -169,6 +250,7 @@
           <div class="input-group">
             <textarea id="tts-text" rows="2"
               placeholder="Text to synthesize…">Hello! This demonstrates text-to-speech synthesis.</textarea>
+            <span class="char-counter" id="tts-text-counter" data-maxlength="4096"></span>
           </div>
           <div class="model-row">
             <label for="tts-model-select">Model:</label>
@@ -310,6 +392,9 @@
               <div id="batch-progress-bar" class="progress-bar-fill" style="width:0%"></div>
             </div>
             <p id="batch-cost-tally" class="batch-cost-tally hidden"></p>
+            <button id="btn-cancel-batch" class="btn btn--danger" style="display:none">
+              Cancel
+            </button>
           </div>
 
           <!-- ── Batch results (shown after run) ───────────────── -->
@@ -333,6 +418,25 @@
           <div class="input-group">
             <textarea id="video-prompt" rows="2"
               placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
+            <span class="char-counter" id="video-prompt-counter"></span>
+          </div>
+
+          <!-- ── Reference images for image-to-video ─────────────── -->
+          <div class="input-group file-input-group">
+            <label for="video-file-upload-input" class="file-label">Attach reference images (up to 2 for Luma AI)</label>
+            <input id="video-file-upload-input" type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              class="file-input" multiple />
+            <span id="video-file-upload-status" class="filename-display">No files attached</span>
+          </div>
+          <div id="video-file-thumbs" class="file-thumbs hidden"></div>
+          <!-- Shown when Luma AI is selected with an image but PROXY_PUBLIC_BASE_URL is not set -->
+          <div id="video-luma-tunnel-warn" class="warn-box hidden">
+            ⚠ <strong>Public tunnel required.</strong>
+            Luma AI image-to-video needs a publicly accessible URL for the keyframe image.
+            Restart the proxy with an ngrok tunnel:<br>
+            <code>.\scripts\cycle-service.ps1 -Ngrok</code><br>
+            Or set <code>PROXY_PUBLIC_BASE_URL</code> to your server's public address before starting.
           </div>
 
           <!-- ── Video size / duration controls ───────────────────── -->
@@ -394,6 +498,7 @@
         <div class="input-group">
           <textarea id="structured-prompt" rows="4"
             placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
+          <span class="char-counter" id="structured-prompt-counter"></span>
         </div>
         <div class="model-row">
           <label for="structured-model-select">Model:</label>
