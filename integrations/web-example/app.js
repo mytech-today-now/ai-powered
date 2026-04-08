@@ -1497,10 +1497,10 @@
     const toggle   = document.getElementById("btn-history-toggle");
     if (!body || !countEl || !toggle) return;
 
-    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    const expanded  = toggle.getAttribute("aria-expanded") === "true";
+    const chevronEl = document.getElementById("history-chevron");
     countEl.textContent = String(entries.length);
-    toggle.textContent  = (expanded ? "\u25be" : "\u25b8") +
-                          " Conversation History (" + entries.length + ")";
+    if (chevronEl) chevronEl.textContent = expanded ? "\u25be" : "\u25b8";
     body.innerHTML      = "";
 
     if (entries.length === 0) {
@@ -1511,6 +1511,50 @@
       return;
     }
     entries.forEach((entry) => body.appendChild(buildHistoryRow(entry)));
+  }
+
+  /**
+   * Converts an archive entry into numbered plain text suitable for
+   * copying or saving.  Format:
+   *   #N You: <user message>
+   *   #N Assistant: <assistant reply>
+   *   (blank line between exchanges)
+   *
+   * If the last exchange has no assistant reply (odd message count),
+   * the #N Assistant line is omitted for that exchange.
+   *
+   * @param   {ArchiveEntry} entry
+   * @returns {string}
+   */
+  function buildFullTranscriptText(entry) {
+    const lines = [];
+    let n = 0;
+    for (let i = 0; i < entry.messages.length; i += 2) {
+      n++;
+      const u = entry.messages[i];
+      const a = entry.messages[i + 1]; // undefined if odd message count
+      lines.push('#' + n + ' You: ' + u.content);
+      if (a) lines.push('#' + n + ' Assistant: ' + a.content);
+      lines.push(''); // blank line between exchanges
+    }
+    return lines.join('\n').trimEnd();
+  }
+
+  /**
+   * Derives a filesystem-safe slug from an archive entry title.
+   * Steps applied in order:
+   *   1. Lowercase
+   *   2. Replace runs of whitespace with a single hyphen
+   *   3. Strip every character that is not a-z, 0-9, or hyphen
+   *
+   * @param   {string} title
+   * @returns {string}  slug (may be empty for all-non-ASCII input)
+   */
+  function buildTitleSlug(title) {
+    return title
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9\-]/g, '');
   }
 
   /**
@@ -1527,6 +1571,10 @@
    * No inline colour literals.
    */
   function buildHistoryRow(entry) {
+    // ── Precompute pure-text values (used by both toolbars) ───────
+    const fullText  = buildFullTranscriptText(entry);
+    const titleSlug = buildTitleSlug(entry.title);
+
     // ── Root row element ──────────────────────────────────────────
     const row = document.createElement("div");
     row.className    = "history-row";
@@ -1563,21 +1611,79 @@
     const transcript = document.createElement("div");
     transcript.className = "history-transcript hidden";
 
-    entry.messages.forEach((msg) => {
-      const bubble = document.createElement("div");
-      bubble.className = "bubble bubble-" + msg.role;
-
-      const label = document.createElement("span");
-      label.className   = "bubble-label";
-      label.textContent = msg.role === "user" ? "You" : "Assistant";
-
-      const p = document.createElement("p");
-      p.textContent = msg.content;
-
-      bubble.appendChild(label);
-      bubble.appendChild(p);
-      transcript.appendChild(bubble);
+    // Whole-transcript toolbar (⎘ Copy / ⬇ Save / 🔍 Search) ─────
+    // Injected before the message loop so it becomes firstChild of
+    // div.history-transcript (above all exchange divs).  Decision 4.
+    createReplyToolbar(transcript, {
+      modality: 'text',
+      text:     fullText,
+      dataUrl:  null,
+      srcUrl:   null,
+      mimeType: 'text/plain',
+      filename: 'archived-' + titleSlug + '.txt',
     });
+
+    // ── Message loop: paired exchanges ───────────────────────────
+    // Each iteration handles one user↔assistant pair wrapped in
+    // div.history-exchange[data-exchange=N].  exchNum is 1-based (Decision 3).
+    // data-exchange is always set via setAttribute to ensure string type (Decision 8).
+    let exchNum = 0;
+    for (let i = 0; i < entry.messages.length; i += 2) {
+      exchNum++;
+      const userMsg = entry.messages[i];
+      const asstMsg = entry.messages[i + 1]; // undefined on odd message count
+
+      // Exchange wrapper ────────────────────────────────────────────
+      const exchDiv = document.createElement('div');
+      exchDiv.className = 'history-exchange';
+      exchDiv.setAttribute('data-exchange', String(exchNum));
+
+      // Exchange number label ───────────────────────────────────────
+      const numSpan = document.createElement('span');
+      numSpan.className   = 'history-exchange-number';
+      numSpan.textContent = '#' + exchNum;
+      numSpan.setAttribute('aria-label', 'Exchange ' + exchNum);
+      exchDiv.appendChild(numSpan);
+
+      // User bubble (no toolbar — Decision 5) ──────────────────────
+      const userBubble = document.createElement('div');
+      userBubble.className = 'bubble bubble-user';
+      const userLabel = document.createElement('span');
+      userLabel.className   = 'bubble-label';
+      userLabel.textContent = 'You';
+      const userP = document.createElement('p');
+      userP.textContent = userMsg.content;
+      userBubble.appendChild(userLabel);
+      userBubble.appendChild(userP);
+      exchDiv.appendChild(userBubble);
+
+      // Assistant bubble + per-reply toolbar (only when reply exists — Decision 7)
+      if (asstMsg) {
+        const asstBubble = document.createElement('div');
+        asstBubble.className = 'bubble bubble-assistant';
+        const asstLabel = document.createElement('span');
+        asstLabel.className   = 'bubble-label';
+        asstLabel.textContent = 'Assistant';
+        const asstP = document.createElement('p');
+        asstP.textContent = asstMsg.content;
+        asstBubble.appendChild(asstLabel);
+        asstBubble.appendChild(asstP);
+
+        // Per-reply toolbar becomes asstBubble.firstChild (called before append)
+        createReplyToolbar(asstBubble, {
+          modality: 'text',
+          text:     asstMsg.content,
+          dataUrl:  null,
+          srcUrl:   null,
+          mimeType: 'text/plain',
+          filename: 'archived-reply-' + exchNum + '.txt',
+        });
+
+        exchDiv.appendChild(asstBubble);
+      }
+
+      transcript.appendChild(exchDiv);
+    }
 
     // ── Chevron click: toggle transcript visibility ───────────────
     chevron.addEventListener("click", () => {
