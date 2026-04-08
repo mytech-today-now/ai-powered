@@ -1400,6 +1400,307 @@
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(msgs));
   }
 
+  /* ── Archive storage helpers (localStorage, persistent) ─────── */
+
+  const ARCHIVE_KEY = "ai-demo-archive";
+
+  function getArchive() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    }
+    catch (_) { return []; }
+  }
+
+  function saveArchive(entries) {
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(entries));
+  }
+
+  /**
+   * Prepends entry to the archive. On QuotaExceededError, silently trims the
+   * oldest entry and retries until the write succeeds or the array is empty.
+   * Returns true on success, false if even an empty archive cannot hold the entry.
+   */
+  function prependToArchive(entry) {
+    const entries = getArchive();
+    entries.unshift(entry);
+    while (true) {
+      try { saveArchive(entries); return true; }
+      catch (e) {
+        if (e.name !== "QuotaExceededError" || entries.length === 0) return false;
+        entries.pop();
+      }
+    }
+  }
+
+  /**
+   * Returns the first 80 characters of the first user message, trimmed.
+   * Appends "\u2026" if the message exceeded 80 characters.
+   * Falls back to "Untitled conversation" if the first user message is absent or empty.
+   */
+  function makeArchiveTitle(messages) {
+    const first = messages.find((m) => m.role === "user");
+    if (!first || !first.content.trim()) return "Untitled conversation";
+    const t = first.content.trim();
+    return t.length > 80 ? t.slice(0, 80) + "\u2026" : t;
+  }
+
+  /**
+   * Converts an ISO-8601 timestamp to a human-readable relative string.
+   * Recomputed at render time — not stored — so it stays accurate across sessions.
+   *
+   * Buckets:
+   *   < 60 s      → "just now"
+   *   1–59 min    → "N minutes ago"
+   *   1–23 h      → "N hours ago"
+   *   24–47 h     → "yesterday"
+   *   2–6 days    → "N days ago"
+   *   7+ days     → toLocaleDateString (year, month, day)
+   */
+  function relativeTime(isoString) {
+    const s = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+    if (s < 60)     return "just now";
+    if (s < 3600)   return Math.floor(s / 60)   + " minutes ago";
+    if (s < 86400)  return Math.floor(s / 3600)  + " hours ago";
+    if (s < 172800) return "yesterday";
+    if (s < 604800) return Math.floor(s / 86400) + " days ago";
+    return new Date(isoString).toLocaleDateString(undefined,
+      { year: "numeric", month: "long", day: "numeric" });
+  }
+
+  /**
+   * Reveals the history-panel warning bar with the provided message.
+   * Null-safe: silently returns if the element is absent from the DOM
+   * (e.g. in layouts that omit the history panel).
+   * The element carries aria-live="polite" so screen readers announce it.
+   */
+  function showHistoryPanelWarning(msg) {
+    const el = document.getElementById("history-panel-warning");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  }
+
+  /* ── History panel render ────────────────────────────────────── */
+
+  /**
+   * Re-renders the full history panel from the current archive state.
+   * Called after every soft-reset, per-row delete, Clear All, and on page load.
+   * Null-safe: returns silently when any required DOM element is absent.
+   * Preserves the expanded/collapsed state by reading aria-expanded before
+   * clearing body.innerHTML.
+   */
+  function renderHistoryPanel() {
+    const entries  = getArchive();
+    const countEl  = document.getElementById("history-count");
+    const body     = document.getElementById("history-panel-body");
+    const toggle   = document.getElementById("btn-history-toggle");
+    if (!body || !countEl || !toggle) return;
+
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    countEl.textContent = String(entries.length);
+    toggle.textContent  = (expanded ? "\u25be" : "\u25b8") +
+                          " Conversation History (" + entries.length + ")";
+    body.innerHTML      = "";
+
+    if (entries.length === 0) {
+      const empty = document.createElement("p");
+      empty.className   = "history-empty";
+      empty.textContent = "No archived conversations yet.";
+      body.appendChild(empty);
+      return;
+    }
+    entries.forEach((entry) => body.appendChild(buildHistoryRow(entry)));
+  }
+
+  /**
+   * Builds and returns a single history row DOM element for one archive entry.
+   * Structure:
+   *   div.history-row[role=listitem][data-id]
+   *     div.history-row-summary
+   *       button.history-chevron[aria-expanded=false]   — click toggles transcript
+   *       span.history-meta                             — message count + relative time
+   *       button.history-delete[aria-label=…]           — click opens inline confirm bar
+   *     div.history-transcript.hidden                   — one .bubble per message
+   *
+   * Reuses .bubble / .bubble-label CSS classes from the live chat area — no new selectors.
+   * No inline colour literals.
+   */
+  function buildHistoryRow(entry) {
+    // ── Root row element ──────────────────────────────────────────
+    const row = document.createElement("div");
+    row.className    = "history-row";
+    row.setAttribute("role",    "listitem");
+    row.setAttribute("data-id", entry.id);
+
+    // ── Summary bar ───────────────────────────────────────────────
+    const summary = document.createElement("div");
+    summary.className = "history-row-summary";
+
+    // Chevron toggle button
+    const chevron = document.createElement("button");
+    chevron.className = "history-chevron";
+    chevron.setAttribute("aria-expanded", "false");
+    chevron.textContent = "\u25b8 " + entry.title;
+
+    // Meta line: message count + archived timestamp
+    const meta = document.createElement("span");
+    meta.className   = "history-meta";
+    meta.textContent = entry.messages.length + " messages \u00b7 Archived " +
+                       relativeTime(entry.archivedAt);
+
+    // Delete button
+    const delBtn = document.createElement("button");
+    delBtn.className  = "history-delete";
+    delBtn.textContent = "Delete";
+    delBtn.setAttribute("aria-label", "Delete conversation: " + entry.title);
+
+    summary.appendChild(chevron);
+    summary.appendChild(meta);
+    summary.appendChild(delBtn);
+
+    // ── Transcript (hidden by default) ────────────────────────────
+    const transcript = document.createElement("div");
+    transcript.className = "history-transcript hidden";
+
+    entry.messages.forEach((msg) => {
+      const bubble = document.createElement("div");
+      bubble.className = "bubble bubble-" + msg.role;
+
+      const label = document.createElement("span");
+      label.className   = "bubble-label";
+      label.textContent = msg.role === "user" ? "You" : "Assistant";
+
+      const p = document.createElement("p");
+      p.textContent = msg.content;
+
+      bubble.appendChild(label);
+      bubble.appendChild(p);
+      transcript.appendChild(bubble);
+    });
+
+    // ── Chevron click: toggle transcript visibility ───────────────
+    chevron.addEventListener("click", () => {
+      const isExpanded = chevron.getAttribute("aria-expanded") === "true";
+      chevron.setAttribute("aria-expanded", String(!isExpanded));
+      chevron.textContent = (!isExpanded ? "\u25be" : "\u25b8") + " " + entry.title;
+      transcript.classList.toggle("hidden", isExpanded);
+    });
+
+    // ── Delete click: open inline confirm bar ─────────────────────
+    delBtn.addEventListener("click", () => handleDeleteEntry(entry.id, row));
+
+    row.appendChild(summary);
+    row.appendChild(transcript);
+    return row;
+  }
+
+  /**
+   * Appends an inline confirmation bar inside rowEl for per-row delete.
+   * Uses an inline bar rather than a native confirm() dialog — non-blocking and
+   * contextual. (Clear All uses native confirm() because it is a high-stakes,
+   * infrequent action where the native dialog adds intentional friction.)
+   *
+   * Cancel: removes the bar; archive unchanged.
+   * Confirm: filters entry by id, saves updated archive, re-renders panel.
+   * No inline colour literals.
+   */
+  function handleDeleteEntry(id, rowEl) {
+    const confirmBar = document.createElement("div");
+    confirmBar.className   = "history-confirm-bar";
+    confirmBar.textContent = "Delete this conversation? This cannot be undone. ";
+
+    const yes = document.createElement("button");
+    yes.className   = "btn btn--ghost btn--danger";
+    yes.textContent = "Confirm";
+
+    const no = document.createElement("button");
+    no.className   = "btn btn--ghost";
+    no.textContent = "Cancel";
+
+    confirmBar.appendChild(yes);
+    confirmBar.appendChild(no);
+    rowEl.appendChild(confirmBar);
+
+    no.addEventListener("click",  () => confirmBar.remove());
+    yes.addEventListener("click", () => {
+      const remaining = getArchive().filter((e) => e.id !== id);
+      saveArchive(remaining);
+      renderHistoryPanel();
+    });
+  }
+
+  /* ── New Conversation (soft-reset) ──────────────────────────── */
+
+  let _newConvDebounced = false;
+
+  /**
+   * Shows a transient tooltip below #btn-new-conversation for 2 000 ms.
+   * Any pre-existing tooltip is removed first to prevent stacking.
+   */
+  function showNewConvTooltip(msg) {
+    const existing = document.querySelector(".new-conv-tip");
+    if (existing) existing.remove();
+    const tip = document.createElement("div");
+    tip.className   = "new-conv-tip";
+    tip.textContent = msg;
+    btnNewConversation.insertAdjacentElement("afterend", tip);
+    setTimeout(() => tip.remove(), 2000);
+  }
+
+  /**
+   * Soft-reset handler — 7-step sequence:
+   *  1. Debounce guard (200 ms window, prevents double-archive on rapid clicks).
+   *  2. Read active messages; show tooltip and bail if session is empty.
+   *  3. Build archive entry with deep-copied messages and crypto.randomUUID() id.
+   *  4. Persist via prependToArchive; show warning if storage is unrecoverable.
+   *  5. Clear active session from sessionStorage.
+   *  6. Reset all visible UI elements (chat, output, usage, scroll).
+   *  7. Re-render history panel so the new entry appears at the top.
+   */
+  function handleNewConversation() {
+    // Step 1 — debounce
+    if (_newConvDebounced) return;
+    _newConvDebounced = true;
+    setTimeout(() => { _newConvDebounced = false; }, 200);
+
+    // Step 2 — empty-session guard
+    const msgs = getSessionMessages();
+    if (msgs.length === 0) {
+      showNewConvTooltip("Nothing to archive \u2014 start typing first.");
+      return;
+    }
+
+    // Step 3 — build archive entry
+    const entry = {
+      id:         crypto.randomUUID(),
+      startedAt:  new Date().toISOString(),
+      archivedAt: new Date().toISOString(),
+      title:      makeArchiveTitle(msgs),
+      messages:   JSON.parse(JSON.stringify(msgs)),
+    };
+
+    // Step 4 — persist; warn on unrecoverable overflow
+    const saved = prependToArchive(entry);
+    if (!saved) {
+      showHistoryPanelWarning(
+        "\u26a0 Storage full \u2014 this conversation could not be archived. " +
+        "Consider clearing old history.");
+    }
+
+    // Step 5 — clear active session
+    sessionStorage.removeItem(SESSION_KEY);
+
+    // Step 6 — reset UI
+    sessionHistory.innerHTML = "";
+    textOutput.innerHTML     = "";
+    textUsage.textContent    = "";
+    sessionHistory.scrollTop = 0;
+
+    // Step 7 — re-render history panel
+    renderHistoryPanel();
+  }
+
   function addBubble(role, content) {
     const wrap = document.createElement("div");
     wrap.className = "bubble bubble-" + role;
@@ -1446,8 +1747,36 @@
     textUsage.textContent = "";
   });
 
+  // New Conversation — archive current session then soft-reset
+  const btnNewConversation = $("btn-new-conversation");
+  btnNewConversation.addEventListener("click", handleNewConversation);
+
+  // History panel toggle — flip aria-expanded and show/hide body
+  const btnHistoryToggle = $("btn-history-toggle");
+  const historyPanelBody = $("history-panel-body");
+  btnHistoryToggle.addEventListener("click", () => {
+    const expanded = btnHistoryToggle.getAttribute("aria-expanded") === "true";
+    btnHistoryToggle.setAttribute("aria-expanded", String(!expanded));
+    historyPanelBody.classList.toggle("hidden", expanded);
+  });
+
+  // Clear All — native confirm dialog with count interpolation
+  const btnHistoryClearAll = $("btn-history-clear-all");
+  btnHistoryClearAll.addEventListener("click", () => {
+    const count = getArchive().length;
+    if (count === 0) return;
+    if (confirm(
+      "Delete all " + count + " archived conversation" +
+      (count === 1 ? "" : "s") + "? This cannot be undone."
+    )) {
+      localStorage.removeItem(ARCHIVE_KEY);
+      renderHistoryPanel();
+    }
+  });
+
   // Restore history on load
   renderSessionHistory();
+  renderHistoryPanel();
 
   /* ── TEXT TAB ─────────────────────────────────────────────── */
   async function handleTextGenerate() {

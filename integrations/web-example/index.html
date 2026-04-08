@@ -148,10 +148,25 @@
       <section class="tab-panel" id="panel-text" role="tabpanel">
         <div class="session-history-header">
           <span class="section-label">Session History</span>
-          <button id="btn-session-clear" class="btn-ghost btn-sm">Clear Session</button>
+          <button id="btn-session-clear" class="btn-ghost btn-sm"
+                  title="Discard this conversation without saving">Clear Session</button>
+          <button id="btn-new-conversation" class="btn btn--ghost"
+                  title="Archive this conversation and start fresh">New Conversation</button>
         </div>
         <div id="session-history" class="session-history"
              aria-live="polite" aria-label="Conversation history"></div>
+
+        <div id="history-panel-wrap">
+          <div id="history-panel-header">
+            <button id="btn-history-toggle" class="btn btn--ghost" aria-expanded="false">
+              &#9658; Conversation History (<span id="history-count">0</span>)
+            </button>
+            <button id="btn-history-clear-all" class="btn btn--ghost btn--danger"
+                    title="Delete all archived conversations">Clear All</button>
+          </div>
+          <div id="history-panel-body" class="hidden" role="list"></div>
+          <p   id="history-panel-warning" class="hidden" aria-live="polite"></p>
+        </div>
 
         <div class="input-group">
           <textarea id="text-prompt" rows="3"
