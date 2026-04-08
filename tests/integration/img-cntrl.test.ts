@@ -340,12 +340,13 @@ describe("I1-11 to I1-13: CLI flags — subprocess tests (bd-ocpj T14)", () => {
     const r = spawnSync(
       "node",
       [BINARY, "image", "--mock", "--aspect-ratio", "16:9", "--output", outFile, "A sunset"],
-      { encoding: "utf-8", env: MOCK_ENV, timeout: 20_000 },
+      // 30 s: first subprocess spawn in a parallel fork incurs JIT cold-start overhead.
+      { encoding: "utf-8", env: MOCK_ENV, timeout: 30_000 },
     );
     expect(r.status).toBe(0);
     expect(fs.existsSync(outFile)).toBe(true);
     expect(r.stderr).toContain("Saved to");
-  });
+  }, 35_000);
 
   it("I1-12: --width / --height flags passed to generateImage (exits 0)", () => {
     const outFile = path.join(tmpDir, "out-wh.png");
@@ -393,7 +394,8 @@ describe("I1-11 to I1-13: CLI flags — subprocess tests (bd-ocpj T14)", () => {
     const result = JSON.parse(cleanStdout) as { modality?: string; data?: string };
     expect(result.modality).toBe("video");
     expect(result.data).toMatch(/^data:video\//);
-  });
+    // 30 s: subprocess spawn incurs cold-start JIT overhead under parallel load.
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -449,5 +451,97 @@ describe("I1-15: POST /video route — options forwarded through mock server", (
       duration: "not-a-number",
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mobile upload — POST /upload
+//
+// These tests verify the server's multipart file-upload endpoint under the
+// conditions a mobile phone user will encounter:
+//
+//   I1-16  Small JPEG   → 201 + fileRef UUID
+//   I1-17  HEIC MIME    → 415 with a descriptive error (client should convert first)
+//   I1-18  5 MiB JPEG   → 201 (multer 50 MiB limit not breached)
+//   I1-19  No file      → 400
+//   I1-20  WebP (Android common) → 201
+//
+// Uses Node 18+ built-in fetch + FormData so no extra dependencies are needed.
+// ---------------------------------------------------------------------------
+
+/**
+ * Helper: POST multipart/form-data to the test server.
+ * Returns { status, body } mirroring the JSON post() helper above.
+ */
+async function uploadMultipart(
+  testPort: number,
+  blobContent: Buffer | Uint8Array,
+  mimeType: string,
+  filename: string,
+  provider = "openai",
+): Promise<{ status: number; body: unknown }> {
+  const formData = new FormData();
+  formData.append("file", new Blob([blobContent], { type: mimeType }), filename);
+  formData.append("provider", provider);
+  const resp = await fetch(`http://127.0.0.1:${testPort}/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch {
+    body = await resp.text();
+  }
+  return { status: resp.status, body };
+}
+
+describe("Mobile upload — POST /upload", () => {
+  it("I1-16: small JPEG (1 KiB) → 201 with fileRef UUID", async () => {
+    const buf = Buffer.alloc(1024, 0xff);
+    const res = await uploadMultipart(port, buf, "image/jpeg", "photo.jpg");
+    expect(res.status).toBe(201);
+    const body = res.body as { fileRef?: string };
+    expect(body.fileRef).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("I1-17: HEIC MIME type → 415 Unsupported Media Type", async () => {
+    const buf = Buffer.alloc(512, 0x00);
+    const res = await uploadMultipart(port, buf, "image/heic", "photo.heic");
+    expect(res.status).toBe(415);
+    const body = res.body as { error?: string };
+    expect(body.error).toMatch(/unsupported/i);
+    // The error message should mention HEIC so the client can surface it.
+    expect(body.error).toMatch(/heic/i);
+  });
+
+  it("I1-18: 5 MiB JPEG (typical mobile photo after client compression) → 201", async () => {
+    const buf = Buffer.alloc(5 * 1024 * 1024, 0xff);
+    const res = await uploadMultipart(port, buf, "image/jpeg", "bigphoto.jpg");
+    expect(res.status).toBe(201);
+    const body = res.body as { fileRef?: string };
+    expect(typeof body.fileRef).toBe("string");
+  }, 15_000); // allow extra time for large buffer
+
+  it("I1-19: no file field → 400 Bad Request", async () => {
+    const formData = new FormData();
+    formData.append("provider", "openai");
+    const resp = await fetch(`http://127.0.0.1:${port}/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    expect(resp.status).toBe(400);
+    const body = (await resp.json()) as { error?: string };
+    expect(body.error).toMatch(/no file/i);
+  });
+
+  it("I1-20: WebP image (common Android camera format) → 201", async () => {
+    const buf = Buffer.alloc(2048, 0x52); // arbitrary bytes
+    const res = await uploadMultipart(port, buf, "image/webp", "shot.webp");
+    expect(res.status).toBe(201);
+    const body = res.body as { fileRef?: string };
+    expect(typeof body.fileRef).toBe("string");
   });
 });

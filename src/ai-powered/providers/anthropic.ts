@@ -21,6 +21,7 @@ import type {
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
+  InputModality,
 } from "../types.js";
 import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
@@ -38,30 +39,35 @@ const ANTHROPIC_MODELS: ModelDescriptor[] = [
     name: "Claude 3.5 Sonnet",
     capabilities: ["text", "structured"],
     contextWindow: 200000,
+    inputCapabilities: ["image"],
   },
   {
     id: "claude-3-5-haiku-20241022",
     name: "Claude 3.5 Haiku",
     capabilities: ["text", "structured"],
     contextWindow: 200000,
+    inputCapabilities: ["image"],
   },
   {
     id: "claude-3-opus-20240229",
     name: "Claude 3 Opus",
     capabilities: ["text", "structured"],
     contextWindow: 200000,
+    inputCapabilities: ["image"],
   },
   {
     id: "claude-3-sonnet-20240229",
     name: "Claude 3 Sonnet",
     capabilities: ["text", "structured"],
     contextWindow: 200000,
+    inputCapabilities: ["image"],
   },
   {
     id: "claude-3-haiku-20240307",
     name: "Claude 3 Haiku",
     capabilities: ["text", "structured"],
     contextWindow: 200000,
+    inputCapabilities: ["image"],
   },
 ];
 
@@ -82,9 +88,7 @@ export class AnthropicProvider extends BaseProvider {
     super(config);
     const apiKey = config.apiKey;
     if (!apiKey) {
-      throw new Error(
-        'Anthropic API key is required. Set ANTHROPIC_API_KEY or config.apiKey.',
-      );
+      throw new Error("Anthropic API key is required. Set ANTHROPIC_API_KEY or config.apiKey.");
     }
     getLogger().debug({ apiKey: maskApiKey(apiKey) }, "AnthropicProvider: initialised");
     this._client = new Anthropic({ apiKey });
@@ -94,22 +98,25 @@ export class AnthropicProvider extends BaseProvider {
   // Text generation
   // -------------------------------------------------------------------------
 
-  override async generateText(
-    prompt: string,
-    options?: ProviderCallOptions,
-  ): Promise<TextResult> {
+  override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.assertCapability("text");
-    const model   = this.config.model ?? DEFAULT_TEXT_MODEL;
-    const start   = Date.now();
-    const maxTok  = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
-    const system  = options?.systemPrompt ?? this.config.systemPrompt;
+    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const start = Date.now();
+    const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
+    const system = options?.systemPrompt ?? this.config.systemPrompt;
+
+    // When a pre-built messages array is provided (e.g. multimodal content blocks
+    // from POST /upload), use it directly.  Otherwise construct a plain user message.
+    const messages: Anthropic.MessageParam[] = options?.messages
+      ? (options.messages as Anthropic.MessageParam[])
+      : [{ role: "user", content: prompt }];
 
     try {
       const response = await this._client.messages.create({
         model,
         max_tokens: maxTok,
         ...(system ? { system } : {}),
-        messages: [{ role: "user", content: prompt }],
+        messages,
         temperature: options?.temperature ?? this.config.temperature,
       });
 
@@ -120,9 +127,9 @@ export class AnthropicProvider extends BaseProvider {
 
       const finishReason = response.stop_reason ?? "end_turn";
       const usage: TokenUsage = {
-        promptTokens:     response.usage.input_tokens,
+        promptTokens: response.usage.input_tokens,
         completionTokens: response.usage.output_tokens,
-        totalTokens:      response.usage.input_tokens + response.usage.output_tokens,
+        totalTokens: response.usage.input_tokens + response.usage.output_tokens,
       };
 
       return {
@@ -144,29 +151,29 @@ export class AnthropicProvider extends BaseProvider {
   // Streaming text
   // -------------------------------------------------------------------------
 
-  override async *streamText(
-    prompt: string,
-    options?: ProviderCallOptions,
-  ): AsyncIterable<string> {
+  override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
-    const model  = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const system = options?.systemPrompt ?? this.config.systemPrompt;
+
+    // When a pre-built messages array is provided (e.g. multimodal content blocks
+    // from POST /upload), use it directly.  Otherwise construct a plain user message.
+    const messages: Anthropic.MessageParam[] = options?.messages
+      ? (options.messages as Anthropic.MessageParam[])
+      : [{ role: "user", content: prompt }];
 
     try {
       const stream = this._client.messages.stream({
         model,
         max_tokens: maxTok,
         ...(system ? { system } : {}),
-        messages: [{ role: "user", content: prompt }],
+        messages,
         temperature: options?.temperature ?? this.config.temperature,
       });
 
       for await (const event of stream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
           yield event.delta.text;
         }
       }
@@ -185,8 +192,8 @@ export class AnthropicProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
-    const model  = this.config.model ?? DEFAULT_TEXT_MODEL;
-    const start  = Date.now();
+    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const system = options?.systemPrompt ?? this.config.systemPrompt;
 
@@ -210,9 +217,9 @@ export class AnthropicProvider extends BaseProvider {
       const data = schema.parse(parsed);
 
       const usage: TokenUsage = {
-        promptTokens:     response.usage.input_tokens,
+        promptTokens: response.usage.input_tokens,
         completionTokens: response.usage.output_tokens,
-        totalTokens:      response.usage.input_tokens + response.usage.output_tokens,
+        totalTokens: response.usage.input_tokens + response.usage.output_tokens,
       };
 
       return {
@@ -233,9 +240,18 @@ export class AnthropicProvider extends BaseProvider {
   // listModels
   // -------------------------------------------------------------------------
 
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
-    if (!modality) return ANTHROPIC_MODELS;
-    return ANTHROPIC_MODELS.filter((m) => m.capabilities.includes(modality));
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    let models = ANTHROPIC_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
+  }
+
+  static override imageCapabilities(): import("./base.js").ImageCapability[] {
+    return [{ modality: "vision", maxImages: 20, fieldName: "source" }];
   }
 
   // -------------------------------------------------------------------------
@@ -251,5 +267,3 @@ export class AnthropicProvider extends BaseProvider {
     return new ProviderError("anthropic", msg);
   }
 }
-
-

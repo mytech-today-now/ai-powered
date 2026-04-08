@@ -1098,9 +1098,10 @@ const serveCmd = new Command("serve")
     new Option("--host <addr>", "Host to bind to (default 127.0.0.1)").default("127.0.0.1"),
   )
   .addOption(
-    new Option("--cors-origin <o>", "Allowed CORS origin (default http://localhost:5173)").default(
-      "http://localhost:5173",
-    ),
+    new Option(
+      "--cors-origin <o>",
+      "Allowed CORS origin or glob pattern, e.g. https://*.ngrok-free.dev (env: CORS_ORIGIN)",
+    ).default(process.env["CORS_ORIGIN"] ?? "http://localhost:5173"),
   )
   .addOption(
     new Option("--rate-limit <n>", "Max requests per minute (default 60)")

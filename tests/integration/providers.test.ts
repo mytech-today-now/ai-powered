@@ -285,9 +285,18 @@ describe("AnthropicProvider", () => {
 // ---------------------------------------------------------------------------
 
 describe("VeniceProvider", () => {
-  it("throws when constructed without an API key", () => {
+  it("allows construction without an API key (enables static model listing)", () => {
+    // VeniceProvider intentionally defers the API-key check to operation time
+    // so that the /models proxy endpoint can return the static list even when
+    // no key is configured.  Only actual generation calls invoke _requireKey().
     const config = AiConfigSchema.parse({ provider: "venice" });
-    expect(() => new VeniceProvider(config)).toThrow("Venice API key is required");
+    expect(() => new VeniceProvider(config)).not.toThrow();
+  });
+
+  it("throws when generateText is called without an API key", async () => {
+    const config = AiConfigSchema.parse({ provider: "venice" });
+    const provider = new VeniceProvider(config);
+    await expect(provider.generateText("test")).rejects.toThrow("Venice API key is required");
   });
 
   it("throws ProviderCapabilityError for transcribeAudio (unsupported modality)", () => {
@@ -791,5 +800,315 @@ describe("POST /batch — server route", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /upload — server integration tests
+// ---------------------------------------------------------------------------
+//
+// Multipart/form-data bodies are constructed manually using Node.js Buffers
+// (no external form-data library required) following RFC 2046 §5.1.
+
+/**
+ * Build a minimal multipart/form-data body containing optional text fields
+ * followed by a single file part.
+ */
+function buildMultipartBody(
+  boundary: string,
+  fields: Record<string, string>,
+  file: { fieldname: string; filename: string; contentType: string; data: Buffer },
+): Buffer {
+  const CRLF = "\r\n";
+  const parts: Buffer[] = [];
+
+  for (const [name, value] of Object.entries(fields)) {
+    parts.push(
+      Buffer.from(
+        `--${boundary}${CRLF}` +
+          `Content-Disposition: form-data; name="${name}"${CRLF}` +
+          `${CRLF}` +
+          `${value}${CRLF}`,
+      ),
+    );
+  }
+
+  parts.push(
+    Buffer.from(
+      `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="${file.fieldname}"; filename="${file.filename}"${CRLF}` +
+        `Content-Type: ${file.contentType}${CRLF}` +
+        `${CRLF}`,
+    ),
+  );
+  parts.push(file.data);
+  parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`));
+  return Buffer.concat(parts);
+}
+
+/**
+ * POST multipart/form-data to POST /upload on the running test server.
+ * Returns the raw IncomingMessage so tests can inspect status and body.
+ */
+function postUpload(
+  port: number,
+  fields: Record<string, string>,
+  file?: { fieldname: string; filename: string; contentType: string; data: Buffer },
+): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const boundary = "----TestBoundary" + Math.random().toString(36).slice(2);
+    let body: Buffer;
+    let contentType: string;
+
+    if (file) {
+      body = buildMultipartBody(boundary, fields, file);
+      contentType = `multipart/form-data; boundary=${boundary}`;
+    } else {
+      // Send a request without a proper file part to trigger the 400 error.
+      // We still need a valid multipart header so multer processes it.
+      body = Buffer.from(`--${boundary}--\r\n`);
+      contentType = `multipart/form-data; boundary=${boundary}`;
+    }
+
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/upload",
+        method: "POST",
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": body.length,
+        },
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// Small synthetic file buffers — real content is irrelevant since multer
+// reads the MIME from the multipart Content-Type header, not from file magic bytes.
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII=",
+  "base64",
+);
+const TINY_PDF = Buffer.from("%PDF-1.4 tiny stub");
+
+describe("POST /upload — server route", () => {
+  let uploadServer: http.Server;
+  let uploadPort: number;
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        const app = createServer({ mock: true });
+        uploadServer = app.listen(0, "127.0.0.1", () => {
+          uploadPort = (uploadServer.address() as { port: number }).port;
+          resolve();
+        });
+      }),
+    15_000,
+  );
+
+  afterAll(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        uploadServer.close((err) => (err ? reject(err) : resolve()));
+      }),
+  );
+
+  // I-UP-1: Upload a PNG with provider:"openai" → 201 with fileRef UUID
+  it("I-UP-1: PNG upload with provider=openai → 201 with fileRef UUID", async () => {
+    const res = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      { fieldname: "file", filename: "photo.png", contentType: "image/png", data: TINY_PNG },
+    );
+    expect(res.statusCode).toBe(201);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    expect(typeof body["fileRef"]).toBe("string");
+    expect(body["fileRef"] as string).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  // I-UP-2: Upload a PDF with provider:"anthropic" → 201 with fileRef UUID
+  it("I-UP-2: PDF upload with provider=anthropic → 201 with fileRef UUID", async () => {
+    const res = await postUpload(
+      uploadPort,
+      { provider: "anthropic" },
+      { fieldname: "file", filename: "doc.pdf", contentType: "application/pdf", data: TINY_PDF },
+    );
+    expect(res.statusCode).toBe(201);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    expect(typeof body["fileRef"]).toBe("string");
+  });
+
+  // I-UP-3: fileRef from I-UP-1 used in POST /text → 200 with text response
+  it("I-UP-3: fileRef from PNG upload used in POST /text → 200 with text response", async () => {
+    // Step 1: upload to get a fileRef
+    const upRes = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      { fieldname: "file", filename: "photo.png", contentType: "image/png", data: TINY_PNG },
+    );
+    expect(upRes.statusCode).toBe(201);
+    const upBody = (await readBody(upRes)) as Record<string, unknown>;
+    const fileRef = upBody["fileRef"] as string;
+
+    // Step 2: use fileRef in POST /text
+    const textRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const payload = JSON.stringify({
+        prompt: "Describe this image",
+        fileRef,
+        provider: "openai",
+        mock: true,
+      });
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port: uploadPort,
+          path: "/text",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        },
+        resolve,
+      );
+      req.on("error", reject);
+      req.write(payload);
+      req.end();
+    });
+    expect(textRes.statusCode).toBe(200);
+    const textBody = (await readBody(textRes)) as Record<string, unknown>;
+    expect(textBody).toHaveProperty("content");
+  });
+
+  // I-UP-4: fileRef from I-UP-2 used in POST /text → 200 with text response
+  it("I-UP-4: fileRef from PDF upload used in POST /text → 200 with text response", async () => {
+    // Step 1: upload PDF to get a fileRef
+    const upRes = await postUpload(
+      uploadPort,
+      { provider: "anthropic" },
+      { fieldname: "file", filename: "doc.pdf", contentType: "application/pdf", data: TINY_PDF },
+    );
+    expect(upRes.statusCode).toBe(201);
+    const upBody = (await readBody(upRes)) as Record<string, unknown>;
+    const fileRef = upBody["fileRef"] as string;
+
+    // Step 2: use fileRef in POST /text
+    const textRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const payload = JSON.stringify({
+        prompt: "Summarise this document",
+        fileRef,
+        provider: "anthropic",
+        mock: true,
+      });
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port: uploadPort,
+          path: "/text",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        },
+        resolve,
+      );
+      req.on("error", reject);
+      req.write(payload);
+      req.end();
+    });
+    expect(textRes.statusCode).toBe(200);
+    const textBody = (await readBody(textRes)) as Record<string, unknown>;
+    expect(textBody).toHaveProperty("content");
+  });
+
+  // I-UP-5: No file field in multipart body → 400
+  it("I-UP-5: no file field in multipart body → 400", async () => {
+    const res = await postUpload(uploadPort, {});
+    expect(res.statusCode).toBe(400);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    expect(body["error"] as string).toContain("No file");
+  });
+
+  // I-UP-6: Unsupported MIME type application/zip → 415
+  it("I-UP-6: MIME type application/zip → 415", async () => {
+    const res = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      {
+        fieldname: "file",
+        filename: "archive.zip",
+        contentType: "application/zip",
+        data: Buffer.from("PK\x03\x04"),
+      },
+    );
+    expect(res.statusCode).toBe(415);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    expect(body["error"] as string).toContain("Unsupported file type");
+  });
+
+  // I-UP-8: provider:"venice" with PDF MIME → 422
+  it("I-UP-8: provider=venice with PDF MIME → 422", async () => {
+    const res = await postUpload(
+      uploadPort,
+      { provider: "venice" },
+      { fieldname: "file", filename: "doc.pdf", contentType: "application/pdf", data: TINY_PDF },
+    );
+    expect(res.statusCode).toBe(422);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    expect(body["error"] as string).toContain("venice");
+  });
+
+  // I-UP-9: provider:"lumaai" with PDF MIME → 422
+  it("I-UP-9: provider=lumaai with PDF MIME → 422", async () => {
+    const res = await postUpload(
+      uploadPort,
+      { provider: "lumaai" },
+      { fieldname: "file", filename: "doc.pdf", contentType: "application/pdf", data: TINY_PDF },
+    );
+    expect(res.statusCode).toBe(422);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    expect(body["error"] as string).toContain("lumaai");
+  });
+
+  // I-UP-10: Unknown fileRef in POST /text → 200 (graceful text-only fallback)
+  it("I-UP-10: unknown fileRef in POST /text → 200 graceful fallback", async () => {
+    const fakeRef = "00000000-0000-4000-8000-000000000001";
+    const textRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
+      const payload = JSON.stringify({
+        prompt: "Hello",
+        fileRef: fakeRef,
+        provider: "openai",
+        mock: true,
+      });
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port: uploadPort,
+          path: "/text",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        },
+        resolve,
+      );
+      req.on("error", reject);
+      req.write(payload);
+      req.end();
+    });
+    expect(textRes.statusCode).toBe(200);
+    const body = (await readBody(textRes)) as Record<string, unknown>;
+    expect(body).toHaveProperty("content");
   });
 });

@@ -80,10 +80,26 @@ export function createServer(opts: ServeOptions = {}): express.Express {
 
   const app = express();
   const configuredOrigin = opts.corsOrigin ?? "http://localhost:5173";
-  const rpm              = opts.rateLimit  ?? 60;
+  const rpm = opts.rateLimit ?? 60;
+
+  /**
+   * Test whether a request origin matches a configured pattern.
+   * Supports exact matches and glob-style wildcards where `*` matches any
+   * single hostname segment (e.g. `https://*.ngrok-free.dev` matches
+   * `https://contorted-jarrod-supersecure.ngrok-free.dev`).
+   */
+  function originMatchesPattern(origin: string, pattern: string): boolean {
+    if (pattern === origin) return true;
+    if (!pattern.includes("*")) return false;
+    // Escape all regex special chars except `*`, then convert `*` → `[^.]+`
+    // so one wildcard covers exactly one hostname label (not dots).
+    const regexStr = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+");
+    return new RegExp(`^${regexStr}$`).test(origin);
+  }
 
   // Build a cors origin handler that also accepts `null` (file:// URLs) and
-  // normalised arrays of allowed origins.
+  // normalised arrays of allowed origins.  Each entry in the list may be an
+  // exact origin string or a glob pattern containing `*`.
   const corsOriginOption: cors.CorsOptions["origin"] = (requestOrigin, callback) => {
     // requestOrigin is undefined for same-origin or non-browser requests;
     // it is the string "null" when the page is opened as a file:// URL.
@@ -94,7 +110,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
       return callback(null, true);
     }
     const allowed = Array.isArray(configuredOrigin) ? configuredOrigin : [configuredOrigin];
-    if (allowed.includes(requestOrigin)) {
+    if (allowed.some((pattern) => originMatchesPattern(requestOrigin, pattern))) {
       return callback(null, true);
     }
     callback(new Error(`CORS: origin '${requestOrigin}' is not allowed`));
@@ -105,14 +121,14 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     helmet({
       contentSecurityPolicy: {
         directives: {
-          defaultSrc:  ["'none'"],
-          connectSrc:  ["'self'"],
-          scriptSrc:   ["'none'"],
-          styleSrc:    ["'none'"],
-          frameSrc:    ["'none'"],
-          objectSrc:   ["'none'"],
-          baseUri:     ["'none'"],
-          formAction:  ["'none'"],
+          defaultSrc: ["'none'"],
+          connectSrc: ["'self'"],
+          scriptSrc: ["'none'"],
+          styleSrc: ["'none'"],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'none'"],
+          formAction: ["'none'"],
         },
       },
       // noSniff, frameguard (DENY), and hsts are enabled by default in helmet.
@@ -125,11 +141,11 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   // 3. Rate limiter — 429 on exceed
   app.use(
     rateLimit({
-      windowMs:       60_000,
-      limit:          rpm,
+      windowMs: 60_000,
+      limit: rpm,
       standardHeaders: true,
-      legacyHeaders:  false,
-      message:        { error: "Too many requests — rate limit exceeded.", code: "RATE_LIMITED" },
+      legacyHeaders: false,
+      message: { error: "Too many requests — rate limit exceeded.", code: "RATE_LIMITED" },
     }),
   );
 
@@ -140,12 +156,15 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     res.on("finish", () => {
-      logger.info({
-        method: req.method,
-        url:    req.url,
-        status: res.statusCode,
-        ms:     Date.now() - start,
-      }, "request");
+      logger.info(
+        {
+          method: req.method,
+          url: req.url,
+          status: res.statusCode,
+          ms: Date.now() - start,
+        },
+        "request",
+      );
     });
     next();
   });
@@ -155,7 +174,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
 
   // 7. Centralised error handler — maps domain errors to HTTP status codes.
   //    Express requires exactly 4 parameters for error-handling middleware.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof BudgetExceededError) {
       logger.warn({ code: "BUDGET_EXCEEDED" }, err.message);
@@ -182,7 +201,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
 export function startServer(opts: ServeOptions = {}): Promise<void> {
   const port = opts.port ?? 3001;
   const host = opts.host ?? "127.0.0.1";
-  const app  = createServer(opts);
+  const app = createServer(opts);
   return new Promise((resolve) => {
     app.listen(port, host, () => {
       getLogger().info(`ai-powered proxy server listening on :${port}`);
@@ -190,4 +209,3 @@ export function startServer(opts: ServeOptions = {}): Promise<void> {
     });
   });
 }
-

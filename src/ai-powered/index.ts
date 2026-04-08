@@ -78,6 +78,7 @@ export type {
   VideoResult,
   StructuredResult,
   ModelDescriptor,
+  InputModality,
   RequestContext,
   ResponseContext,
   AiPlugin,
@@ -126,7 +127,7 @@ export { createPromptShieldPlugin } from "./plugins/prompt-shield.js";
  * `"audit-log"` work without a file-path or package specifier.
  */
 const BUILT_IN_PLUGINS: Readonly<Record<string, () => AiPlugin>> = {
-  "audit-log":    () => createAuditLogPlugin(),
+  "audit-log": () => createAuditLogPlugin(),
   "rate-limiter": () => createRateLimiterPlugin(),
   "prompt-shield": () => createPromptShieldPlugin(),
 };
@@ -155,10 +156,9 @@ async function loadPlugins(pluginIds: string[]): Promise<AiPlugin[]> {
 
     // 2. Dynamic import for external file paths or npm package names.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const mod = await import(id);
       // Accept default export or named `plugin` export.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       const plugin = (mod.default ?? mod.plugin) as AiPlugin | undefined;
       if (!plugin || typeof plugin.name !== "string") {
         logger.warn({ pluginId: id }, "Plugin module does not export a valid AiPlugin; skipping.");
@@ -272,4 +272,3 @@ export async function listAvailableModels(
 
   return models;
 }
-

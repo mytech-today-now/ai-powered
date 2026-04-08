@@ -24,6 +24,7 @@ import type {
   VideoResult,
   StructuredResult,
   ModelDescriptor,
+  InputModality,
 } from "../types.js";
 import { ProviderCapabilityError } from "../types.js";
 
@@ -43,6 +44,18 @@ export interface ProviderCallOptions {
   systemPrompt?: string;
   /** Whether to stream the response. */
   stream?: boolean;
+  /**
+   * Pre-built multimodal message array.  When present, providers that support
+   * multimodal content (e.g. OpenAI vision, Anthropic vision) SHOULD use this
+   * array instead of constructing a plain-text user message from the prompt.
+   * Each `content` element may be a plain string or an array of typed content
+   * blocks (text, image_url, file, etc.) in the provider's native format.
+   * Providers that do not support multimodal content ignore this field.
+   */
+  messages?: Array<{
+    role: "system" | "user" | "assistant";
+    content: string | Array<Record<string, unknown>>;
+  }>;
 
   // ── Image / Video generation controls ──────────────────────────────────
   /**
@@ -84,6 +97,41 @@ export interface ProviderCallOptions {
    * Maps to provider-specific quality/style parameters where supported.
    */
   quality?: "draft" | "standard" | "high";
+  /**
+   * Pre-built provider-native content block for a file attachment.
+   * Built by `buildFileContentBlock()` from a resolved `fileRef` UUID token.
+   * Providers that support multimodal content inject this into the user message;
+   * providers that do not support file attachments ignore this field.
+   */
+  fileContentBlock?: Record<string, unknown>;
+  /**
+   * Optional array of public image URLs to pass along with the prompt.
+   * Providers that accept image input (e.g. image-to-video, img2img) may use
+   * the first URL as a starting frame or reference image. Providers that do
+   * not support image input ignore this field.
+   */
+  images?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// ImageCapability
+// ---------------------------------------------------------------------------
+
+/**
+ * Describes a provider's image-input capability for a specific output modality.
+ *
+ * Exported so that routing logic and UI code can import it without pulling in
+ * provider-specific files.
+ */
+export interface ImageCapability {
+  /** Output modality this capability applies to (e.g. "video" or "vision"). */
+  modality: string;
+  /** Maximum number of input images accepted in a single request. */
+  maxImages: number;
+  /** Provider-native field name used to pass the image URL(s). */
+  fieldName: string;
+  /** Optional human-readable notes. */
+  notes?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +202,21 @@ export abstract class BaseProvider {
 
   /**
    * Returns the list of models available from this provider.
-   * Optionally filtered to those supporting the requested modality.
+   * Optionally filtered by output modality and/or input capability.
+   *
+   * @param modality  Output modality filter (e.g. "text", "image").
+   * @param accepts   Input modality filter — only models whose
+   *                  `inputCapabilities` contains this value are returned.
    */
-  abstract listModels(modality?: Modality): Promise<ModelDescriptor[]>;
+  abstract listModels(modality?: Modality, accepts?: InputModality): Promise<ModelDescriptor[]>;
+
+  /**
+   * Returns this provider's image-input capabilities.
+   *
+   * Override in concrete providers that accept image input; the default
+   * returns an empty array (no image-input capability).
+   */
+  static imageCapabilities(): ImageCapability[] {
+    return [];
+  }
 }

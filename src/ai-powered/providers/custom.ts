@@ -35,6 +35,7 @@ import type {
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
+  InputModality,
 } from "../types.js";
 import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
@@ -45,9 +46,9 @@ import type { ProviderCallOptions } from "./base.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-const OLLAMA_DEFAULT_BASE   = "http://localhost:11434";
-const OLLAMA_OPENAI_SUFFIX  = "/v1";
-const MAX_TOKENS_DEFAULT    = 4096;
+const OLLAMA_DEFAULT_BASE = "http://localhost:11434";
+const OLLAMA_OPENAI_SUFFIX = "/v1";
+const MAX_TOKENS_DEFAULT = 4096;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -99,13 +100,13 @@ export class CustomProvider extends BaseProvider {
     if (this._type === "other") {
       const url = config.baseUrl;
       if (!url) throw new Error("config.baseUrl is required for customProviderType 'other'.");
-      this._baseUrl   = url;
-      this._client    = null;
+      this._baseUrl = url;
+      this._client = null;
       this.supportedModalities = ["text"];
     } else {
       this._baseUrl = resolveBaseUrl(config);
-      this._client  = new OpenAI({
-        apiKey:  config.apiKey ?? "no-key",
+      this._client = new OpenAI({
+        apiKey: config.apiKey ?? "no-key",
         baseURL: this._baseUrl,
         defaultHeaders: {
           ...authHeader(config.apiKey),
@@ -144,18 +145,18 @@ export class CustomProvider extends BaseProvider {
       });
       const choice = response.choices[0];
       const usage: TokenUsage = {
-        promptTokens:     response.usage?.prompt_tokens     ?? 0,
+        promptTokens: response.usage?.prompt_tokens ?? 0,
         completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens:      response.usage?.total_tokens      ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
       };
       return {
         modality: "text",
         provider: "custom",
         model,
-        content:      choice?.message.content ?? "",
+        content: choice?.message.content ?? "",
         usage,
-        cost:         calculateCost(model, usage),
-        latencyMs:    Date.now() - start,
+        cost: calculateCost(model, usage),
+        latencyMs: Date.now() - start,
         finishReason: choice?.finish_reason ?? "stop",
       };
     } catch (err) {
@@ -191,21 +192,22 @@ export class CustomProvider extends BaseProvider {
       const retryable = resp.status === 429 || resp.status >= 500;
       throw new ProviderError("custom", `HTTP ${resp.status}`, resp.status, retryable);
     }
-    const body = await resp.json() as Record<string, unknown>;
-    const content = typeof body["text"] === "string"
-      ? body["text"]
-      : typeof body["response"] === "string"
-        ? body["response"]
-        : JSON.stringify(body);
+    const body = (await resp.json()) as Record<string, unknown>;
+    const content =
+      typeof body["text"] === "string"
+        ? body["text"]
+        : typeof body["response"] === "string"
+          ? body["response"]
+          : JSON.stringify(body);
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     return {
       modality: "text",
       provider: "custom",
       model,
       content,
-      usage:        zeroUsage,
-      cost:         calculateCost(model, zeroUsage),
-      latencyMs:    Date.now() - start,
+      usage: zeroUsage,
+      cost: calculateCost(model, zeroUsage),
+      latencyMs: Date.now() - start,
       finishReason: "stop",
     };
   }
@@ -225,7 +227,9 @@ export class CustomProvider extends BaseProvider {
 
     try {
       const stream = await client.chat.completions.create({
-        model, messages, stream: true,
+        model,
+        messages,
+        stream: true,
         temperature: options?.temperature ?? this.config.temperature,
         ...(options?.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
       });
@@ -248,8 +252,8 @@ export class CustomProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
-    const model  = this.config.model ?? "default";
-    const start  = Date.now();
+    const model = this.config.model ?? "default";
+    const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const client = this._client!;
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
@@ -262,24 +266,27 @@ export class CustomProvider extends BaseProvider {
 
     try {
       const response = await client.chat.completions.create({
-        model, messages,
-        temperature:     options?.temperature ?? this.config.temperature,
+        model,
+        messages,
+        temperature: options?.temperature ?? this.config.temperature,
         response_format: { type: "json_object" },
-        max_tokens:      maxTok,
+        max_tokens: maxTok,
       });
-      const raw    = response.choices[0]?.message.content ?? "{}";
+      const raw = response.choices[0]?.message.content ?? "{}";
       const parsed: unknown = JSON.parse(raw);
-      const data   = schema.parse(parsed);
+      const data = schema.parse(parsed);
       const usage: TokenUsage = {
-        promptTokens:     response.usage?.prompt_tokens     ?? 0,
+        promptTokens: response.usage?.prompt_tokens ?? 0,
         completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens:      response.usage?.total_tokens      ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
       };
       return {
         modality: "structured",
         provider: "custom",
-        model, data, usage,
-        cost:      calculateCost(model, usage),
+        model,
+        data,
+        usage,
+        cost: calculateCost(model, usage),
         latencyMs: Date.now() - start,
       };
     } catch (err) {
@@ -291,20 +298,28 @@ export class CustomProvider extends BaseProvider {
   // listModels — Ollama uses /api/tags; others return a minimal stub
   // -------------------------------------------------------------------------
 
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
     if (this._type === "ollama") {
-      return this._listOllamaModels(modality);
+      return this._listOllamaModels(modality, accepts);
     }
     // For openai-compatible servers, attempt the standard /models endpoint.
     if (this._client) {
       try {
         const list = await this._client.models.list();
         const descriptors: ModelDescriptor[] = list.data.map((m) => ({
-          id:           m.id,
-          name:         m.id,
+          id: m.id,
+          name: m.id,
           capabilities: ["text", "structured"] as Modality[],
         }));
-        return modality ? descriptors.filter((d) => d.capabilities.includes(modality)) : descriptors;
+        let filtered = modality
+          ? descriptors.filter((d) => d.capabilities.includes(modality))
+          : descriptors;
+        if (accepts)
+          filtered = filtered.filter((d) => d.inputCapabilities?.includes(accepts) ?? false);
+        return filtered;
       } catch {
         // Fall through to single-model stub.
       }
@@ -312,27 +327,36 @@ export class CustomProvider extends BaseProvider {
     const model = this.config.model ?? "custom-model";
     const stub: ModelDescriptor = { id: model, name: model, capabilities: ["text", "structured"] };
     if (modality && !stub.capabilities.includes(modality)) return [];
+    if (accepts && !(stub.inputCapabilities?.includes(accepts) ?? false)) return [];
     return [stub];
   }
 
   /** Discover models via Ollama's GET /api/tags endpoint. */
-  private async _listOllamaModels(modality?: Modality): Promise<ModelDescriptor[]> {
+  private async _listOllamaModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
     // Ollama tags endpoint lives at the root, not under /v1.
-    const root    = (this.config.baseUrl ?? OLLAMA_DEFAULT_BASE).replace(/\/v1\/?$/, "");
+    const root = (this.config.baseUrl ?? OLLAMA_DEFAULT_BASE).replace(/\/v1\/?$/, "");
     const tagsUrl = `${root}/api/tags`;
     try {
       const resp = await fetch(tagsUrl, {
         headers: { ...authHeader(this.config.apiKey), ...this._extraHeaders },
       });
       if (!resp.ok) return [];
-      const body  = await resp.json() as { models?: Array<{ name: string }> };
+      const body = (await resp.json()) as { models?: Array<{ name: string }> };
       const items = body.models ?? [];
       const descriptors: ModelDescriptor[] = items.map((m) => ({
-        id:           m.name,
-        name:         m.name,
+        id: m.name,
+        name: m.name,
         capabilities: ["text", "structured"] as Modality[],
       }));
-      return modality ? descriptors.filter((d) => d.capabilities.includes(modality)) : descriptors;
+      let filtered = modality
+        ? descriptors.filter((d) => d.capabilities.includes(modality))
+        : descriptors;
+      if (accepts)
+        filtered = filtered.filter((d) => d.inputCapabilities?.includes(accepts) ?? false);
+      return filtered;
     } catch {
       const model = this.config.model ?? "llama3";
       return [{ id: model, name: model, capabilities: ["text", "structured"] }];
@@ -352,4 +376,3 @@ export class CustomProvider extends BaseProvider {
     return new ProviderError("custom", msg);
   }
 }
-

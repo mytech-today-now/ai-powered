@@ -56,7 +56,8 @@ function run(args: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } =
   const spawnOpts: SpawnSyncOptionsWithStringEncoding = {
     encoding: "utf-8",
     env: { ...MOCK_ENV, ...(opts.env ?? {}) },
-    timeout: 20_000,
+    // 30 s: first spawn in a parallel test-fork incurs cold-start JIT overhead.
+    timeout: 30_000,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
   };
   const result = spawnSync("node", [BINARY, ...args], spawnOpts);
@@ -159,7 +160,8 @@ describe("structured --schema <file> --mock", () => {
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
     expect(parsed).toHaveProperty("answer");
     expect(typeof parsed["answer"]).toBe("string");
-  });
+    // 30 s: subprocess spawn incurs cold-start JIT overhead under parallel load.
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -298,6 +300,7 @@ describe("session list", () => {
 // ---------------------------------------------------------------------------
 
 describe("session clear <id>", () => {
+  // 30 s: two sequential subprocess spawns under parallel fork load.
   it("clears a session that was previously created via text --session", () => {
     const sessionId = `test-session-${Date.now()}`;
 
@@ -309,5 +312,5 @@ describe("session clear <id>", () => {
     const clearResult = run(["session", "clear", sessionId]);
     expect(clearResult.exitCode).toBe(0);
     expect(clearResult.stdout).toContain("cleared");
-  });
+  }, 30_000);
 });

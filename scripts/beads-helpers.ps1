@@ -64,11 +64,11 @@ function bd-show {
     bd show $Id
 }
 
-# Returns all open, unblocked tasks sorted by highest priority first (P1 → P2 → P3).
-# Pass -Limit <n> to cap the result set.
+# Returns ALL open beads: unblocked first (P1→P2→P3), then blocked (P1→P2→P3).
+# --limit 0 (default) shows every open bead. Pass -Limit <n> to cap the combined total.
 function bd-ready {
     param([int]$Limit = 0)
-    if ($Limit -gt 0) { bd ready --limit $Limit } else { bd ready }
+    if ($Limit -gt 0) { bd ready --limit $Limit } else { bd ready --limit 0 }
 }
 
 function bd-create {
@@ -138,7 +138,7 @@ function bd-help {
     Write-Host "  bd-list-open          # bd list --status open"
     Write-Host "  bd-list-all           # bd list"
     Write-Host "  bd-show <id>          # bd show <id>"
-    Write-Host "  bd-ready [-Limit <n>] # all open unblocked tasks, highest priority first"
+    Write-Host "  bd-ready [-Limit <n>] # all open tasks: unblocked first then blocked, priority order"
     Write-Host "  bd-create <title>     # bd create <title> [-Description] [-Priority] [-Type]"
     Write-Host "  bd-update <id>        # bd update <id> [-Status] [-Claim] [-Priority]"
     Write-Host "  bd-close <id>         # bd close <id> [-Reason]"
@@ -154,7 +154,8 @@ function bd-help {
     Write-Host "  bd update bd-a1b2 --claim"
     Write-Host "  bd close bd-a1b2 --reason `"Fixed in PR #42`""
     Write-Host "  bd stats"
-    Write-Host "  bd ready --limit 5"
+    Write-Host "  bd ready             # all open beads (unblocked first, then blocked)"
+  Write-Host "  bd ready --limit 5   # top 5 from combined unblocked+blocked list"
     Write-Host ""
 }
 

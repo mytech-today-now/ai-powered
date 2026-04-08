@@ -104,6 +104,16 @@ export interface StructuredResult<T = unknown> extends BaseResult {
 // Model descriptor
 // ---------------------------------------------------------------------------
 
+/**
+ * Modalities a model can receive as structured input beyond plain text prompts.
+ *
+ * `"text"` is deliberately excluded — every model accepts plain text by default.
+ * `InputModality` only declares *extra* structured input types that must be
+ * explicitly supported (e.g. an attached image, audio file, video clip, or
+ * document). Use `inputCapabilities` on `ModelDescriptor` to annotate models.
+ */
+export type InputModality = "image" | "audio" | "video" | "document";
+
 /** Resolution label exposed to the UI (e.g. "480p", "720p", "1080p"). */
 export type ResolutionLabel = string;
 
@@ -112,6 +122,14 @@ export interface ModelDescriptor {
   name: string;
   capabilities: Modality[];
   contextWindow?: number;
+  /**
+   * Non-text input modalities this model can receive as structured input.
+   * `"text"` is implicit and therefore excluded from this list.
+   * When absent or undefined the model accepts plain text only.
+   */
+  inputCapabilities?: InputModality[];
+  /** Whether this model is deprecated by the provider. */
+  deprecated?: boolean;
   /** Aspect ratios accepted by this model in "W:H" notation (e.g. "16:9"). */
   aspectRatios?: string[];
   /** Resolution labels accepted by this model (e.g. ["480p", "720p"]). */

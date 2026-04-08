@@ -18,7 +18,7 @@
       ],
       "maxWidth": 1280,
       "maxHeight": 1280,
-      "maxPixels": 1638400
+      "maxPixels": 1000000
     },
     {
       "id": "venice-sd-3.5",

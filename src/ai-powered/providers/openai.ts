@@ -26,6 +26,7 @@ import type {
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
+  InputModality,
 } from "../types.js";
 import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
@@ -40,12 +41,19 @@ import { AspectRatioService } from "../aspect-ratio.js";
 // ---------------------------------------------------------------------------
 
 const TEXT_MODELS: ModelDescriptor[] = [
-  { id: "gpt-4o", name: "GPT-4o", capabilities: ["text", "structured"], contextWindow: 128000 },
+  {
+    id: "gpt-4o",
+    name: "GPT-4o",
+    capabilities: ["text", "structured"],
+    contextWindow: 128000,
+    inputCapabilities: ["image"],
+  },
   {
     id: "gpt-4o-mini",
     name: "GPT-4o Mini",
     capabilities: ["text", "structured"],
     contextWindow: 128000,
+    inputCapabilities: ["image"],
   },
   { id: "o1", name: "o1", capabilities: ["text"], contextWindow: 200000 },
   { id: "o1-mini", name: "o1 Mini", capabilities: ["text"], contextWindow: 128000 },
@@ -54,6 +62,7 @@ const TEXT_MODELS: ModelDescriptor[] = [
     name: "GPT-4 Turbo",
     capabilities: ["text", "structured"],
     contextWindow: 128000,
+    inputCapabilities: ["image"],
   },
   {
     id: "gpt-3.5-turbo",
@@ -66,11 +75,11 @@ const TEXT_MODELS: ModelDescriptor[] = [
 const IMAGE_MODELS: ModelDescriptor[] = [
   { id: "dall-e-3", name: "DALL-E 3", capabilities: ["image"] },
   { id: "dall-e-2", name: "DALL-E 2", capabilities: ["image"] },
-  { id: "gpt-image-1", name: "GPT-Image-1", capabilities: ["image"] },
+  { id: "gpt-image-1", name: "GPT-Image-1", capabilities: ["image"], inputCapabilities: ["image"] },
 ];
 
 const AUDIO_MODELS: ModelDescriptor[] = [
-  { id: "whisper-1", name: "Whisper", capabilities: ["audio"] },
+  { id: "whisper-1", name: "Whisper", capabilities: ["audio"], inputCapabilities: ["audio"] },
   { id: "tts-1", name: "TTS-1", capabilities: ["audio"] },
   { id: "tts-1-hd", name: "TTS-1 HD", capabilities: ["audio"] },
 ];
@@ -180,6 +189,32 @@ function resolveImageSize(
 }
 
 // ---------------------------------------------------------------------------
+// Reference-image extraction helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Scan a multimodal messages array for the first `image_url` content block
+ * whose `url` is a data URI and return its raw decoded bytes.
+ *
+ * Returns `null` when no suitable image block is found.
+ */
+function extractImageBuffer(messages: ProviderCallOptions["messages"] | undefined): Buffer | null {
+  if (!messages) return null;
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue;
+    for (const block of msg.content as Array<Record<string, unknown>>) {
+      if (block["type"] !== "image_url") continue;
+      const imgUrl = block["image_url"] as { url?: string } | undefined;
+      const url = imgUrl?.url ?? "";
+      // Accept data URIs only: "data:<mime>;base64,<data>"
+      const match = /^data:[^;]+;base64,([A-Za-z0-9+/=]+)$/.exec(url);
+      if (match?.[1]) return Buffer.from(match[1], "base64");
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // OpenAiProvider
 // ---------------------------------------------------------------------------
 
@@ -207,10 +242,15 @@ export class OpenAiProvider extends BaseProvider {
     this.assertCapability("text");
     const model = this.config.model ?? DEFAULT_TEXT_MODEL;
     const start = Date.now();
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    // When a pre-built messages array is provided (e.g. multimodal content blocks
+    // from POST /upload), use it directly.  Otherwise construct a plain user message.
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = options?.messages
+      ? (options.messages as OpenAI.Chat.ChatCompletionMessageParam[])
+      : [{ role: "user", content: prompt }];
+    if (systemPrompt && messages[0]?.role !== "system") {
+      messages.unshift({ role: "system", content: systemPrompt });
+    }
 
     try {
       const response = await this._client.chat.completions.create({
@@ -250,10 +290,15 @@ export class OpenAiProvider extends BaseProvider {
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
     const model = this.config.model ?? DEFAULT_TEXT_MODEL;
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    // When a pre-built messages array is provided (e.g. multimodal content blocks
+    // from POST /upload), use it directly.  Otherwise construct a plain user message.
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = options?.messages
+      ? (options.messages as OpenAI.Chat.ChatCompletionMessageParam[])
+      : [{ role: "user", content: prompt }];
+    if (systemPrompt && messages[0]?.role !== "system") {
+      messages.unshift({ role: "system", content: systemPrompt });
+    }
 
     try {
       const stream = await this._client.chat.completions.create({
@@ -274,7 +319,7 @@ export class OpenAiProvider extends BaseProvider {
   }
 
   // -------------------------------------------------------------------------
-  // Image generation (DALL-E 3)
+  // Image generation / editing (DALL-E 2, DALL-E 3, GPT-Image-1)
   // -------------------------------------------------------------------------
 
   override async generateImage(
@@ -300,16 +345,54 @@ export class OpenAiProvider extends BaseProvider {
         | "256x256"
         | "512x512"
         | "auto";
-      const response = await this._client.images.generate({
-        model,
-        prompt,
-        n: 1,
-        size,
-      });
 
-      const imageData = response.data?.[0];
-      // Newer models (gpt-image-1) return b64_json; dall-e-3 returns url by default.
-      const data: string = imageData?.url ?? imageData?.b64_json ?? "";
+      // When a reference image is attached and the model supports editing
+      // (gpt-image-1, dall-e-2 — DALL-E 3 does not support images.edit()),
+      // route to images.edit() so the model can transform the uploaded photo.
+      // DALL-E 3 text-to-image continues to use images.generate() as before.
+      const imageBuffer = extractImageBuffer(options?.messages);
+      const supportsEdit = model === "gpt-image-1" || model === "dall-e-2";
+
+      let apiResponse: { data?: Array<{ b64_json?: string | null; url?: string | null }> };
+      if (imageBuffer && supportsEdit) {
+        const imageFile = await toFile(imageBuffer, "reference.png", { type: "image/png" });
+        apiResponse = await this._client.images.edit({
+          model,
+          image: imageFile,
+          prompt,
+          n: 1,
+          size: size as "256x256" | "512x512" | "1024x1024" | "1536x1024" | "1024x1536",
+        });
+      } else {
+        apiResponse = await this._client.images.generate({
+          model,
+          prompt,
+          n: 1,
+          size,
+        });
+      }
+
+      const imageData = apiResponse.data?.[0];
+
+      // DALL-E 2 / DALL-E 3 return a short-lived Azure blob URL by default.
+      // Forwarding that URL to the browser causes a CORS error: Azure blob
+      // storage does not include Access-Control-Allow-Origin for arbitrary
+      // origins (e.g. an ngrok tunnel).  Fetch the image server-side and
+      // convert it to a data URI so the client receives a self-contained,
+      // origin-agnostic payload.
+      // gpt-image-1 always returns b64_json, so we wrap it the same way.
+      let data: string;
+      if (imageData?.b64_json) {
+        data = `data:image/png;base64,${imageData.b64_json}`;
+      } else if (imageData?.url) {
+        const imgResp = await fetch(imageData.url);
+        const arrayBuf = await imgResp.arrayBuffer();
+        const b64 = Buffer.from(arrayBuf).toString("base64");
+        const ct = imgResp.headers.get("content-type") ?? "image/png";
+        data = `data:${ct};base64,${b64}`;
+      } else {
+        data = "";
+      }
 
       return {
         modality: "image",
@@ -481,9 +564,18 @@ export class OpenAiProvider extends BaseProvider {
   // listModels
   // -------------------------------------------------------------------------
 
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
-    if (!modality) return ALL_OPENAI_MODELS;
-    return ALL_OPENAI_MODELS.filter((m) => m.capabilities.includes(modality));
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    let models = ALL_OPENAI_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
+  }
+
+  static override imageCapabilities(): import("./base.js").ImageCapability[] {
+    return [{ modality: "vision", maxImages: 20, fieldName: "image_url" }];
   }
 
   // -------------------------------------------------------------------------
@@ -499,3 +591,6 @@ export class OpenAiProvider extends BaseProvider {
     return new ProviderError("openai", msg);
   }
 }
+
+/** Alias for consumers that prefer the `OpenAIProvider` name. */
+export { OpenAiProvider as OpenAIProvider };

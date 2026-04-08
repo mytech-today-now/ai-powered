@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { AiConfigSchema } from "./core.js";
 import type { AiConfig, Modality } from "./core.js";
 import type { ProviderName } from "./core.js";
 import type { BaseProvider, ProviderCallOptions } from "./providers/index.js";
@@ -26,6 +27,7 @@ import type {
   ResponseContext,
   BaseResult,
   ProviderFailure,
+  InputModality,
 } from "./types.js";
 import {
   AiPoweredError,
@@ -113,12 +115,28 @@ export class AiClient {
 
   private _cumulativeCostUsd = 0;
 
-  constructor(config: AiConfig, provider: BaseProvider, plugins: AiPlugin[] = []) {
-    // Freeze a shallow copy of config at construction time.  Every plugin hook
-    // receives its own freshly-frozen snapshot (see _frozenConfigSnapshot()).
-    this._config = Object.freeze({ ...config }) as AiConfig;
-    this._provider = provider;
-    this._plugins = plugins;
+  /**
+   * Construct with an explicit config + provider (normal factory path).
+   * Also supports a provider-only shorthand for direct/test instantiation:
+   *   `new AiClient(provider)` — uses schema defaults for config.
+   */
+  constructor(
+    configOrProvider: AiConfig | BaseProvider,
+    provider?: BaseProvider,
+    plugins: AiPlugin[] = [],
+  ) {
+    // Detect provider-only shorthand: first arg has a `listModels` method.
+    if (typeof (configOrProvider as BaseProvider).listModels === "function") {
+      this._config = Object.freeze(AiConfigSchema.parse({})) as AiConfig;
+      this._provider = configOrProvider as BaseProvider;
+      this._plugins = [];
+    } else {
+      // Freeze a shallow copy of config at construction time.  Every plugin hook
+      // receives its own freshly-frozen snapshot (see _frozenConfigSnapshot()).
+      this._config = Object.freeze({ ...(configOrProvider as AiConfig) }) as AiConfig;
+      this._provider = provider!;
+      this._plugins = plugins;
+    }
   }
 
   /**
@@ -709,9 +727,9 @@ export class AiClient {
     return result;
   }
 
-  /** List models supported by the active provider, optionally filtered by modality. */
-  async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
-    return this._provider.listModels(modality);
+  /** List models supported by the active provider, optionally filtered by modality and/or input capability. */
+  async listModels(modality?: Modality, accepts?: InputModality): Promise<ModelDescriptor[]> {
+    return this._provider.listModels(modality, accepts);
   }
 
   /**

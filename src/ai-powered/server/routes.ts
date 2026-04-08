@@ -35,14 +35,29 @@
  */
 
 import { Router, type Request, type Response, type NextFunction } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { getAiClient, loadConfig, maskApiKey, listPricing } from "../index.js";
 import { getTemplate, renderTemplate } from "../templates/index.js";
 import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger } from "../utils.js";
+import type { ProviderCallOptions } from "../providers/index.js";
 import type { ServeOptions } from "./index.js";
+import { selectI2VProvider } from "./smart-default.js";
 import { mountCompatRoutes } from "./compat/index.js";
 import { inferProviderFromModel } from "./compat/model-router.js";
+import {
+  lookupFileRef,
+  buildFileContentBlock,
+  storeFileRef,
+  validateMimeType,
+  validateFileSize,
+} from "./file-handler.js";
+
+// ---------------------------------------------------------------------------
+// Multer — multipart/form-data file upload middleware (50 MiB hard limit)
+// ---------------------------------------------------------------------------
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 52_428_800 } });
 
 // ---------------------------------------------------------------------------
 // Provider metadata — used by GET /providers
@@ -55,42 +70,49 @@ const PROVIDER_META = [
     name: "OpenAI",
     envKey: "OPENAI_API_KEY",
     modalities: ["text", "image", "audio", "structured"],
+    inputModalities: ["image", "audio"],
   },
   {
     id: "anthropic",
     name: "Anthropic",
     envKey: "ANTHROPIC_API_KEY",
     modalities: ["text", "structured"],
+    inputModalities: ["image"],
   },
   {
     id: "xai",
     name: "xAI / Grok",
     envKey: "XAI_API_KEY",
     modalities: ["text", "structured", "video"],
+    inputModalities: ["image"],
   },
   {
     id: "venice",
     name: "Venice",
     envKey: "VENICE_API_KEY",
     modalities: ["text", "image", "structured"],
+    inputModalities: ["image"],
   },
   {
     id: "lumaai",
     name: "Luma AI",
     envKey: "LUMAAI_API_KEY",
     modalities: ["video"],
+    inputModalities: ["image"],
   },
   {
     id: "runway",
     name: "Runway",
     envKey: "RUNWAYML_API_SECRET",
     modalities: ["video"],
+    inputModalities: [],
   },
   {
     id: "mock",
     name: "Mock (testing)",
     envKey: "",
     modalities: ["text", "image", "audio", "video", "structured"],
+    inputModalities: ["image", "audio", "video"],
   },
 ] as const;
 
@@ -106,6 +128,18 @@ const ClientOverrideSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   systemPrompt: z.string().optional(),
   profile: z.string().optional(),
+  /**
+   * UUID token returned by POST /upload.  When present, the corresponding
+   * file is resolved and injected into the generation request as a multimodal
+   * content block.  Callers that omit this field behave identically to before.
+   */
+  fileRef: z.string().uuid().optional(),
+  /**
+   * Array of UUID tokens returned by POST /upload.  Supersedes `fileRef` when
+   * present and non-empty; supports multi-image input for image-to-image and
+   * image-to-video generation.
+   */
+  fileRefs: z.array(z.string().uuid()).optional(),
 });
 
 /** Template rendering inputs included on text/structured routes. */
@@ -178,6 +212,8 @@ const BatchItemSchema = ClientOverrideSchema.merge(TemplateSchema)
     prompt: z.string().min(1, "prompt must not be empty"),
     /** Optional human-readable name used as the output filename. */
     name: z.string().optional(),
+    /** Optional array of image URLs passed to the provider alongside the prompt. */
+    images: z.array(z.string().url()).optional(),
   });
 
 /** Body for POST /batch — base overrides plus an ordered item list. */
@@ -263,6 +299,63 @@ function mapError(err: unknown, res: Response): boolean {
   return false;
 }
 
+/**
+ * Resolve a `fileRef` UUID token into a provider-native content block.
+ *
+ * Returns `undefined` when:
+ *   - `fileRef` is not provided (no file attached to the request)
+ *   - the token is not found in the in-memory store (e.g. expired or invalid)
+ *   - `buildFileContentBlock()` throws (unsupported MIME for the provider)
+ *
+ * Failures are logged at warn level and silently ignored so that the
+ * generation request can still proceed without the attachment.
+ */
+function resolveFileBlock(
+  fileRef: string | undefined,
+  provider: string,
+  model: string,
+): Record<string, unknown> | undefined {
+  if (!fileRef) return undefined;
+  const entry = lookupFileRef(fileRef);
+  if (!entry) {
+    getLogger().warn({ fileRef }, "fileRef token not found; ignoring attachment");
+    return undefined;
+  }
+  try {
+    return buildFileContentBlock(
+      provider,
+      model,
+      { filename: entry.filename, mimeType: entry.mimeType },
+      entry.base64Content,
+      entry.fileId,
+    );
+  } catch (err) {
+    getLogger().warn(
+      { fileRef, provider, mimeType: entry.mimeType, err },
+      "buildFileContentBlock failed; ignoring attachment",
+    );
+    return undefined;
+  }
+}
+
+/**
+ * Resolve an array of `fileRef` UUID tokens into provider-native content blocks.
+ *
+ * Filters out any refs that are missing, expired, or produce an unsupported
+ * MIME block.  Returns an empty array when `fileRefs` is empty or undefined.
+ */
+function resolveFileBlocks(
+  fileRefs: string[] | undefined,
+  provider: string,
+  model: string,
+): Array<Record<string, unknown>> {
+  if (!fileRefs?.length) return [];
+  return fileRefs.flatMap((ref) => {
+    const block = resolveFileBlock(ref, provider, model);
+    return block ? [block] : [];
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Router factory
 // ---------------------------------------------------------------------------
@@ -279,8 +372,14 @@ export function createRouter(opts: ServeOptions): Router {
   });
 
   // --- GET /health ---
+  // lumaImageToVideoEnabled is true when PROXY_PUBLIC_BASE_URL is set, which is
+  // required for Luma AI image-to-video (keyframes must be a publicly reachable URL).
   router.get("/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      lumaImageToVideoEnabled: Boolean(process.env["PROXY_PUBLIC_BASE_URL"]),
+    });
   });
 
   // --- GET /config ---
@@ -311,6 +410,7 @@ export function createRouter(opts: ServeOptions): Router {
       name: p.name,
       active: p.id === "mock" ? Boolean(opts.mock) : Boolean(process.env[p.envKey]),
       modalities: [...p.modalities],
+      inputModalities: [...p.inputModalities],
     }));
     res.json(providerList);
   });
@@ -342,7 +442,13 @@ export function createRouter(opts: ServeOptions): Router {
   });
 
   // --- GET /models ---
-  // Accepts optional ?modality= and ?provider= query params.
+  // Accepts optional query parameters:
+  //   ?modality=<modality>        – filter by output modality (e.g. "text", "image")
+  //   ?provider=<provider>        – fetch models for a specific provider (bypasses mock)
+  //   ?accepts=<inputModality>    – filter by input modality beyond plain text
+  //                                 (e.g. "image", "audio", "video", "document");
+  //                                 composable with ?modality= and ?provider=;
+  //                                 unknown values return [] not a 4xx error
   // When ?provider= is specified, that provider's model list is returned
   // regardless of whether the server is in mock mode — all real providers
   // use static lists so no live API calls are made.  Falls back to an
@@ -353,6 +459,7 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res) => {
       const modality = req.query["modality"] as string | undefined;
       const providerOverride = req.query["provider"] as string | undefined;
+      const accepts = req.query["accepts"] as string | undefined;
 
       // Honour an explicit ?provider= override even in mock mode so that the
       // UI can display models from all configured real providers.  listModels
@@ -366,7 +473,7 @@ export function createRouter(opts: ServeOptions): Router {
 
       try {
         const client = await getAiClient("serve-models", overrides as never);
-        const models = await client.listModels(modality as never);
+        const models = await client.listModels(modality as never, accepts as never);
         res.json(models);
       } catch {
         // Provider construction failed (e.g. missing API key) — return empty list
@@ -374,6 +481,87 @@ export function createRouter(opts: ServeOptions): Router {
       }
     }),
   );
+
+  // --- POST /upload ---
+  // Accepts multipart/form-data with a single "file" field.
+  // Optional body fields: provider (string), model (string).
+  // On success returns { fileRef: "<uuid>" } that callers pass as `fileRef`
+  // in subsequent generation requests to attach the file as a content block.
+  router.post("/upload", upload.single("file"), (req: Request, res: Response) => {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "No file uploaded. Include a 'file' field in the form data." });
+      return;
+    }
+
+    const mimeType = file.mimetype;
+    if (!validateMimeType(mimeType)) {
+      res.status(415).json({
+        error: `Unsupported file type "${mimeType}". Accepted types: image/jpeg, image/png, image/gif, image/webp, application/pdf, text/plain, text/html, text/csv, and Office document formats.`,
+      });
+      return;
+    }
+
+    if (!validateFileSize(file.size)) {
+      res.status(413).json({ error: "File exceeds the 50 MiB size limit." });
+      return;
+    }
+
+    const provider =
+      ((req.body as Record<string, unknown>)["provider"] as string | undefined) ?? "openai";
+    const model = ((req.body as Record<string, unknown>)["model"] as string | undefined) ?? "";
+    const base64Content = file.buffer.toString("base64");
+
+    // Validate that the provider supports this file type before storing.
+    try {
+      buildFileContentBlock(
+        provider,
+        model,
+        { filename: file.originalname, mimeType },
+        base64Content,
+      );
+    } catch {
+      res.status(422).json({
+        error: `Provider "${provider}" does not support file type "${mimeType}". Image providers only accept image/* MIME types.`,
+      });
+      return;
+    }
+
+    const fileRef = storeFileRef({
+      filename: file.originalname,
+      mimeType,
+      sizeBytes: file.size,
+      base64Content,
+      provider,
+      ...(model ? { model } : {}),
+    });
+
+    getLogger().info(
+      { fileRef, filename: file.originalname, mimeType, sizeBytes: file.size, provider },
+      "POST /upload: file stored",
+    );
+
+    res.status(201).json({ fileRef });
+  });
+
+  // --- GET /files/:uuid ---
+  // Serves the raw binary of a stored uploaded file by its UUID token.
+  // This endpoint is required by providers such as Luma AI that validate
+  // keyframe URLs server-side and reject base64 data: URIs.
+  // Expose this server publicly (e.g. via ngrok) and set the
+  // PROXY_PUBLIC_BASE_URL environment variable so generated URLs are reachable.
+  router.get("/files/:uuid", (req, res) => {
+    const entry = lookupFileRef(req.params["uuid"] ?? "");
+    if (!entry) {
+      res.status(404).json({ error: "File not found or expired" });
+      return;
+    }
+    const buffer = Buffer.from(entry.base64Content, "base64");
+    res.setHeader("Content-Type", entry.mimeType);
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buffer);
+  });
 
   // --- POST /text ---
   // Non-streaming returns JSON; streaming (`stream: true`) returns plain text chunks
@@ -385,16 +573,25 @@ export function createRouter(opts: ServeOptions): Router {
       if (!body) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
       const overrides = buildOverrides(body, opts);
+      const effectiveProvider =
+        (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
+      const fileBlock = resolveFileBlock(body.fileRef, effectiveProvider, body.model ?? "");
+      const messages = fileBlock
+        ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, fileBlock] }]
+        : undefined;
       try {
         const client = await getAiClient("serve-text", overrides as never);
         if (body.stream) {
           res.setHeader("Content-Type", "text/plain; charset=utf-8");
-          for await (const chunk of client.streamText(prompt)) {
+          for await (const chunk of client.streamText(
+            prompt,
+            messages ? { messages } : undefined,
+          )) {
             res.write(chunk);
           }
           res.end();
         } else {
-          const result = await client.generateText(prompt);
+          const result = await client.generateText(prompt, messages ? { messages } : undefined);
           res.json(result);
         }
       } catch (err) {
@@ -443,12 +640,30 @@ export function createRouter(opts: ServeOptions): Router {
       if (!body) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
       const overrides = buildOverrides(body, opts);
+      const effectiveProvider =
+        (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
+      // Prefer the fileRefs array (multi-image); fall back to the singular fileRef for
+      // backward compatibility with clients that send only a single reference.
+      const activeFileRefs = (body as { fileRefs?: string[] }).fileRefs?.length
+        ? (body as { fileRefs: string[] }).fileRefs
+        : body.fileRef
+          ? [body.fileRef]
+          : [];
+      const fileBlocks = resolveFileBlocks(
+        activeFileRefs.length ? activeFileRefs : undefined,
+        effectiveProvider,
+        body.model ?? "",
+      );
+      const messages = fileBlocks.length
+        ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, ...fileBlocks] }]
+        : undefined;
       const callOpts = {
         ...(body.aspectRatio !== undefined ? { aspectRatio: body.aspectRatio } : {}),
         ...(body.width !== undefined ? { width: body.width } : {}),
         ...(body.height !== undefined ? { height: body.height } : {}),
         ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
         ...(body.quality !== undefined ? { quality: body.quality } : {}),
+        ...(messages ? { messages } : {}),
       };
       try {
         const client = await getAiClient("serve-image", overrides as never);
@@ -506,6 +721,56 @@ export function createRouter(opts: ServeOptions): Router {
       if (!body) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
       const overrides = buildOverrides(body, opts);
+      const effectiveProvider =
+        (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
+
+      // Normalise to an array: prefer fileRefs (multi-image), fall back to singular fileRef.
+      const activeFileRefs: string[] = (body as { fileRefs?: string[] }).fileRefs?.length
+        ? (body as { fileRefs: string[] }).fileRefs
+        : body.fileRef
+          ? [body.fileRef]
+          : [];
+
+      // Luma AI rejects base64 data: URIs for keyframe images; it requires
+      // publicly accessible HTTPS URLs.  Build one public URL per fileRef from
+      // PROXY_PUBLIC_BASE_URL pointing to GET /files/:uuid.  Other providers
+      // receive standard resolved content blocks (base64 data URIs).
+      let lumaImageUrls: string[] = [];
+      let fileBlock: Record<string, unknown> | undefined;
+
+      if (activeFileRefs.length && effectiveProvider === "lumaai") {
+        const baseUrl = (process.env["PROXY_PUBLIC_BASE_URL"] ?? "").replace(/\/+$/, "");
+        if (!baseUrl) {
+          res.status(422).json({
+            error:
+              "Luma AI requires a publicly accessible image URL for image-to-video. " +
+              "Set the PROXY_PUBLIC_BASE_URL environment variable to this server's public-facing " +
+              "address (e.g. https://abc123.ngrok.io) so Luma's servers can fetch the uploaded image.",
+          });
+          return;
+        }
+        lumaImageUrls = activeFileRefs
+          .filter((ref) => lookupFileRef(ref) !== undefined)
+          .map((ref) => `${baseUrl}/files/${ref}`);
+        getLogger().info(
+          { fileRefs: activeFileRefs, lumaImageUrls },
+          "POST /video: using public URLs for Luma AI keyframes",
+        );
+      } else if (activeFileRefs.length) {
+        // Non-Luma providers: resolve the first file ref to a content block.
+        // Additional refs are included in the messages content array below.
+        fileBlock = resolveFileBlock(activeFileRefs[0], effectiveProvider, body.model ?? "");
+      }
+
+      // Build messages content for non-Luma providers.
+      const allFileBlocks =
+        activeFileRefs.length && effectiveProvider !== "lumaai"
+          ? resolveFileBlocks(activeFileRefs, effectiveProvider, body.model ?? "")
+          : [];
+      const messages = allFileBlocks.length
+        ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, ...allFileBlocks] }]
+        : undefined;
+
       const callOpts = {
         ...(body.aspectRatio !== undefined ? { aspectRatio: body.aspectRatio } : {}),
         ...(body.width !== undefined ? { width: body.width } : {}),
@@ -514,6 +779,13 @@ export function createRouter(opts: ServeOptions): Router {
         ...(body.duration !== undefined ? { duration: body.duration } : {}),
         ...(body.fps !== undefined ? { fps: body.fps } : {}),
         ...(body.quality !== undefined ? { quality: body.quality } : {}),
+        // For Luma AI: pass public image URLs as the images array so the provider
+        // maps frame0 / frame1 correctly (supports up to 2 keyframes).
+        ...(lumaImageUrls.length ? { images: lumaImageUrls } : {}),
+        // For non-Luma providers: pass fileContentBlock (single ref, legacy compat)
+        // and the full messages array for multimodal input.
+        ...(fileBlock && !lumaImageUrls.length ? { fileContentBlock: fileBlock } : {}),
+        ...(messages ? { messages } : {}),
       };
       try {
         const client = await getAiClient("serve-video", overrides as never);
@@ -570,12 +842,70 @@ export function createRouter(opts: ServeOptions): Router {
         const itemOverrides = buildOverrides({ ...body, ...item }, opts);
         const prompt = resolvePrompt(item.prompt, item.template, item.vars);
 
+        // Resolve a per-item fileRef (falls back to the body-level fileRef when
+        // the item does not supply its own).
+        const itemFileRef = item.fileRef ?? body.fileRef;
+        const itemProvider =
+          (itemOverrides as { provider?: string }).provider ??
+          opts.configOverrides?.provider ??
+          "openai";
+        const itemFileBlock = resolveFileBlock(itemFileRef, itemProvider, item.model ?? "");
+        const itemMessages = itemFileBlock
+          ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, itemFileBlock] }]
+          : undefined;
+
+        // Smart I2V routing: resolve best provider for item.images before creating client.
+        // item.images takes precedence over fileRef when both are present (design D4).
+        let effectiveOverrides: ReturnType<typeof buildOverrides> = itemOverrides;
+        let routingDecision: ReturnType<typeof selectI2VProvider> | undefined;
+        const routingMeta: {
+          providerUsed?: string;
+          warning?: string;
+          info?: string;
+          alternativeProviders?: string[];
+        } = {};
+
+        if (item.modality === "video" && item.images && item.images.length > 0) {
+          const liveVideoProviders = opts.mock
+            ? PROVIDER_META.filter((p) =>
+                (p.modalities as readonly string[]).includes("video"),
+              ).map((p) => p.id)
+            : PROVIDER_META.filter(
+                (p) =>
+                  (p.modalities as readonly string[]).includes("video") &&
+                  Boolean(process.env[p.envKey]),
+              ).map((p) => p.id);
+
+          routingDecision = selectI2VProvider(itemProvider, item.images.length, liveVideoProviders);
+
+          if (routingDecision.provider !== itemProvider) {
+            effectiveOverrides = {
+              ...itemOverrides,
+              provider: routingDecision.provider,
+            } as ReturnType<typeof buildOverrides>;
+          }
+
+          // Only populate routingMeta when routing actually changed (D6: absent ≠ null).
+          if (
+            routingDecision.provider !== itemProvider ||
+            routingDecision.truncated ||
+            routingDecision.warning
+          ) {
+            routingMeta.providerUsed = routingDecision.provider;
+            if (routingDecision.warning) routingMeta.warning = routingDecision.warning;
+            if (routingDecision.alternativeProviders?.length) {
+              routingMeta.alternativeProviders = routingDecision.alternativeProviders;
+            }
+          }
+        }
+
         try {
-          const client = await getAiClient("serve-batch", itemOverrides as never);
+          const client = await getAiClient("serve-batch", effectiveOverrides as never);
           let result: unknown;
 
           if (item.modality === "video") {
-            const batchVideoOpts = {
+            const hasImages = Boolean(item.images && item.images.length > 0);
+            const batchVideoOpts: Record<string, unknown> = {
               ...(item.aspectRatio !== undefined ? { aspectRatio: item.aspectRatio } : {}),
               ...(item.width !== undefined ? { width: item.width } : {}),
               ...(item.height !== undefined ? { height: item.height } : {}),
@@ -583,21 +913,51 @@ export function createRouter(opts: ServeOptions): Router {
               ...(item.duration !== undefined ? { duration: item.duration } : {}),
               ...(item.fps !== undefined ? { fps: item.fps } : {}),
               ...(item.quality !== undefined ? { quality: item.quality } : {}),
+              // item.images takes precedence over fileRef when both are present.
+              ...(itemFileBlock && !hasImages ? { fileContentBlock: itemFileBlock } : {}),
+              ...(itemMessages && !hasImages ? { messages: itemMessages } : {}),
             };
+
+            if (hasImages && routingDecision) {
+              const effectiveImages = item.images!.slice(0, routingDecision.effectiveImageCount);
+              // Build multimodal message: one image_url block per image, then a text block.
+              const imageBlocks = effectiveImages.map((url: string) => ({
+                type: "image_url",
+                image_url: { url },
+              }));
+              batchVideoOpts["messages"] = [
+                { role: "user", content: [...imageBlocks, { type: "text", text: prompt }] },
+              ];
+              batchVideoOpts["images"] = effectiveImages;
+              // frame1Url carries the second keyframe URL for two-image providers (e.g. Luma).
+              if (effectiveImages.length === 2) {
+                batchVideoOpts["frame1Url"] = effectiveImages[1];
+              }
+            }
+
             result = await client.generateVideo(
               prompt,
-              Object.keys(batchVideoOpts).length ? batchVideoOpts : undefined,
+              Object.keys(batchVideoOpts).length
+                ? (batchVideoOpts as ProviderCallOptions)
+                : undefined,
             );
           } else if (item.modality === "image") {
-            result = await client.generateImage(prompt);
+            result = await client.generateImage(
+              prompt,
+              itemMessages ? { messages: itemMessages } : undefined,
+            );
           } else if (item.modality === "structured") {
             const { z: zod } = await import("zod");
             const schema = zod.record(zod.unknown());
             result = await client.generateStructured(prompt, schema);
           } else {
-            result = await client.generateText(prompt);
+            result = await client.generateText(
+              prompt,
+              itemMessages ? { messages: itemMessages } : undefined,
+            );
           }
 
+          // Spread routingMeta last so its fields appear only when routing changed (D6).
           res.write(
             JSON.stringify({
               index: i,
@@ -606,6 +966,7 @@ export function createRouter(opts: ServeOptions): Router {
               prompt,
               status: "ok",
               result,
+              ...routingMeta,
             }) + "\n",
           );
         } catch (err) {

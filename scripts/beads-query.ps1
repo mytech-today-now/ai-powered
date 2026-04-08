@@ -95,14 +95,18 @@ function Get-StatusColor([string]$status) {
     return $color
 }
 
-function Format-IssueLine([object]$issue) {
-    $sc       = Get-StatusColor $issue.status
-    $priority = if ($issue.priority)   { "P$($issue.priority)" } else { "P?" }
-    $type     = if ($issue.issue_type) { "[$($issue.issue_type)]" } else { "[task]" }
-    Write-Host "$($issue.id)"    -ForegroundColor White   -NoNewline
-    Write-Host " $type "         -ForegroundColor DarkGray -NoNewline
-    Write-Host "$priority "      -ForegroundColor Magenta  -NoNewline
-    Write-Host "[$($issue.status)]" -ForegroundColor $sc  -NoNewline
+function Format-IssueLine([object]$issue, [bool]$isBlocked = $false) {
+    $sc         = Get-StatusColor $issue.status
+    $priority   = if ($issue.priority)   { "P$($issue.priority)" } else { "P?" }
+    $type       = if ($issue.issue_type) { "[$($issue.issue_type)]" } else { "[task]" }
+    $blockedTag = if ($isBlocked) { " [blocked]" } else { "" }
+    Write-Host "$($issue.id)"         -ForegroundColor White    -NoNewline
+    Write-Host " $type "              -ForegroundColor DarkGray  -NoNewline
+    Write-Host "$priority "           -ForegroundColor Magenta   -NoNewline
+    Write-Host "[$($issue.status)]"   -ForegroundColor $sc       -NoNewline
+    if ($isBlocked) {
+        Write-Host $blockedTag        -ForegroundColor DarkYellow -NoNewline
+    }
     Write-Host " - $($issue.title)"
 }
 
@@ -157,27 +161,46 @@ function Invoke-Ready {
     $map     = Get-Issues
     $priSort = { if ($_.priority) { [int]$_.priority } else { 99 } }
 
-    # Only strictly-open tasks; in-progress are already claimed and not actionable here.
-    $openOnly  = @($map.Values | Where-Object { $_.status -eq "open" })
-    $unblocked = @($openOnly   | Where-Object { -not (Test-IssueBlocked $_ $map) } | Sort-Object $priSort)
-    $blocked   = @($openOnly   | Where-Object {       Test-IssueBlocked $_ $map  })
+    # Include open AND in-progress so callers see the full picture.
+    $openOnly  = @($map.Values | Where-Object { $_.status -eq "open" -or $_.status -eq "in-progress" })
+    $unblocked = @($openOnly | Where-Object { -not (Test-IssueBlocked $_ $map) } | Sort-Object $priSort)
+    $blocked   = @($openOnly | Where-Object {       Test-IssueBlocked $_ $map  } | Sort-Object $priSort)
 
-    # Apply optional limit to the unblocked list only.
-    $issues = if ($Limit -gt 0) { @($unblocked | Select-Object -First $Limit) } else { $unblocked }
+    # Combined: unblocked first (highest priority), then blocked (highest priority).
+    # --limit 0 (default) = no cap; --limit N > 0 caps the combined total.
+    $combined = @($unblocked) + @($blocked)
+    $display  = if ($Limit -gt 0) { @($combined | Select-Object -First $Limit) } else { $combined }
 
-    if ($Json) { ConvertTo-Json -InputObject @($issues) -Depth 10 -Compress | Write-Output; return }
+    if ($Json) { ConvertTo-Json -InputObject @($display) -Depth 10 -Compress | Write-Output; return }
 
     Write-Host ""
-    Write-Host "=== Ready: Open & Unblocked (highest priority first) ===" -ForegroundColor Cyan
+    Write-Host "=== Open Beads: unblocked first, then blocked (highest priority first) ===" -ForegroundColor Cyan
     Write-Host ""
-    if ($issues.Count -eq 0) {
-        Write-Host "(no open unblocked issues)" -ForegroundColor Gray
+
+    if ($display.Count -eq 0) {
+        Write-Host "(no open issues)" -ForegroundColor Gray
     } else {
-        $issues | ForEach-Object { Format-IssueLine $_ }
+        # Build a lookup of blocked IDs for O(1) checks.
+        $blockedIds = @{}
+        $blocked | ForEach-Object { $blockedIds[$_.id] = $true }
+
+        $inUnblockedSection = $true
+        foreach ($issue in $display) {
+            $isBlocked = $blockedIds.Contains($issue.id)
+            # Print section separator on first blocked item.
+            if ($isBlocked -and $inUnblockedSection) {
+                $inUnblockedSection = $false
+                Write-Host ""
+                Write-Host "--- Blocked ---" -ForegroundColor DarkYellow
+                Write-Host ""
+            }
+            Format-IssueLine $issue $isBlocked
+        }
     }
+
     Write-Host ""
-    $limitNote = if ($Limit -gt 0 -and $unblocked.Count -gt $Limit) { " (showing $Limit of $($unblocked.Count))" } else { "" }
-    Write-Host "$($issues.Count) unblocked$limitNote | $($blocked.Count) blocked | $($openOnly.Count) open total" -ForegroundColor Gray
+    $limitNote = if ($Limit -gt 0 -and $combined.Count -gt $Limit) { " (showing $Limit of $($combined.Count))" } else { "" }
+    Write-Host "$($unblocked.Count) unblocked | $($blocked.Count) blocked | $($openOnly.Count) open total$limitNote" -ForegroundColor Gray
     Write-Host ""
 }
 
@@ -317,7 +340,7 @@ function Show-Usage {
     Write-Host "Commands:" -ForegroundColor Yellow
     Write-Host "  list    [--status <s>] [--limit <n>] [--json]"
     Write-Host "  show    <id>  [--json]"
-    Write-Host "  ready   [--limit <n>] [--json]"
+    Write-Host "  ready   [--limit <n>] [--json]   # unblocked first, then blocked; --limit 0 = all"
     Write-Host "  search  <query> [--json]"
     Write-Host "  create  <title> [-Description <d>] [-Priority <p>] [-Type <t>] [--json]"
     Write-Host "  update  <id> [--status <s>] [--claim] [-Priority <p>] [--json]"

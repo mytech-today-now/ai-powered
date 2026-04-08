@@ -89,10 +89,45 @@ export default defineConfig(({ command }) => {
     // Dev server: serve integrations/web-example/ with full HMR.
     // `ai-powered/web` is aliased directly to the TypeScript source so edits
     // to the library are reflected immediately without a separate build step.
+
+    // When the -Ngrok flag is used in cycle-service.ps1, ngrok tunnels to this
+    // Vite dev-server port.  The proxy block below forwards every known API path
+    // to the local proxy server so a single public URL serves both the web UI
+    // and all API endpoints — no paid multi-tunnel plan required.
+    const proxyTarget = "http://localhost:3001";
+    const apiPaths = [
+      "/health",
+      "/config",
+      "/models",
+      "/pricing",
+      "/providers",
+      "/text",
+      "/stream",
+      "/image",
+      "/audio",
+      "/video",
+      "/structured",
+      "/batch",
+      "/upload", // multipart file upload for reference images (mobile camera photos)
+      "/files", // serves uploaded file blobs; required for Luma AI keyframe URLs
+      "/v1",
+      "/images",
+      "/.well-known",
+    ];
+    const serverProxy = Object.fromEntries(
+      apiPaths.map((p) => [p, { target: proxyTarget, changeOrigin: true }]),
+    );
+
     return {
       root: resolve(__dirname, "integrations/web-example"),
       define: sharedDefine,
       resolve: { alias: webAlias },
+      server: {
+        proxy: serverProxy,
+        // Allow external hostnames so the dev server can be reached through
+        // an ngrok tunnel.  This only applies to `vite serve` (dev mode).
+        allowedHosts: ["contorted-jarrod-supersecure.ngrok-free.dev"],
+      },
       plugins: [
         {
           // The HTML loads `../../dist-web/ai-powered.umd.js` which the
@@ -118,6 +153,24 @@ export default defineConfig(({ command }) => {
                 .on("error", () => next())
                 .pipe(res as never);
             });
+          },
+        },
+        {
+          // When VITE_PROXY_URL is set (e.g. via -Ngrok in cycle-service.ps1),
+          // inject a small inline script that sets window.__AI_PROXY_URL__ so
+          // app.js can pre-fill the proxy URL input for remote visitors.
+          name: "ai-powered:inject-proxy-url",
+          transformIndexHtml() {
+            const proxyUrl = process.env["VITE_PROXY_URL"];
+            if (!proxyUrl) return [];
+            return [
+              {
+                tag: "script",
+                attrs: { type: "text/javascript" },
+                children: `window.__AI_PROXY_URL__=${JSON.stringify(proxyUrl)};`,
+                injectTo: "head-prepend",
+              },
+            ];
           },
         },
       ],

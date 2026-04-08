@@ -32,11 +32,13 @@ import type { AiConfig, Modality } from "../core.js";
 import type {
   TextResult,
   ImageResult,
+  VideoResult,
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
+  InputModality,
 } from "../types.js";
-import { ProviderError } from "../types.js";
+import { ProviderError, ProviderCapabilityError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
 import { BaseProvider } from "./base.js";
 import type { ProviderCallOptions } from "./base.js";
@@ -54,13 +56,33 @@ const MAX_TOKENS_DEFAULT = 4096;
 const VENICE_STATIC_MODELS: ModelDescriptor[] = [
   { id: "llama-3.3-70b", name: "Llama 3.3 70B", capabilities: ["text", "structured"] },
   { id: "mistral-31-24b", name: "Mistral 3.1 24B", capabilities: ["text", "structured"] },
-  { id: "qwen-2.5-vl", name: "Qwen 2.5 VL", capabilities: ["text", "structured"] },
+  // Qwen 2.5 VL is a vision-language model that accepts image input for text/structured tasks.
+  // inputCapabilities annotated here so the static fallback list surfaces it when the
+  // /models endpoint is unavailable and the UI requests &accepts=image (spec R-004, delta 6).
+  {
+    id: "qwen-2.5-vl",
+    name: "Qwen 2.5 VL",
+    capabilities: ["text", "structured"],
+    inputCapabilities: ["image"],
+  },
   { id: "venice-sd-3.5", name: "Venice SD 3.5", capabilities: ["image"] },
   { id: "fluently-xl", name: "Fluently XL", capabilities: ["image"] },
+  {
+    id: "wan-2.5-preview-image-to-video",
+    name: "Wan 2.5 Image-to-Video",
+    capabilities: ["video"],
+    inputCapabilities: ["image"],
+  },
 ];
 
 const DEFAULT_TEXT_MODEL = "llama-3.3-70b";
 const DEFAULT_IMAGE_MODEL = "fluently-xl";
+const DEFAULT_VIDEO_MODEL = "wan-2.5-preview-image-to-video";
+
+/** Poll interval for Venice video queue (ms). */
+const VIDEO_POLL_INTERVAL_MS = 3_000;
+/** Maximum total wait time for Venice video generation (ms). */
+const VIDEO_POLL_TIMEOUT_MS = 5 * 60 * 1_000; // 5 minutes
 
 // ---------------------------------------------------------------------------
 // VeniceProvider
@@ -111,7 +133,14 @@ export class VeniceProvider extends BaseProvider {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    if (options?.fileContentBlock) {
+      messages.push({
+        role: "user",
+        content: [{ type: "text", text: prompt }, options.fileContentBlock],
+      } as unknown as OpenAI.Chat.ChatCompletionMessageParam);
+    } else {
+      messages.push({ role: "user", content: prompt });
+    }
 
     try {
       const response = await this._client!.chat.completions.create({
@@ -152,7 +181,14 @@ export class VeniceProvider extends BaseProvider {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    if (options?.fileContentBlock) {
+      messages.push({
+        role: "user",
+        content: [{ type: "text", text: prompt }, options.fileContentBlock],
+      } as unknown as OpenAI.Chat.ChatCompletionMessageParam);
+    } else {
+      messages.push({ role: "user", content: prompt });
+    }
 
     try {
       const stream = await this._client!.chat.completions.create({
@@ -274,6 +310,192 @@ export class VeniceProvider extends BaseProvider {
   }
 
   // -------------------------------------------------------------------------
+  // Video generation — async queue (bd-9bsw)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Generate a video from a single reference image using Venice's async queue API.
+   *
+   * Venice's WAN model accepts exactly one seed frame (`init_image`).  If more
+   * than one image is supplied in `options.images`, a ProviderCapabilityError is
+   * thrown (design deviation D2).
+   *
+   * Flow: POST /video/queue → poll GET /video/{jobId} → GET /video/complete/{jobId}
+   * → fetch video bytes → return base64 data URI.
+   *
+   * @param imageUrl  Public URL of the seed frame.
+   * @param prompt    Text prompt guiding the generated motion.
+   * @param options   Call options; set options.signal to cancel in-flight polling.
+   * @throws ProviderCapabilityError when more than one image is supplied.
+   * @throws ProviderError on API or network failures.
+   */
+  async generateVideoFromImage(
+    imageUrl: string,
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<VideoResult> {
+    this._requireKey();
+
+    // Venice WAN model supports exactly one seed frame (deviation D2).
+    // No assertCapability("video") here — venice does not expose video through
+    // the standard generateVideo interface (text-to-video unsupported).
+    if ((options?.images?.length ?? 0) > 1) {
+      throw new ProviderCapabilityError("venice", "video");
+    }
+
+    const model = this.config.model ?? DEFAULT_VIDEO_MODEL;
+    const start = Date.now();
+    const logger = getLogger();
+    const signal = options?.signal;
+
+    logger.info({ model, event: "video_queue_submit" }, "VeniceProvider: submitting I2V job");
+
+    // Step 1 — submit the job to the video queue.
+    const queueResp = await this._venicePost(
+      "/video/queue",
+      { model, init_image: imageUrl, prompt },
+      signal,
+    );
+    const jobId = (queueResp as { jobId?: string }).jobId;
+    if (!jobId) {
+      throw new ProviderError("venice", "Video queue response missing jobId", undefined, false);
+    }
+
+    logger.info({ jobId, event: "video_queue_accepted" }, "VeniceProvider: I2V job queued");
+
+    // Step 2 — poll until the job is complete.
+    await this._pollVideoJob(jobId, signal);
+
+    // Step 3 — retrieve the completed video URL.
+    const completeResp = await this._venicePost(`/video/complete/${jobId}`, {}, signal);
+    const videoUrl = (completeResp as { videoUrl?: string }).videoUrl;
+    if (!videoUrl) {
+      throw new ProviderError(
+        "venice",
+        "Video complete response missing videoUrl",
+        undefined,
+        false,
+      );
+    }
+
+    // Step 4 — fetch video bytes and convert to base64 data URI.
+    const videoResp = await fetch(videoUrl, { ...(signal !== undefined ? { signal } : {}) });
+    if (!videoResp.ok) {
+      throw new ProviderError(
+        "venice",
+        `Video download HTTP ${videoResp.status}`,
+        videoResp.status,
+        true,
+      );
+    }
+    const bytes = await videoResp.arrayBuffer();
+    const b64 = Buffer.from(bytes).toString("base64");
+    const latencyMs = Date.now() - start;
+
+    logger.info(
+      { jobId, latencyMs, event: "video_complete" },
+      "VeniceProvider: I2V generation complete",
+    );
+
+    const zeroUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    return {
+      modality: "video",
+      provider: "venice",
+      model,
+      data: `data:video/mp4;base64,${b64}`,
+      mimeType: "video/mp4",
+      usage: zeroUsage,
+      cost: calculateCost(model, zeroUsage),
+      latencyMs,
+    };
+  }
+
+  /**
+   * POST to a Venice API endpoint (non-OpenAI-compatible paths).
+   * @internal
+   */
+  private async _venicePost(
+    path: string,
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    let resp: Response;
+    try {
+      resp = await fetch(`${VENICE_BASE_URL}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this._apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        ...(signal !== undefined ? { signal } : {}),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new ProviderError("venice", `Venice POST ${path} failed: ${msg}`, undefined, true);
+    }
+    if (!resp.ok) {
+      const retryable = resp.status === 429 || resp.status >= 500;
+      throw new ProviderError(
+        "venice",
+        `Venice POST ${path} HTTP ${resp.status}`,
+        resp.status,
+        retryable,
+      );
+    }
+    return resp.json();
+  }
+
+  /**
+   * Poll the Venice video job status until it is complete or the timeout elapses.
+   * @internal
+   */
+  private async _pollVideoJob(jobId: string, signal?: AbortSignal): Promise<void> {
+    const deadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
+    const logger = getLogger();
+
+    while (Date.now() < deadline) {
+      if (signal?.aborted) {
+        throw new ProviderError("venice", "Video generation aborted", undefined, false);
+      }
+
+      await new Promise<void>((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
+
+      let resp: Response;
+      try {
+        resp = await fetch(`${VENICE_BASE_URL}/video/${jobId}`, {
+          headers: { Authorization: `Bearer ${this._apiKey}` },
+          ...(signal !== undefined ? { signal } : {}),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new ProviderError("venice", `Video poll failed: ${msg}`, undefined, true);
+      }
+
+      if (!resp.ok) {
+        const retryable = resp.status === 429 || resp.status >= 500;
+        throw new ProviderError("venice", `Video poll HTTP ${resp.status}`, resp.status, retryable);
+      }
+
+      const status = (await resp.json()) as { status?: string };
+      logger.debug({ jobId, status: status.status }, "VeniceProvider: poll tick");
+
+      if (status.status === "complete" || status.status === "completed") return;
+      if (status.status === "failed" || status.status === "error") {
+        throw new ProviderError("venice", `Venice video job ${jobId} failed`, undefined, false);
+      }
+      // Any other status (queued, processing, etc.) — keep polling.
+    }
+
+    throw new ProviderError(
+      "venice",
+      `Venice video job ${jobId} timed out after 5 minutes`,
+      undefined,
+      true,
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Structured output (JSON mode + Zod)
   // -------------------------------------------------------------------------
 
@@ -329,11 +551,14 @@ export class VeniceProvider extends BaseProvider {
   // listModels — dynamic discovery via GET /models with capability filtering
   // -------------------------------------------------------------------------
 
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
     // No API key — skip the live fetch and use the built-in static list so that
     // the proxy /models endpoint can still populate the UI even without a key.
     if (!this._apiKey) {
-      return this._filteredStatic(modality);
+      return this._filteredStatic(modality, accepts);
     }
     try {
       // Venice uses ?type=image to return only image-capable models.
@@ -343,7 +568,7 @@ export class VeniceProvider extends BaseProvider {
       const resp = await fetch(`${VENICE_BASE_URL}/models${typeParam}`, {
         headers: { Authorization: `Bearer ${this._apiKey}` },
       });
-      if (!resp.ok) return this._filteredStatic(modality);
+      if (!resp.ok) return this._filteredStatic(modality, accepts);
 
       // Venice /models returns an OpenAI-compatible list with a `type` field:
       //   "text" | "image" | "code" | "embedding" …
@@ -365,15 +590,26 @@ export class VeniceProvider extends BaseProvider {
         return { id: m.id, name: m.id, capabilities: caps };
       });
 
-      return modality ? descriptors.filter((d) => d.capabilities.includes(modality)) : descriptors;
+      let filtered = modality
+        ? descriptors.filter((d) => d.capabilities.includes(modality))
+        : descriptors;
+      if (accepts)
+        filtered = filtered.filter((d) => d.inputCapabilities?.includes(accepts) ?? false);
+      return filtered;
     } catch {
-      return this._filteredStatic(modality);
+      return this._filteredStatic(modality, accepts);
     }
   }
 
-  private _filteredStatic(modality?: Modality): ModelDescriptor[] {
-    if (!modality) return VENICE_STATIC_MODELS;
-    return VENICE_STATIC_MODELS.filter((m) => m.capabilities.includes(modality));
+  static override imageCapabilities(): import("./base.js").ImageCapability[] {
+    return [{ modality: "video", maxImages: 1, fieldName: "init_image" }];
+  }
+
+  private _filteredStatic(modality?: Modality, accepts?: InputModality): ModelDescriptor[] {
+    let models = VENICE_STATIC_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
   }
 
   // -------------------------------------------------------------------------

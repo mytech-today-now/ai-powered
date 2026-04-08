@@ -35,11 +35,16 @@ async function proxyStream(
       body: JSON.stringify(body),
     });
   } catch (err) {
-    throw new Error("Network error: " + (err as Error).message);
+    throw new Error("Network error: " + (err as Error).message, { cause: err });
   }
   if (!resp.ok) {
     let msg = "Server error " + resp.status;
-    try { const j = await resp.json() as { error?: string }; msg = j.error ?? msg; } catch (_) {}
+    try {
+      const j = (await resp.json()) as { error?: string };
+      msg = j.error ?? msg;
+    } catch {
+      /* ignore */
+    }
     throw new Error(msg);
   }
   return resp;
@@ -48,22 +53,34 @@ async function proxyStream(
 // ── Factories ─────────────────────────────────────────────────────────────────
 
 function okResponse(extra: Partial<Response> = {}): Response {
-  return { ok: true, status: 200, body: { getReader: () => ({}) }, ...extra } as unknown as Response;
+  return {
+    ok: true,
+    status: 200,
+    body: { getReader: () => ({}) },
+    ...extra,
+  } as unknown as Response;
 }
 
-function errorResponse(status: number, jsonBody: { error?: string; message?: string } | null = null): Response {
+function errorResponse(
+  status: number,
+  jsonBody: { error?: string; message?: string } | null = null,
+): Response {
   return {
     ok: false,
     status,
     statusText: "Error",
     json: jsonBody
       ? async () => jsonBody
-      : async () => { throw new Error("not json"); },
+      : async () => {
+          throw new Error("not json");
+        },
   } as unknown as Response;
 }
 
 function networkError(message: string): () => Promise<never> {
-  return async () => { throw new Error(message); };
+  return async () => {
+    throw new Error(message);
+  };
 }
 
 // ── proxy-stream-helper ───────────────────────────────────────────────────────
@@ -71,37 +88,59 @@ function networkError(message: string): () => Promise<never> {
 describe("proxy-stream-helper", () => {
   it("uses the default proxy URL when input is empty", async () => {
     let capturedUrl = "";
-    const mockFetch = async (url: string) => { capturedUrl = url; return okResponse(); };
+    const mockFetch = async (url: string) => {
+      capturedUrl = url;
+      return okResponse();
+    };
     await proxyStream("", "/text", {}, mockFetch as never);
     expect(capturedUrl).toBe("http://localhost:3001/text");
   });
 
   it("uses the default proxy URL when input is whitespace only", async () => {
     let capturedUrl = "";
-    const mockFetch = async (url: string) => { capturedUrl = url; return okResponse(); };
+    const mockFetch = async (url: string) => {
+      capturedUrl = url;
+      return okResponse();
+    };
     await proxyStream("   ", "/text", {}, mockFetch as never);
     expect(capturedUrl).toBe("http://localhost:3001/text");
   });
 
   it("uses the user-configured proxy URL when input is set", async () => {
     let capturedUrl = "";
-    const mockFetch = async (url: string) => { capturedUrl = url; return okResponse(); };
+    const mockFetch = async (url: string) => {
+      capturedUrl = url;
+      return okResponse();
+    };
     await proxyStream("http://192.168.1.10:3001", "/text", {}, mockFetch as never);
     expect(capturedUrl).toBe("http://192.168.1.10:3001/text");
   });
 
   it("sends POST with Content-Type application/json", async () => {
     let capturedInit: RequestInit | null = null;
-    const mockFetch = async (_url: string, init: RequestInit) => { capturedInit = init; return okResponse(); };
+    const mockFetch = async (_url: string, init: RequestInit) => {
+      capturedInit = init;
+      return okResponse();
+    };
     await proxyStream("http://localhost:3001", "/text", { prompt: "hi" }, mockFetch as never);
     expect((capturedInit as RequestInit).method).toBe("POST");
-    expect(((capturedInit as RequestInit).headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(((capturedInit as RequestInit).headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json",
+    );
   });
 
   it("serialises body as JSON", async () => {
     let capturedBody: string | null = null;
-    const mockFetch = async (_url: string, init: RequestInit) => { capturedBody = init.body as string; return okResponse(); };
-    await proxyStream("http://localhost:3001", "/text", { prompt: "hello", stream: true }, mockFetch as never);
+    const mockFetch = async (_url: string, init: RequestInit) => {
+      capturedBody = init.body as string;
+      return okResponse();
+    };
+    await proxyStream(
+      "http://localhost:3001",
+      "/text",
+      { prompt: "hello", stream: true },
+      mockFetch as never,
+    );
     expect(capturedBody).toBe(JSON.stringify({ prompt: "hello", stream: true }));
   });
 
@@ -115,39 +154,45 @@ describe("proxy-stream-helper", () => {
 
   it("wraps network errors with 'Network error: ' prefix", async () => {
     const mockFetch = networkError("ECONNREFUSED");
-    await expect(proxyStream("http://localhost:3001", "/text", {}, mockFetch as never))
-      .rejects.toThrow("Network error: ECONNREFUSED");
+    await expect(
+      proxyStream("http://localhost:3001", "/text", {}, mockFetch as never),
+    ).rejects.toThrow("Network error: ECONNREFUSED");
   });
 
   // bd-jpc2: 402 must surface j.error, not statusText
   it("surfaces j.error from a 402 JSON body", async () => {
-    const mockFetch = async () => errorResponse(402, { error: "Budget exceeded: $5.00 spent of $10.00" });
-    await expect(proxyStream("http://localhost:3001", "/text", {}, mockFetch as never))
-      .rejects.toThrow("Budget exceeded: $5.00 spent of $10.00");
+    const mockFetch = async () =>
+      errorResponse(402, { error: "Budget exceeded: $5.00 spent of $10.00" });
+    await expect(
+      proxyStream("http://localhost:3001", "/text", {}, mockFetch as never),
+    ).rejects.toThrow("Budget exceeded: $5.00 spent of $10.00");
   });
 
   it("uses 'Server error <status>' when the error body is not JSON", async () => {
     const mockFetch = async () => errorResponse(500);
-    await expect(proxyStream("http://localhost:3001", "/text", {}, mockFetch as never))
-      .rejects.toThrow("Server error 500");
+    await expect(
+      proxyStream("http://localhost:3001", "/text", {}, mockFetch as never),
+    ).rejects.toThrow("Server error 500");
   });
 
   it("uses 'Server error <status>' when the JSON body has no error field", async () => {
     const mockFetch = async () => errorResponse(503, { message: "unavailable" });
-    await expect(proxyStream("http://localhost:3001", "/text", {}, mockFetch as never))
-      .rejects.toThrow("Server error 503");
+    await expect(
+      proxyStream("http://localhost:3001", "/text", {}, mockFetch as never),
+    ).rejects.toThrow("Server error 503");
   });
 
   it("does NOT throw a page-relative URL (URL must start with http)", async () => {
     let capturedUrl = "";
-    const mockFetch = async (url: string) => { capturedUrl = url; return okResponse(); };
+    const mockFetch = async (url: string) => {
+      capturedUrl = url;
+      return okResponse();
+    };
     await proxyStream("http://localhost:3001", "/text", {}, mockFetch as never);
     expect(capturedUrl.startsWith("http")).toBe(true);
     expect(capturedUrl.startsWith("/text")).toBe(false);
   });
 });
-
-
 
 // ── handle-text-stream-refactor ───────────────────────────────────────────────
 
@@ -158,7 +203,12 @@ describe("handle-text-stream-refactor", () => {
       errorResponse(402, { error: "Budget exceeded: $5.00 spent of $10.00" });
     let thrownMessage = "";
     try {
-      await proxyStream("http://localhost:3001", "/text", { prompt: "hi", stream: true }, mockFetch as never);
+      await proxyStream(
+        "http://localhost:3001",
+        "/text",
+        { prompt: "hi", stream: true },
+        mockFetch as never,
+      );
     } catch (err) {
       thrownMessage = (err as Error).message;
     }
@@ -180,7 +230,10 @@ describe("handle-text-stream-refactor", () => {
     const mockFetch = async () => fakeResp;
 
     const resp = await proxyStream(
-      "http://localhost:3001", "/text", { prompt: "hi", stream: true }, mockFetch as never,
+      "http://localhost:3001",
+      "/text",
+      { prompt: "hi", stream: true },
+      mockFetch as never,
     );
     const reader = (resp.body as unknown as { getReader: () => typeof fakeReader }).getReader();
     const dec = new TextDecoder();
@@ -221,15 +274,17 @@ async function proxyPost(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-  } catch (_) {
-    throw new Error("Cannot reach proxy server at " + base);
+  } catch (cause) {
+    throw new Error("Cannot reach proxy server at " + base, { cause });
   }
   if (!resp.ok) {
-    let msg = resp.statusText ?? ("Server error " + resp.status);
+    let msg = resp.statusText ?? "Server error " + resp.status;
     try {
-      const j = await resp.json() as { error?: string };
+      const j = (await resp.json()) as { error?: string };
       msg = j.error || msg;
-    } catch (_) {}
+    } catch {
+      /* ignore */
+    }
     throw new Error("Server error " + resp.status + ": " + msg);
   }
   return resp.json();
@@ -244,9 +299,14 @@ describe("audio-video-unaffected", () => {
         status: 200,
         statusText: "OK",
         json: async () => fakeAudio,
-      } as unknown as Response);
+      }) as unknown as Response;
 
-    const result = await proxyPost("http://localhost:3001", "/audio/speak", { text: "Hello" }, mockFetch as never);
+    const result = await proxyPost(
+      "http://localhost:3001",
+      "/audio/speak",
+      { text: "Hello" },
+      mockFetch as never,
+    );
     // proxyPost returns parsed JSON — audio consumer reads result.audio
     expect(result).toEqual(fakeAudio);
     expect((result as typeof fakeAudio).audio).toBe("base64data==");
@@ -260,9 +320,14 @@ describe("audio-video-unaffected", () => {
         status: 200,
         statusText: "OK",
         json: async () => fakeAudio,
-      } as unknown as Response);
+      }) as unknown as Response;
 
-    const result = await proxyPost("http://localhost:3001", "/audio/speak", { text: "Hello" }, mockFetch as never);
+    const result = await proxyPost(
+      "http://localhost:3001",
+      "/audio/speak",
+      { text: "Hello" },
+      mockFetch as never,
+    );
     // The result is a plain object (parsed JSON), not a Response with .body
     expect(typeof (result as Record<string, unknown>)["body"]).not.toBe("object");
   });
@@ -275,7 +340,7 @@ describe("audio-video-unaffected", () => {
         status: 200,
         statusText: "OK",
         json: async () => fakeVideo,
-      } as unknown as Response);
+      }) as unknown as Response;
 
     const result = await proxyPost(
       "http://localhost:3001",
@@ -295,9 +360,14 @@ describe("audio-video-unaffected", () => {
         status: 200,
         statusText: "OK",
         json: async () => fakeVideo,
-      } as unknown as Response);
+      }) as unknown as Response;
 
-    const result = await proxyPost("http://localhost:3001", "/video", { prompt: "Sunset" }, mockFetch as never);
+    const result = await proxyPost(
+      "http://localhost:3001",
+      "/video",
+      { prompt: "Sunset" },
+      mockFetch as never,
+    );
     // proxyPost returns parsed JSON — no streaming body
     expect(typeof (result as Record<string, unknown>)["body"]).not.toBe("object");
   });
@@ -309,12 +379,14 @@ describe("audio-video-unaffected", () => {
         status: 402,
         statusText: "Payment Required",
         json: async () => ({ error: "Budget exceeded: $5.00 spent of $10.00" }),
-      } as unknown as Response);
+      }) as unknown as Response;
 
-    await expect(proxyPost("http://localhost:3001", "/audio/speak", { text: "Hi" }, mockFetch as never))
-      .rejects.toThrow("Server error 402");
+    await expect(
+      proxyPost("http://localhost:3001", "/audio/speak", { text: "Hi" }, mockFetch as never),
+    ).rejects.toThrow("Server error 402");
 
-    await expect(proxyPost("http://localhost:3001", "/video", { prompt: "Hi" }, mockFetch as never))
-      .rejects.toThrow("Server error 402");
+    await expect(
+      proxyPost("http://localhost:3001", "/video", { prompt: "Hi" }, mockFetch as never),
+    ).rejects.toThrow("Server error 402");
   });
 });

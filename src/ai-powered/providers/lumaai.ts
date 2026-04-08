@@ -20,7 +20,7 @@
 
 import LumaAI from "lumaai";
 import type { AiConfig, Modality } from "../core.js";
-import type { VideoResult, ModelDescriptor } from "../types.js";
+import type { VideoResult, ModelDescriptor, InputModality } from "../types.js";
 import { ProviderError } from "../types.js";
 import { maskApiKey, getLogger, calculateCost } from "../utils.js";
 import { LimitsValidator } from "../limits-validator.js";
@@ -57,6 +57,7 @@ const LUMAAI_MODELS: ModelDescriptor[] = [
     durationRange: { min: 1, max: 9 },
     fpsOptions: [24],
     qualityOptions: ["standard", "high"],
+    inputCapabilities: ["image"],
   },
   {
     id: "ray-2-720p",
@@ -67,6 +68,7 @@ const LUMAAI_MODELS: ModelDescriptor[] = [
     durationRange: { min: 1, max: 9 },
     fpsOptions: [24],
     qualityOptions: ["standard"],
+    inputCapabilities: ["image"],
   },
   {
     id: "ray-flash-2",
@@ -77,6 +79,7 @@ const LUMAAI_MODELS: ModelDescriptor[] = [
     durationRange: { min: 1, max: 9 },
     fpsOptions: [24],
     qualityOptions: ["draft", "standard"],
+    inputCapabilities: ["image"],
   },
   {
     id: "ray-flash-2-720p",
@@ -87,8 +90,30 @@ const LUMAAI_MODELS: ModelDescriptor[] = [
     durationRange: { min: 1, max: 9 },
     fpsOptions: [24],
     qualityOptions: ["draft"],
+    inputCapabilities: ["image"],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Luma-specific call options (design D3 — intersection type at call sites only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extends ProviderCallOptions with the Luma-specific `frame1Url` field.
+ *
+ * This intersection type is intentionally scoped to lumaai.ts and MUST NOT
+ * be added to the shared ProviderCallOptions interface (design decision D3).
+ * Call sites that need to supply a direct keyframe URL cast their options to
+ * this type:  options as LumaCallOptions
+ */
+type LumaCallOptions = ProviderCallOptions & {
+  /**
+   * Direct public URL to use as the starting keyframe (`keyframes.frame0`)
+   * for image-to-video generation, bypassing the `fileContentBlock` mechanism.
+   * Takes precedence over a URL extracted from `fileContentBlock.image_ref`.
+   */
+  frame1Url?: string;
+};
 
 // ---------------------------------------------------------------------------
 // LumaAIProvider
@@ -152,13 +177,36 @@ export class LumaAIProvider extends BaseProvider {
     // Runtime-validated: LimitsValidator.validateVideo ensures aspectRatio is in the supported set.
     // Cast required: SDK union type lags behind API (omits ray-2-720p, ray-flash-2-720p variants).
     type LumaAspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | "21:9" | "9:21";
+
+    // Resolve the starting keyframe URL for image-to-video generation.
+    // Priority 1 (D3): caller may supply frame1Url via the LumaCallOptions intersection type.
+    // Priority 2: extract from fileContentBlock.image_ref (legacy POST /upload path).
+    // buildFileContentBlock() for "lumaai" returns:
+    //   { image_ref: [{ url: "data:<mime>;base64,…", weight: 1.0 }] }
+    // The image_ref field is a style reference; keyframes.frame0 is the
+    // correct Luma API parameter for anchoring the video to a starting frame.
+    const lumaOpts = options as LumaCallOptions | undefined;
+    const imageRefArr = (
+      options?.fileContentBlock as { image_ref?: Array<{ url: string }> } | undefined
+    )?.image_ref;
+    const startFrameUrl = lumaOpts?.frame1Url ?? imageRefArr?.[0]?.url;
+
+    // When images are provided via options, delegate to generateVideoFromImage() so that
+    // two-keyframe logic (frame0 + frame1) is applied consistently (bd-blgo / REQ-SD-05).
+    if (options?.images?.length) {
+      return this.generateVideoFromImage(options.images[0]!, prompt, lumaOpts);
+    }
+
     const gen = await this._submit(
       {
         model: model as LumaAI.GenerationCreateParams["model"],
         prompt,
         aspect_ratio: aspectRatio as LumaAspectRatio,
         ...(durationParam !== undefined ? { duration: durationParam } : {}),
-      },
+        ...(startFrameUrl !== undefined
+          ? { keyframes: { frame0: { type: "image", url: startFrameUrl } } }
+          : {}),
+      } as unknown as LumaAI.GenerationCreateParams,
       options?.signal,
     );
     const completed = await this._poll(gen.id!, options?.signal);
@@ -166,8 +214,16 @@ export class LumaAIProvider extends BaseProvider {
     const latencyMs = Date.now() - start;
 
     getLogger().info(
-      { provider: "lumaai", model, generationId: completed.id, latencyMs },
-      "LumaAIProvider: video generation complete",
+      {
+        provider: "lumaai",
+        model,
+        generationId: completed.id,
+        latencyMs,
+        imageToVideo: !!startFrameUrl,
+      },
+      startFrameUrl
+        ? "LumaAIProvider: image-to-video generation complete"
+        : "LumaAIProvider: video generation complete",
     );
 
     return {
@@ -196,7 +252,7 @@ export class LumaAIProvider extends BaseProvider {
   async generateVideoFromImage(
     imageUrl: string,
     prompt?: string,
-    options?: ProviderCallOptions,
+    options?: LumaCallOptions,
   ): Promise<VideoResult> {
     this.assertCapability("video");
     const model = this._resolveModel();
@@ -214,6 +270,22 @@ export class LumaAIProvider extends BaseProvider {
     // Map numeric duration (seconds) to Luma's string format (e.g. 5 → "5s").
     const durationParam = durationSecs !== undefined ? `${durationSecs}s` : undefined;
 
+    // Two-keyframe support (bd-blgo / REQ-SD-05).
+    // Priority: explicit frame1Url option, then second element of options.images[].
+    const secondUrl = options?.frame1Url ?? options?.images?.[1];
+    if ((options?.images?.length ?? 0) > 2) {
+      getLogger().warn(
+        { received: options!.images!.length, kept: 2, event: "images_truncated" },
+        "LumaAIProvider: more than 2 images supplied; only frame0 and frame1 will be used",
+      );
+    }
+
+    // Build keyframes: always frame0; frame1 only when a second URL is present.
+    const keyframes: Record<string, unknown> = {
+      frame0: { type: "image", url: imageUrl },
+    };
+    if (secondUrl) keyframes["frame1"] = { type: "image", url: secondUrl };
+
     // Runtime-validated: LimitsValidator.validateVideo ensures aspectRatio is in the supported set.
     // Cast required: SDK union type lags behind API (omits ray-2-720p, ray-flash-2-720p variants).
     type LumaAspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | "21:9" | "9:21";
@@ -223,8 +295,8 @@ export class LumaAIProvider extends BaseProvider {
         ...(prompt !== undefined ? { prompt } : {}),
         aspect_ratio: aspectRatio as LumaAspectRatio,
         ...(durationParam !== undefined ? { duration: durationParam } : {}),
-        keyframes: { frame0: { type: "image", url: imageUrl } },
-      },
+        keyframes,
+      } as unknown as LumaAI.GenerationCreateParams,
       options?.signal,
     );
     const completed = await this._poll(gen.id!, options?.signal);
@@ -232,7 +304,13 @@ export class LumaAIProvider extends BaseProvider {
     const latencyMs = Date.now() - start;
 
     getLogger().info(
-      { provider: "lumaai", model, generationId: completed.id, latencyMs },
+      {
+        provider: "lumaai",
+        model,
+        generationId: completed.id,
+        latencyMs,
+        twoKeyframe: !!secondUrl,
+      },
       "LumaAIProvider: image-to-video generation complete",
     );
 
@@ -252,9 +330,18 @@ export class LumaAIProvider extends BaseProvider {
    * Returns static model descriptors for all Luma AI video models,
    * optionally filtered to those supporting the requested modality.
    */
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
-    if (!modality) return LUMAAI_MODELS;
-    return LUMAAI_MODELS.filter((m) => m.capabilities.includes(modality));
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    let models = LUMAAI_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
+  }
+
+  static override imageCapabilities(): import("./base.js").ImageCapability[] {
+    return [{ modality: "video", maxImages: 2, fieldName: "keyframes" }];
   }
 
   // ---------------------------------------------------------------------------

@@ -134,18 +134,13 @@ export const LimitsValidator = {
     const cfg = _getModel(provider, model);
     if (!cfg) return { width, height }; // unknown model — pass through unchanged
 
-    // Snap to the nearest supported resolution before limit checks so that
-    // providers with a fixed resolution list always receive a valid pair.
-    const snapped = _nearestResolution(cfg, width, height);
-    if (snapped) {
-      width = snapped.width;
-      height = snapped.height;
-    }
-
     const maxW = cfg.maxWidth ?? Infinity;
     const maxH = cfg.maxHeight ?? Infinity;
     const maxPx = cfg.maxPixels ?? Infinity;
 
+    // Check per-side limits on the ORIGINAL (user-supplied) dimensions before
+    // snapping.  This ensures requests that exceed maxWidth/maxHeight are
+    // rejected even if they would snap to an in-range resolution.
     if (width > maxW || height > maxH) {
       const nearest = _nearestResolution(cfg, width, height);
       const hint = nearest ? ` nearest valid: ${nearest.width}×${nearest.height}` : "";
@@ -157,6 +152,15 @@ export const LimitsValidator = {
       );
     }
 
+    // Snap to the nearest supported resolution (for providers with a fixed
+    // resolution list such as Venice or DALL-E 3).
+    const snapped = _nearestResolution(cfg, width, height);
+    if (snapped) {
+      width = snapped.width;
+      height = snapped.height;
+    }
+
+    // Check total pixel count on the snapped dimensions.
     const pixels = width * height;
     if (pixels > maxPx) {
       const nearest = _nearestResolution(cfg, width, height);

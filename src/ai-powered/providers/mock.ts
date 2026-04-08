@@ -23,6 +23,7 @@ import type {
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
+  InputModality,
 } from "../types.js";
 import { calculateCost } from "../utils.js";
 import { BaseProvider } from "./base.js";
@@ -278,14 +279,45 @@ export class MockProvider extends BaseProvider {
     };
   }
 
-  override async listModels(_modality?: Modality): Promise<ModelDescriptor[]> {
-    return [
-      { id: "mock-text-v1", name: "Mock Text v1", capabilities: ["text", "structured"] },
-      { id: "mock-image-v1", name: "Mock Image v1", capabilities: ["image"] },
-      { id: "mock-whisper-v1", name: "Mock Whisper v1", capabilities: ["audio"] },
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    const ALL_MOCK_MODELS: ModelDescriptor[] = [
+      {
+        id: "mock-text-v1",
+        name: "Mock Text v1",
+        capabilities: ["text", "structured"],
+        inputCapabilities: ["image"],
+      },
+      {
+        id: "mock-image-v1",
+        name: "Mock Image v1",
+        capabilities: ["image"],
+        inputCapabilities: ["image"],
+      },
+      {
+        id: "mock-whisper-v1",
+        name: "Mock Whisper v1",
+        capabilities: ["audio"],
+        inputCapabilities: ["audio"],
+      },
       { id: "mock-tts-v1", name: "Mock TTS v1", capabilities: ["audio"] },
-      { id: "mock-video-v1", name: "Mock Video v1", capabilities: ["video"] },
+      {
+        id: "mock-video-v1",
+        name: "Mock Video v1",
+        capabilities: ["video"],
+        inputCapabilities: ["image", "video"],
+      },
       { id: "mock-structured-v1", name: "Mock Structured v1", capabilities: ["structured"] },
     ];
+    let models = ALL_MOCK_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
+  }
+
+  static override imageCapabilities(): import("./base.js").ImageCapability[] {
+    return [{ modality: "video", maxImages: 999, fieldName: "mock" }];
   }
 }

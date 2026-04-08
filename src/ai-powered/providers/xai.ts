@@ -33,6 +33,7 @@ import type {
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
+  InputModality,
 } from "../types.js";
 import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
@@ -96,6 +97,7 @@ const GROK_MODELS: ModelDescriptor[] = [
     name: "Grok Vision Beta",
     capabilities: ["text", "structured"],
     contextWindow: 8192,
+    inputCapabilities: ["image"],
   },
   { id: "aurora", name: "Aurora", capabilities: ["image"], contextWindow: 0 },
   { id: "grok-2-image", name: "Grok 2 Image", capabilities: ["image"], contextWindow: 0 },
@@ -107,6 +109,7 @@ const GROK_MODELS: ModelDescriptor[] = [
     aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
     resolutions: ["480p", "720p"],
     durationRange: { min: 1, max: 15, default: 8 },
+    inputCapabilities: ["image"],
   },
 ];
 
@@ -119,6 +122,29 @@ const DEFAULT_IMAGE_MODEL = "aurora";
 
 /** Zero token usage (video is billed per-clip, not per-token). */
 const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as const;
+
+/**
+ * Scan a multimodal messages array for the first `image_url` content block
+ * whose `url` is a data URI and return the full data URI string.
+ *
+ * xAI's video generation API accepts a base64 data URI directly in the
+ * `image.url` field, so we return the URI as-is rather than decoding it.
+ *
+ * Returns `null` when no suitable image block is found.
+ */
+function extractImageDataUri(messages: ProviderCallOptions["messages"] | undefined): string | null {
+  if (!messages) return null;
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue;
+    for (const block of msg.content as Array<Record<string, unknown>>) {
+      if (block["type"] !== "image_url") continue;
+      const imgUrl = block["image_url"] as { url?: string } | undefined;
+      const url = imgUrl?.url ?? "";
+      if (/^data:[^;]+;base64,/.test(url)) return url;
+    }
+  }
+  return null;
+}
 
 export class GrokProvider extends BaseProvider {
   readonly name = "xai" as const;
@@ -147,7 +173,14 @@ export class GrokProvider extends BaseProvider {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    if (options?.fileContentBlock) {
+      messages.push({
+        role: "user",
+        content: [{ type: "text", text: prompt }, options.fileContentBlock],
+      } as unknown as OpenAI.Chat.ChatCompletionMessageParam);
+    } else {
+      messages.push({ role: "user", content: prompt });
+    }
 
     try {
       const response = await this._client.chat.completions.create({
@@ -187,7 +220,14 @@ export class GrokProvider extends BaseProvider {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
+    if (options?.fileContentBlock) {
+      messages.push({
+        role: "user",
+        content: [{ type: "text", text: prompt }, options.fileContentBlock],
+      } as unknown as OpenAI.Chat.ChatCompletionMessageParam);
+    } else {
+      messages.push({ role: "user", content: prompt });
+    }
 
     try {
       const stream = await this._client.chat.completions.create({
@@ -351,8 +391,17 @@ export class GrokProvider extends BaseProvider {
 
     logger.info(`[xai] generateVideo model=${model} prompt="${prompt.slice(0, 80)}…"`);
 
+    // Extract a reference image from the multimodal messages, if any.
+    // When present the xAI API performs image-to-video (I2V) generation using
+    // the `image.url` field; without it, the model defaults to text-to-video.
+    const imageDataUri = extractImageDataUri(opts?.["messages"] as ProviderCallOptions["messages"]);
+    if (imageDataUri) {
+      logger.info("[xai] generateVideo: reference image detected — using image-to-video mode");
+    }
+
     // Step 1 — submit the generation job
     const body: Record<string, unknown> = { model, prompt };
+    if (imageDataUri) body["image"] = { url: imageDataUri };
     if (duration !== undefined) body["duration"] = duration;
     if (aspectRatio !== undefined) body["aspect_ratio"] = aspectRatio;
     if (resolution !== undefined) body["resolution"] = resolution;
@@ -459,9 +508,18 @@ export class GrokProvider extends BaseProvider {
   // listModels
   // -------------------------------------------------------------------------
 
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
-    if (!modality) return GROK_MODELS;
-    return GROK_MODELS.filter((m) => m.capabilities.includes(modality));
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    let models = GROK_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
+  }
+
+  static override imageCapabilities(): import("./base.js").ImageCapability[] {
+    return [{ modality: "video", maxImages: 1, fieldName: "image_url" }];
   }
 
   // -------------------------------------------------------------------------
@@ -477,3 +535,6 @@ export class GrokProvider extends BaseProvider {
     return new ProviderError("xai", msg);
   }
 }
+
+/** Alias for consumers that prefer the `XAIProvider` name. */
+export { GrokProvider as XAIProvider };

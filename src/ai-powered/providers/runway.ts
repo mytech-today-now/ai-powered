@@ -26,7 +26,7 @@
 
 import RunwayML from "@runwayml/sdk";
 import type { AiConfig, Modality } from "../core.js";
-import type { VideoResult, ModelDescriptor } from "../types.js";
+import type { VideoResult, ModelDescriptor, InputModality } from "../types.js";
 import { ProviderError } from "../types.js";
 import { maskApiKey, getLogger, calculateCost } from "../utils.js";
 import { LimitsValidator } from "../limits-validator.js";
@@ -182,9 +182,14 @@ export class RunwayProvider extends BaseProvider {
     };
   }
 
-  override async listModels(modality?: Modality): Promise<ModelDescriptor[]> {
-    if (!modality) return RUNWAY_MODELS;
-    return RUNWAY_MODELS.filter((m) => m.capabilities.includes(modality));
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    let models = RUNWAY_MODELS;
+    if (modality) models = models.filter((m) => m.capabilities.includes(modality));
+    if (accepts) models = models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false);
+    return models;
   }
 
   // ---------------------------------------------------------------------------
