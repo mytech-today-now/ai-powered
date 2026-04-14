@@ -472,7 +472,7 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
       openAiError(
         res,
         400,
-        "No audio file provided. Send the audio as a 'file' field in a multipart/form-data request.",
+        "No audio or video file provided. Send the file as a 'file' field in a multipart/form-data request.",
         "invalid_request_error",
       );
       return;
@@ -509,7 +509,9 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
 
     try {
       const client = await getAiClient("compat-transcribe", overrides as never);
-      const result = await client.transcribeAudio(buffer);
+      const result = await client.transcribeAudio(buffer, {
+        mimeType: req.file.mimetype,
+      });
 
       if (responseFormat === "text") {
         res.setHeader("Content-Type", "text/plain; charset=utf-8");

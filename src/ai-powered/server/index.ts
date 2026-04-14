@@ -135,6 +135,24 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     }),
   );
 
+  // 1a. COOP / COEP — required for SharedArrayBuffer to be available in the
+  //     browser.  These must be set on every response from this server so that
+  //     the web demo page runs in a cross-origin isolated context, which is a
+  //     prerequisite for ffmpeg.wasm's multi-threaded mode (batch combined video).
+  //
+  //     Cross-Origin-Opener-Policy: same-origin
+  //       Prevents the page from sharing a browsing context group with
+  //       cross-origin popups, isolating it from side-channel attacks.
+  //
+  //     Cross-Origin-Embedder-Policy: require-corp
+  //       Ensures every cross-origin sub-resource the page embeds declares
+  //       CORP / CORS permission, which completes the isolation requirement.
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+    next();
+  });
+
   // 2. CORS
   app.use(cors({ origin: corsOriginOption }));
 

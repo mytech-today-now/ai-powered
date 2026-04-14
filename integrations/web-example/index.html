@@ -173,6 +173,10 @@
             placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
           <span class="char-counter" id="text-prompt-counter"></span>
         </div>
+        <div class="tab-settings-bar">
+          <label class="tab-provider-label" for="text-provider-select">Provider</label>
+          <select id="text-provider-select" class="provider-select"></select>
+        </div>
         <div class="model-row">
           <label for="text-model-select">Model:</label>
           <select id="text-model-select"><option value="">Default</option></select>
@@ -198,6 +202,10 @@
           <textarea id="image-prompt" rows="2"
             placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
           <span class="char-counter" id="image-prompt-counter"></span>
+        </div>
+        <div class="tab-settings-bar">
+          <label class="tab-provider-label" for="image-provider-select">Provider</label>
+          <select id="image-provider-select" class="provider-select"></select>
         </div>
         <div class="model-row">
           <label for="image-model-select">Model:</label>
@@ -264,6 +272,10 @@
 
       <!-- ── AUDIO TAB ─────────────────────────────────────────────── -->
       <section class="tab-panel hidden" id="panel-audio" role="tabpanel">
+        <div class="tab-settings-bar">
+          <label class="tab-provider-label" for="audio-provider-select">Provider</label>
+          <select id="audio-provider-select" class="provider-select"></select>
+        </div>
         <!-- TTS sub-section -->
         <div class="audio-section">
           <h2 class="subsection-title">Text → Speech</h2>
@@ -288,8 +300,10 @@
         <div class="audio-section">
           <h2 class="subsection-title">Audio → Text (Transcription)</h2>
           <div class="input-group file-input-group">
-            <label for="audio-file-input" class="file-label">Choose audio file</label>
-            <input id="audio-file-input" type="file" accept="audio/*" class="file-input" />
+            <label for="audio-file-input" class="file-label">Choose audio or video file</label>
+            <input id="audio-file-input" type="file"
+              accept="audio/*,video/mp4,video/x-matroska,video/quicktime,video/x-msvideo,video/webm"
+              class="file-input" />
             <span id="audio-filename" class="filename-display">No file selected</span>
           </div>
           <div class="model-row">
@@ -424,10 +438,18 @@
               <div class="results-actions">
                 <button id="btn-download-results" class="btn-ghost btn-sm">⬇ Download HTML</button>
                 <button id="btn-download-zip" class="btn-ghost btn-sm">⬇ Download ZIP</button>
+                <button id="btn-download-combined" class="btn-ghost btn-sm" hidden>⬇ Combined Video</button>
               </div>
             </div>
             <span id="zip-status" aria-live="polite"></span>
             <div id="batch-shots" class="batch-shots"></div>
+            <div id="combined-video-section" class="combined-video-section" hidden>
+              <div class="combined-video-header">
+                <span class="section-label">Combined Video</span>
+                <span id="combined-video-status" class="combined-video-status" aria-live="polite"></span>
+              </div>
+              <video id="combined-video-player" class="combined-video-player" controls></video>
+            </div>
           </div>
 
         </div><!-- /.video-sub-panel[data-vtab="batch"] -->
@@ -520,6 +542,10 @@
             placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
           <span class="char-counter" id="structured-prompt-counter"></span>
         </div>
+        <div class="tab-settings-bar">
+          <label class="tab-provider-label" for="structured-provider-select">Provider</label>
+          <select id="structured-provider-select" class="provider-select"></select>
+        </div>
         <div class="model-row">
           <label for="structured-model-select">Model:</label>
           <select id="structured-model-select"><option value="">Default</option></select>
@@ -559,6 +585,17 @@
     <script src="../../dist-web/jszip.min.js"></script>
     <script src="../../dist-web/ai-powered.umd.js"></script>
     <script src="app.js"></script>
+    <!--
+      ffmpeg.wasm CDN imports — pinned semver to prevent silent upstream breakage.
+      Not bundled: ffmpeg.wasm + core is ~25 MB; consistent with jszip CDN pattern.
+      Sets window._FFmpeg and window._toBlobURL for use by stitchVideos() in app.js.
+    -->
+    <script type="module">
+      import { FFmpeg }     from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
+      import { toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js";
+      window._FFmpeg    = FFmpeg;
+      window._toBlobURL = toBlobURL;
+    </script>
   </body>
 </html>
 

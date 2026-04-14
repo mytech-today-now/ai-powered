@@ -170,6 +170,7 @@ const ImageBodySchema = ClientOverrideSchema.merge(TemplateSchema)
 
 const TranscribeBodySchema = ClientOverrideSchema.extend({
   audioBase64: z.string().min(1, "audioBase64 must not be empty"),
+  mimeType: z.string().optional(),
 });
 
 const OPENAI_TTS_MAX_CHARS = 4096;
@@ -688,7 +689,9 @@ export function createRouter(opts: ServeOptions): Router {
       const overrides = buildOverrides(body, opts);
       try {
         const client = await getAiClient("serve-transcribe", overrides as never);
-        const result = await client.transcribeAudio(buffer);
+        const result = await client.transcribeAudio(buffer, {
+          ...(body.mimeType ? { mimeType: body.mimeType } : {}),
+        });
         res.json(result);
       } catch (err) {
         if (!mapError(err, res)) next(err);

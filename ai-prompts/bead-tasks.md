@@ -1,17 +1,15 @@
-bd-w7gz	Story: History Panel copy/save/search toolbars + exchange numbers	P1
-bd-qfap	T-001: Add buildFullTranscriptText(entry)	P1
-bd-wd6i	T-002: Add buildTitleSlug(title)	P1
-bd-ew3i	T-003: Precompute fullText + titleSlug in buildHistoryRow	P1
-bd-ref6	T-004: Attach whole-transcript toolbar to transcript div	P1
-bd-vogv	T-005: Replace flat forEach with paired for loop	P1
-bd-ikcq	T-006: Run App-014 Vitest spec (23 tests)	P2
-bd-gwwl	T-007: Run full test suite (zero regressions)	P2
-bd-ojej	T-008: Run example script (30 assertions)	P2
-bd-npxl	T-009: Manual smoke — exchange numbers	P2
-bd-s1df	T-010: Manual smoke — per-reply copy/save/search	P2
-bd-fuij	T-011: Manual smoke — transcript-level copy/save/search	P2
-bd-rirx	T-012: Manual smoke — odd message count	P2
-bd-kbrp	T-013: Manual smoke — live-chat toolbars unaffected	P2
-bd-0xi8	T-014: Code review — all 14 ACs met	P2
-bd-e6sn	T-015: Update summary.md	P3
-bd-65sk	T-016: Open PR	P3
+bd-05f1	EPIC	Consolidated Provider + Model Selector per Modality
+bd-vhnc	TASK-01	Add per-tab provider select elements to index.html
+bd-1zio	TASK-02	Add CSS for .tab-settings-bar and .tab-provider-label
+bd-d267	TASK-03	Add tabState Map and per-tab DOM references
+bd-ko53	TASK-04	Implement persistSelection helper
+bd-vq6i	TASK-05	Implement restoreSelection helper
+bd-qrje	TASK-06	Implement autoSelectCheapest helper
+bd-gf9j	TASK-07	Implement loadTabModels(modality)
+bd-9nzr	TASK-08	Replace loadAllModels() call sites
+bd-hi5l	TASK-09	Wire per-tab provider change listeners
+bd-0jp8	TASK-10	Wire per-tab model change listeners
+bd-j32x	TASK-11	Implement initTabSelections() restore loop
+bd-k2m6	TASK-12	Update 6 API call sites to read from tabState
+bd-6n0p	TASK-13	Populate all 5 provider selects on startup
+bd-8vg9	TASK-14	Tests, build, lint, and smoke verification

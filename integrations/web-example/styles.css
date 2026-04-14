@@ -723,6 +723,22 @@ textarea:focus {
 }
 .video-settings-bar select { min-width: 180px; }
 
+/* ── Tab settings bar (per-modality provider picker) ─── */
+.tab-settings-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem .6rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-provider-label {
+  font-size: .75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ── Video sub-tab bar ────────────────────────────────── */
 .video-tabs {
   display: flex;
@@ -950,6 +966,35 @@ mark.reply-search-highlight {
   color: #713f12;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* ── Combined video section ───────────────────────────── */
+.combined-video-section {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.combined-video-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .45rem .75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.combined-video-status {
+  font-size: .75rem;
+  color: var(--muted);
+}
+
+.combined-video-player {
+  width: 100%;
+  max-height: 420px;
+  display: block;
+  background: #000;
 }
 
 @media (prefers-color-scheme: dark) {

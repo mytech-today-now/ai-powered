@@ -111,6 +111,8 @@ export interface ProviderCallOptions {
    * not support image input ignore this field.
    */
   images?: string[];
+  /** Original MIME type of the media buffer (e.g. "video/mp4", "audio/mpeg"). */
+  mimeType?: string;
 }
 
 // ---------------------------------------------------------------------------

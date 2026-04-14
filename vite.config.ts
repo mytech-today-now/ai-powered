@@ -123,6 +123,15 @@ export default defineConfig(({ command }) => {
       define: sharedDefine,
       resolve: { alias: webAlias },
       server: {
+        // Cross-origin isolation headers required by ffmpeg.wasm (SharedArrayBuffer).
+        // See: https://ffmpegwasm.netlify.app/#installation (Vite section).
+        // COOP prevents the document from sharing a browsing context group with
+        // cross-origin popups; COEP blocks cross-origin resources that don't opt in
+        // via CORP or CORS — together they unlock SharedArrayBuffer in the browser.
+        headers: {
+          "Cross-Origin-Opener-Policy": "same-origin",
+          "Cross-Origin-Embedder-Policy": "require-corp",
+        },
         proxy: serverProxy,
         // Allow external hostnames so the dev server can be reached through
         // an ngrok tunnel.  This only applies to `vite serve` (dev mode).
@@ -149,6 +158,15 @@ export default defineConfig(({ command }) => {
               const ext = extname(filePath);
               const mime = ext === ".map" ? "application/json" : "application/javascript";
               res.setHeader("Content-Type", mime);
+              // Repeat isolation headers explicitly: this middleware pipes directly
+              // to res via createReadStream, which can bypass Vite's global
+              // server.headers injection.  Without these, dist-web assets would be
+              // served without COOP/COEP, breaking SharedArrayBuffer for ffmpeg.wasm.
+              res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+              res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+              // CORP: same-origin tells the browser this resource is safe to embed
+              // inside a COEP: require-corp page (it's served from the same origin).
+              res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
               createReadStream(filePath)
                 .on("error", () => next())
                 .pipe(res as never);

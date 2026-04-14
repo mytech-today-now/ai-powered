@@ -106,6 +106,10 @@
   const btnDownloadResults = $("btn-download-results");
   const btnDownloadZip     = $("btn-download-zip");
   const zipStatusEl        = $("zip-status");
+  const btnDownloadCombined  = $("btn-download-combined");
+  const combinedVideoSection = $("combined-video-section");
+  const combinedVideoStatus  = $("combined-video-status");
+  const combinedVideoPlayer  = $("combined-video-player");
 
   // Batch constraint controls (default values applied to all shots)
   const batchAspectRatioEl = $("batch-aspect-ratio");
@@ -127,6 +131,40 @@
   const videoModelSelect      = $("video-model-select");
   const videoProviderSelect   = $("video-provider-select"); // video-tab-specific provider picker
   const structuredModelSelect = $("structured-model-select");
+
+  // Per-tab provider selects (added for fallback-model — one per modality tab)
+  const textProviderSelect       = $("text-provider-select");
+  const imageProviderSelect      = $("image-provider-select");
+  const audioProviderSelect      = $("audio-provider-select");
+  const structuredProviderSelect = $("structured-provider-select");
+
+  /**
+   * Unified lookup: modality → provider <select> element.
+   * Used by PROVIDER_SELECTS iteration in change-listener wiring and
+   * page-load restore (initTabSelections).
+   */
+  const PROVIDER_SELECTS = {
+    text:       textProviderSelect,
+    image:      imageProviderSelect,
+    audio:      audioProviderSelect,
+    video:      videoProviderSelect,
+    structured: structuredProviderSelect,
+  };
+
+  /**
+   * Unified lookup: modality → model <select> element.
+   * Audio modality maps to the transcription model select per spec
+   * (modality-provider-model/spec.md — the single authoritative model
+   * select for the audio tab's provider+model pair).  The TTS model
+   * select (ttsModelSelect) remains independently populated.
+   */
+  const MODEL_SELECTS = {
+    text:       textModelSelect,
+    image:      imageModelSelect,
+    audio:      transcribeModelSelect,
+    video:      videoModelSelect,
+    structured: structuredModelSelect,
+  };
 
   // Image size controls (added for img-cntrl)
   const imageRatioCategory  = $("image-ratio-category");
@@ -192,6 +230,82 @@
     video:      "video",
     structured: "structured",
   };
+
+  /**
+   * Per-tab provider + model state (fallback-model — Design D1).
+   * A single Map enables uniform iteration across all modalities without
+   * maintaining 10 individual module-level variables.
+   *
+   * Keys:   "text" | "image" | "audio" | "video" | "structured"
+   * Values: { provider: string, model: string }
+   *
+   * Fully populated by initTabSelections() before the first user interaction.
+   * All API call functions read from tabState.get(modality) exclusively.
+   */
+  const tabState = new Map();
+
+  /* ── localStorage persistence helpers (fallback-model) ─── */
+
+  /**
+   * Persist the resolved provider + model for a modality to localStorage.
+   *
+   * Both keys are written synchronously in the same call (REQ-LS-01 — no
+   * partial writes). Key schema:
+   *   ai-powered:provider:<modality>  →  provider id string
+   *   ai-powered:model:<modality>     →  model id string
+   *
+   * @param {string} modality  One of "text" | "image" | "audio" | "video" | "structured".
+   * @param {string} provider  Provider id (e.g. "openai").
+   * @param {string} model     Model id (e.g. "gpt-4o").
+   */
+  function persistSelection(modality, provider, model) {
+    localStorage.setItem(`ai-powered:provider:${modality}`, provider);
+    localStorage.setItem(`ai-powered:model:${modality}`,    model);
+  }
+
+  /**
+   * Restore a previously persisted provider + model pair for a modality.
+   *
+   * Returns `null` when either key is absent (first visit or cleared storage),
+   * allowing the caller to fall back to the default provider + cheapest model
+   * (REQ-LS-02, REQ-LS-05).
+   *
+   * @param {string} modality  One of "text" | "image" | "audio" | "video" | "structured".
+   * @returns {{ provider: string, model: string }|null}
+   */
+  function restoreSelection(modality) {
+    const provider = localStorage.getItem(`ai-powered:provider:${modality}`);
+    const model    = localStorage.getItem(`ai-powered:model:${modality}`);
+    if (!provider || !model) return null;
+    return { provider, model };
+  }
+
+  /**
+   * Return the id of the cheapest model in `modelList`, or `null` for an empty
+   * list (REQ-PM-03, Design D2).
+   *
+   * Sorts a shallow copy of the list ascending by `costPerUnit`.  Models with
+   * `null` or `undefined` `costPerUnit` are treated as `Infinity` so unknown-cost
+   * models sort last — avoiding accidental selection of expensive preview models.
+   * The sort is stable: models with identical cost retain their original order.
+   *
+   * Tests:
+   *   T-PM-04  correct sort order (lower costPerUnit wins)
+   *   T-PM-05  null costPerUnit sorts after any finite cost
+   *   T-PM-06  empty list returns null
+   *
+   * @param {Array<{id: string, costPerUnit?: number|null}>} modelList
+   * @returns {string|null}
+   */
+  function autoSelectCheapest(modelList) {
+    if (!modelList || modelList.length === 0) return null;
+    const sorted = [...modelList].sort((a, b) => {
+      const ca = (a.costPerUnit != null) ? a.costPerUnit : Infinity;
+      const cb = (b.costPerUnit != null) ? b.costPerUnit : Infinity;
+      return ca - cb;
+    });
+    return sorted[0].id;
+  }
 
   /** Returns the data-tab value of the currently active tab button. */
   function activeTab() {
@@ -1183,6 +1297,204 @@
     ]);
   }
 
+  /**
+   * Fetch models for a single modality from the proxy, repopulate that tab's
+   * model `<select>`, auto-select the cheapest option, and persist the choice.
+   *
+   * Design D5 — decomposed replacement for `loadAllModels()`:
+   *   - Reads the provider from `tabState.get(modality).provider`.
+   *   - Only touches `MODEL_SELECTS[modality]`; sibling tabs are never altered.
+   *   - Empty model list → single disabled placeholder "No compatible models"
+   *     (REQ-PM-02; see Example G in selector-examples.md).
+   *   - Calls `autoSelectCheapest` and writes the result into both `tabState`
+   *     and `localStorage` via `persistSelection` (REQ-PM-03, REQ-LS-01).
+   *   - Video special-case: updates `videoModelsCache` and calls
+   *     `syncVideoConstraints` so aspect-ratio / resolution / FPS / quality
+   *     dropdowns stay consistent with the newly selected model.
+   *
+   * @param {string} modality  "text" | "image" | "audio" | "video" | "structured"
+   */
+  async function loadTabModels(modality) {
+    if (modeSelect.value !== "proxy") return;
+
+    const base     = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const state    = tabState.get(modality) ?? {};
+    const provider = state.provider || "";
+    const modelSel = MODEL_SELECTS[modality];
+    if (!modelSel) return;
+
+    let modelList = [];
+    try {
+      let url = `${base}/models?modality=${modality}`;
+      if (provider) url += `&provider=${encodeURIComponent(provider)}`;
+      const data = await fetch(url).then((r) => r.json());
+      // Server returns a plain array; guard against wrapped { models: [] } shape.
+      modelList = Array.isArray(data) ? data : (data.models ?? []);
+    } catch (_) {
+      // Network error — modelList stays empty; placeholder rendered below.
+    }
+
+    // Video: update the descriptor cache before repopulating the select so that
+    // syncVideoConstraints can look up the newly selected model immediately.
+    if (modality === "video") {
+      videoModelsCache = modelList;
+    }
+
+    // Repopulate model <select> (REQ-PM-02 — compatible models only)
+    modelSel.innerHTML = "";
+    if (modelList.length === 0) {
+      const placeholder = document.createElement("option");
+      placeholder.value    = "";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.textContent = "No compatible models";
+      modelSel.appendChild(placeholder);
+    } else {
+      for (const m of modelList) {
+        const opt = document.createElement("option");
+        opt.value       = m.id;
+        opt.textContent = m.name || m.id;
+        modelSel.appendChild(opt);
+      }
+    }
+
+    // Auto-select cheapest model (REQ-PM-03)
+    const cheapest = autoSelectCheapest(modelList);
+    const model    = cheapest ?? "";
+    modelSel.value = model;
+
+    // Video: sync constraint dropdowns (aspect ratio, resolution, FPS, quality)
+    // to the newly selected model's capabilities.  Programmatic .value assignment
+    // does not fire a DOM change event, so we call syncVideoConstraints directly.
+    if (modality === "video") {
+      const descriptor = videoModelsCache.find((m) => m.id === model) ?? null;
+      syncVideoConstraints(descriptor);
+    }
+
+    // Persist updated state (REQ-LS-01 — atomic dual write)
+    tabState.set(modality, { provider, model });
+    persistSelection(modality, provider, model);
+  }
+
+  /**
+   * Page-load restore loop — runs once after `allProviders` is populated.
+   *
+   * For each modality tab (PHASE-3, TASK-11):
+   *   1. Populate the per-tab provider <select> with compatible options.
+   *   2. restoreSelection(m) — read saved pair from localStorage (REQ-LS-02).
+   *   3. Validate saved provider against allProviders (REQ-LS-03) — warn and
+   *      fall back to the first active compatible provider (or "openai") when
+   *      the saved provider is no longer in the registry.
+   *   4. Fetch compatible models via GET /models?modality=m&provider=p.
+   *   5. Validate saved model against the fetched list (REQ-LS-04) — warn and
+   *      autoSelectCheapest when the saved model is absent (stale-model guard).
+   *   6. Populate the model <select>, set its value, update tabState, and
+   *      overwrite localStorage so future page loads start clean (REQ-LS-05).
+   *
+   * Video modality also updates videoModelsCache and calls syncVideoConstraints
+   * so constraint dropdowns (aspect-ratio, resolution, FPS, quality) match
+   * the restored model's capabilities.
+   *
+   * Tests: T-PM-09 (full restore), T-PM-10 (stale guard), S-04, S-05.
+   */
+  async function initTabSelections() {
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+
+    for (const modality of ["text", "image", "audio", "video", "structured"]) {
+      const providerSel = PROVIDER_SELECTS[modality];
+      const modelSel    = MODEL_SELECTS[modality];
+
+      // Step 1 — populate the per-tab provider <select> with modality-filtered options.
+      if (providerSel) populateProviderSelect(providerSel, modality);
+
+      // Step 2 — attempt to restore saved pair from localStorage (REQ-LS-02).
+      const saved = restoreSelection(modality);
+
+      // Step 3 — resolve provider: validate or fall back (REQ-LS-03, REQ-LS-05).
+      // Default: first active provider that supports this modality, or "openai".
+      const defaultProvider =
+        allProviders.find(
+          (p) => Array.isArray(p.modalities) && p.modalities.includes(modality) && p.active !== false
+        )?.id ?? "openai";
+
+      let provider = defaultProvider;
+      if (saved) {
+        const isKnown = allProviders.some((p) => p.id === saved.provider);
+        if (isKnown) {
+          provider = saved.provider;
+        } else {
+          console.warn(
+            `[fallback-model] Saved provider "${saved.provider}" not found for` +
+            ` modality "${modality}"; falling back to default.`
+          );
+          // provider remains defaultProvider; stale key overwritten via persistSelection below.
+        }
+      }
+
+      // Reflect resolved provider in the <select>.
+      if (providerSel) providerSel.value = provider;
+      tabState.set(modality, { provider, model: "" });
+
+      // Step 4 — fetch compatible model list for the resolved provider.
+      let modelList = [];
+      try {
+        const url  = `${base}/models?modality=${modality}&provider=${encodeURIComponent(provider)}`;
+        const data = await fetch(url).then((r) => r.json());
+        modelList  = Array.isArray(data) ? data : (data.models ?? []);
+      } catch (_) {
+        // Network error — modelList stays empty; placeholder rendered below.
+      }
+
+      // Video: update descriptor cache before populating the select so that
+      // syncVideoConstraints can look up the selected model immediately.
+      if (modality === "video") videoModelsCache = modelList;
+
+      // Populate model <select> (mirrors loadTabModels population logic).
+      if (modelSel) {
+        modelSel.innerHTML = "";
+        if (modelList.length === 0) {
+          const placeholder = document.createElement("option");
+          placeholder.value       = "";
+          placeholder.disabled    = true;
+          placeholder.selected    = true;
+          placeholder.textContent = "No compatible models";
+          modelSel.appendChild(placeholder);
+        } else {
+          for (const m of modelList) {
+            const opt = document.createElement("option");
+            opt.value       = m.id;
+            opt.textContent = m.name || m.id;
+            modelSel.appendChild(opt);
+          }
+        }
+      }
+
+      // Step 5 — resolve model: restore saved value or auto-select cheapest.
+      let model = autoSelectCheapest(modelList) ?? "";
+      if (saved && modelList.some((m) => m.id === saved.model)) {
+        model = saved.model; // valid saved model — restore it (T-PM-09).
+      } else if (saved && saved.model) {
+        // Saved model absent from current list — stale-model guard (REQ-LS-04).
+        console.warn(
+          `[fallback-model] Saved model "${saved.model}" not found for provider` +
+          ` "${provider}" modality "${modality}"; falling back to cheapest.`
+        );
+        // model is already set to cheapest above; persistSelection below overwrites it.
+      }
+
+      // Step 6 — render selectors, commit state, seed/repair localStorage.
+      if (modelSel) modelSel.value = model;
+
+      if (modality === "video") {
+        const descriptor = videoModelsCache.find((m) => m.id === model) ?? null;
+        syncVideoConstraints(descriptor);
+      }
+
+      tabState.set(modality, { provider, model });
+      persistSelection(modality, provider, model); // REQ-LS-01, REQ-LS-05 seed
+    }
+  }
+
   async function loadProviders() {
     if (modeSelect.value !== "proxy") return;
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
@@ -1190,7 +1502,13 @@
       const data = await fetch(base + "/providers").then((r) => r.json());
       allProviders = data; // cache full list (including inactive) for modality filtering
       refreshProviderDropdown(TAB_MODALITY[activeTab()] ?? "text");
-      refreshVideoProviderDropdown(); // populate the video-tab-specific dropdown
+      // TASK-13 (Phase 4): Populate all five per-tab provider <select> elements as
+      // soon as the provider list is available (REQ-PM-01, S-01, S-02, S-03).
+      // initTabSelections() below sets each .value after restoring or defaulting;
+      // we populate options here first so those assignments find a non-empty list.
+      for (const [modality, providerSel] of Object.entries(PROVIDER_SELECTS)) {
+        if (providerSel) populateProviderSelect(providerSel, modality);
+      }
       clearGlobalError();
     } catch (err) {
       if (err instanceof TypeError) {
@@ -1201,7 +1519,10 @@
         showGlobalError(`Proxy error while loading providers: ${err.message}`);
       }
     }
-    await loadAllModels();
+    // Restore saved provider+model selections for every modality, validate them
+    // against the live provider/model lists, and seed localStorage on first visit
+    // (TASK-11 — replaces the per-modality loadTabModels batch from TASK-08).
+    await initTabSelections();
     await fetchServerCaps();
   }
 
@@ -1312,23 +1633,59 @@
     _proxyUrlTimer = setTimeout(loadProviders, 600);
   });
 
-  // Reload models when global provider selection changes
-  proxyProviderSelect.addEventListener("change", loadAllModels);
+  // Reload models when the global provider selection changes.
+  // Per-tab provider selects wired in TASK-09 supersede this listener for
+  // individual tabs.  While both exist, scope the reload to the active tab
+  // only so no sibling tab is affected (Design D5 — no cross-tab pollution).
+  proxyProviderSelect.addEventListener("change", () => {
+    loadTabModels(TAB_MODALITY[activeTab()] ?? "text");
+  });
 
-  // Reload only video models when the video-tab provider changes;
-  // also refresh the Luma tunnel warning since the provider affects whether it is needed.
-  if (videoProviderSelect) {
-    videoProviderSelect.addEventListener("change", () => {
-      loadVideoModels(videoProviderSelect.value);
-      updateLumaTunnelWarn();
+  // ── Per-tab provider change listeners (TASK-09) ──────────────────────────────
+  // One listener per modality.  When the user picks a different provider:
+  //   1. Clear model in tabState immediately (no stale value leaks during load).
+  //   2. Fetch + repopulate only that tab's model select via loadTabModels.
+  //   3. loadTabModels auto-selects the cheapest model and persists the pair.
+  //      (REQ-PM-02, REQ-PM-03, REQ-PM-06, T-PM-07, T-PM-08, T-PM-12)
+  //
+  // Supersedes the former video-only provider listener. The video modality
+  // receives an additional updateLumaTunnelWarn() call because the provider
+  // determines whether the Luma reverse-tunnel banner should be shown.
+  for (const [modality, providerSel] of Object.entries(PROVIDER_SELECTS)) {
+    if (!providerSel) continue;
+    providerSel.addEventListener("change", async () => {
+      const newProvider = providerSel.value;
+      // Clear model immediately so no stale value is visible while models load.
+      tabState.set(modality, { provider: newProvider, model: "" });
+      await loadTabModels(modality);
+      // tabState + localStorage are updated with the cheapest model by loadTabModels.
+      if (modality === "video") updateLumaTunnelWarn();
     });
   }
 
-  // Sync constraint dropdowns when the video model selection changes
-  if (videoModelSelect) {
-    videoModelSelect.addEventListener("change", () => {
-      const descriptor = videoModelsCache.find((m) => m.id === videoModelSelect.value) ?? null;
-      syncVideoConstraints(descriptor);
+  // ── Per-tab model change listeners (TASK-10) ─────────────────────────────────
+  // One listener per modality.  When the user picks a different model (manual
+  // override after auto-select):
+  //   1. Read the current provider from tabState so the pair stays in sync.
+  //   2. Update tabState with the new model.
+  //   3. Persist both values atomically (REQ-LS-01, REQ-PM-06, Example B).
+  //
+  // Supersedes the former video-only model listener. The video modality
+  // receives an additional syncVideoConstraints() call because aspect-ratio,
+  // resolution, FPS, and quality dropdowns must reflect the selected model's
+  // capabilities.  Programmatic .value assignment does not fire a DOM change
+  // event, so the sync must be triggered explicitly here.
+  for (const [modality, modelSel] of Object.entries(MODEL_SELECTS)) {
+    if (!modelSel) continue;
+    modelSel.addEventListener("change", () => {
+      const current = tabState.get(modality) ?? {};
+      const newModel = modelSel.value;
+      tabState.set(modality, { provider: current.provider ?? "", model: newModel });
+      persistSelection(modality, current.provider ?? "", newModel);
+      if (modality === "video") {
+        const descriptor = videoModelsCache.find((m) => m.id === newModel) ?? null;
+        syncVideoConstraints(descriptor);
+      }
     });
   }
 
@@ -1351,12 +1708,13 @@
     tabPanels.forEach((p) => p.classList.toggle("hidden", p.id !== "panel-" + target));
 
     // Update provider dropdown to only show providers that support this tab's modality.
-    // Then reload models so the model selects reflect the (possibly new) provider.
-    // T-22: loadModels now falls back to the unfiltered list when hasImageAttached=true
-    // yields an empty model list (e.g. Audio / Structured tabs).
+    // Then reload models scoped to the newly activated tab only (Design D5 — no
+    // cross-tab pollution; replaces old loadAllModels() that reloaded every tab).
+    // T-22: loadTabModels falls back to an empty placeholder list when no models
+    // are compatible (e.g. Audio / Structured tabs with certain providers).
     if (modeSelect.value === "proxy" && allProviders.length > 0) {
       refreshProviderDropdown(TAB_MODALITY[target] ?? "text");
-      loadAllModels();
+      loadTabModels(target);
     }
 
     // T-22: Always sync the attachment notice on tab switch so that switching to
@@ -1899,10 +2257,12 @@
       const fullPrompt = buildHistoryPrompt();
       let result;
       if (modeSelect.value === "proxy") {
-        const model   = textModelSelect.value || undefined;
+        // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
+        const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
         const payload = { prompt: fullPrompt };
-        if (model)          payload.model   = model;
-        if (currentFileRef) payload.fileRef = currentFileRef;
+        if (tabProvider)    payload.provider = tabProvider;
+        if (tabModel)       payload.model    = tabModel;
+        if (currentFileRef) payload.fileRef  = currentFileRef;
         result = await proxyPost("/text", payload);
       } else {
         result = await getClient().generateText(fullPrompt);
@@ -1961,11 +2321,11 @@
     try {
       const fullPrompt = buildHistoryPrompt();
       if (modeSelect.value === "proxy") {
-        const provider = proxyProviderSelect.value || undefined;
-        const model    = textModelSelect.value    || undefined;
+        // TASK-12: Read provider + model from tabState instead of proxyProviderSelect (REQ-PM-01, S-09).
+        const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
         const payload  = { prompt: fullPrompt, stream: true };
-        if (provider)       payload.provider = provider;
-        if (model)          payload.model    = model;
+        if (tabProvider)    payload.provider = tabProvider;
+        if (tabModel)       payload.model    = tabModel;
         if (currentFileRef) payload.fileRef  = currentFileRef;
         const resp   = await proxyStream("/text", payload);
         const reader = resp.body.getReader();
@@ -2030,9 +2390,12 @@
         const imgQuality     = imageQuality.value       || undefined;
         const imgWidth       = isCustom ? (parseInt(imageWidthInput.value,  10) || undefined) : undefined;
         const imgHeight      = isCustom ? (parseInt(imageHeightInput.value, 10) || undefined) : undefined;
+        // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
+        const { provider: imgProvider, model: imgModel } = tabState.get("image") ?? {};
         const imgPayload = {
           prompt,
-          model:       imageModelSelect.value || undefined,
+          provider:    imgProvider    || undefined,
+          model:       imgModel       || undefined,
           aspectRatio: imgAspectRatio,
           width:       imgWidth,
           height:      imgHeight,
@@ -2115,7 +2478,15 @@
       let blob;
       let ttsResult = null;
       if (modeSelect.value === "proxy") {
-        ttsResult = await proxyPost("/audio/speak", { text, model: ttsModelSelect.value || undefined });
+        // TASK-12: Read audio provider from tabState. TTS model comes from its own
+        // dedicated select (ttsModelSelect) which is separate from the transcription
+        // model select tracked in tabState.get("audio").model (REQ-PM-01, S-09).
+        const { provider: audioProvider } = tabState.get("audio") ?? {};
+        ttsResult = await proxyPost("/audio/speak", {
+          text,
+          provider: audioProvider     || undefined,
+          model:    ttsModelSelect.value || undefined,
+        });
         blob = base64ToBlob(ttsResult.audio, ttsResult.mimeType || "audio/mpeg");
       } else {
         blob = await getClient().synthesizeSpeech(text);
@@ -2182,9 +2553,20 @@
           reader.onerror = reject;
           reader.readAsDataURL(selectedAudioBlob);
         });
+        // TASK-12: Read provider + model from tabState["audio"] (REQ-PM-01, S-09).
+        // tabState.get("audio").model mirrors transcribeModelSelect.value (MODEL_SELECTS["audio"]).
+        const { provider: audioProvider, model: audioModel } = tabState.get("audio") ?? {};
         transcribeResult = await proxyPost("/audio/transcribe", {
           audioBase64,
-          model: transcribeModelSelect.value || undefined,
+          // Forward the Blob's MIME type so the proxy can pass it to Whisper,
+          // giving the model the correct file-format hint for video containers
+          // (.mp4, .mkv, .mov, .avi, .webm) and audio-only formats.
+          // selectedAudioBlob.type is an empty string for programmatically
+          // constructed Blobs — omit the field in that case so the server falls
+          // back to its "audio/webm" default.
+          mimeType:  selectedAudioBlob.type || undefined,
+          provider:  audioProvider          || undefined,
+          model:     audioModel             || undefined,
         });
         text = transcribeResult.text;
       } else {
@@ -2226,6 +2608,11 @@
   /** Array of completed result objects from the NDJSON stream. */
   let batchResultItems = [];
   let batchAbortController = null;
+
+  /** Cached combined-video Blob produced by stitchVideos(). Null until stitched. */
+  let combinedVideoBlob = null;
+  /** Cached data URI for the combined video (used for download). Null until stitched. */
+  let combinedVideoDataUri = null;
 
   /* ── BATCH FILE PARSERS ───────────────────────────────────── */
 
@@ -2592,6 +2979,14 @@
     batchShots.innerHTML = "";
     batchSummary.innerHTML = "";
     btnBatchRun.disabled = true;
+
+    // ── Combined video reset (AC-19) ─────────────────────────
+    combinedVideoBlob    = null;
+    combinedVideoDataUri = null;
+    if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+    if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
+    if (combinedVideoSection) combinedVideoSection.hidden = true;
+    if (combinedVideoStatus)  combinedVideoStatus.textContent = "";
   }
 
   /* ── DROP ZONE WIRE-UP ────────────────────────────────────── */
@@ -2760,10 +3155,35 @@
 
   /* ── RESULTS HTML PAGE GENERATOR ─────────────────────────── */
 
-  function buildResultsHtml(results) {
+  /**
+   * Async because it may embed a combined-video data URI (REQ-BCV-08, AC-14).
+   * All callers must await this function.
+   *
+   * When combinedVideoDataUri is set, a "Combined Video" section is prepended
+   * above the per-shot cards so the exported HTML plays offline with no server.
+   *
+   * @param {object[]} results - Array of batch result objects.
+   * @returns {Promise<string>}
+   */
+  async function buildResultsHtmlAsync(results) {
     const totalCost = results.reduce((sum, r) =>
       sum + (typeof r.result?.cost?.totalUsd === "number" ? r.result.cost.totalUsd : 0), 0);
     const costSegment = totalCost > 0 ? " · Total cost: $" + totalCost.toFixed(6) : "";
+
+    // Optional combined-video section (AC-14 / REQ-BCV-08)
+    const okVideoCount = results.filter(
+      (r) => r.status === "ok" && r.modality === "video" && r.result?.data
+    ).length;
+    const combinedSection = combinedVideoDataUri
+      ? `<div style="margin-bottom:1.5rem;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:.45rem .75rem;background:#fff;border-bottom:1px solid #e2e8f0">
+    <strong style="font-size:.85rem">Combined Video — all ${okVideoCount} shot${okVideoCount !== 1 ? "s" : ""}</strong>
+  </div>
+  <div style="padding:.6rem .75rem;background:#f8fafc">
+    <video controls style="width:100%;max-height:420px;display:block;background:#000" src="${combinedVideoDataUri}"></video>
+  </div>
+</div>`
+      : "";
 
     const shotCards = results.map((r) => {
       const videoTag = (r.status === "ok" && r.modality === "video" && r.result?.data)
@@ -2800,7 +3220,7 @@ h1{font-size:1.2rem;margin:0 0 1rem}
 <body>
 <h1>Batch Results — ai-powered</h1>
 <p class="summary">Generated ${results.length} shot${results.length !== 1 ? "s" : ""} · ${new Date().toLocaleString()}${costSegment}</p>
-${shotCards}
+${combinedSection}${shotCards}
 </body></html>`;
   }
 
@@ -2810,9 +3230,10 @@ ${shotCards}
 
   /* ── DOWNLOAD HANDLERS ────────────────────────────────────── */
 
-  btnDownloadResults.addEventListener("click", () => {
+  btnDownloadResults.addEventListener("click", async () => {
     if (!batchResultItems.length) return;
-    const html  = buildResultsHtml(batchResultItems);
+    // buildResultsHtmlAsync is async (AC-14 / REQ-BCV-08): must be awaited.
+    const html  = await buildResultsHtmlAsync(batchResultItems);
     const blob  = new Blob([html], { type: "text/html" });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement("a");
@@ -2849,8 +3270,14 @@ ${shotCards}
         zip.file(filename, bytes);
       }
 
-      // Include the HTML results summary page in the archive.
-      zip.file("results.html", buildResultsHtml(batchResultItems));
+      // Include combined video in the archive if it was stitched (AC-15 / REQ-BCV-09)
+      if (combinedVideoBlob) {
+        const combinedBytes = new Uint8Array(await combinedVideoBlob.arrayBuffer());
+        zip.file("combined.mp4", combinedBytes);
+      }
+
+      // Include the HTML results summary page in the archive (async: may embed combined video).
+      zip.file("results.html", await buildResultsHtmlAsync(batchResultItems));
 
       const blob = await zip.generateAsync({ type: "blob" });
       const url  = URL.createObjectURL(blob);
@@ -2864,6 +3291,185 @@ ${shotCards}
       zipStatusEl.textContent = "ZIP generation failed: " + (err.message || String(err));
     }
   });
+
+  /* ── COMBINED VIDEO DOWNLOAD HANDLER ────────────────────── */
+
+  if (btnDownloadCombined) {
+    btnDownloadCombined.addEventListener("click", () => {
+      if (!combinedVideoBlob) return;
+      const url = URL.createObjectURL(combinedVideoBlob);
+      const a   = Object.assign(document.createElement("a"), {
+        href:     url,
+        download: "combined-video.mp4",
+      });
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /* ── STITCH VIDEOS ────────────────────────────────────────── */
+
+  /**
+   * Concatenate all successful video clips in `resultItems` into a single
+   * combined MP4 using ffmpeg.wasm (stream-copy, no re-encode).
+   *
+   * Guard order (returns null on any failure):
+   *   1. Filter for valid video clips — requires ≥ 2.
+   *   2. SharedArrayBuffer must exist (cross-origin isolation required).
+   *   3. window._FFmpeg and window._toBlobURL must be defined (CDN loaded).
+   *   4. Estimated decoded size must be ≤ 500 MB (base64 × 0.75 heuristic).
+   *
+   * On success: updates combinedVideoBlob / combinedVideoDataUri, shows the
+   * combined-video-section, sets the player src, and reveals the download btn.
+   *
+   * Design D4: -c copy only — no re-encode. Mixed resolution will fail and the
+   * error is caught and reported via combinedVideoStatus.
+   * Design D6: 0.75 factor for base64 → bytes is ~1 % accurate for large files;
+   * avoids doubling memory by doing a pre-load size check rather than decoding.
+   *
+   * REQ-BCV-05 | AC-11,12,16,17,18,21
+   *
+   * @param {object[]} resultItems  - Array of batch result objects from the NDJSON stream.
+   * @returns {Promise<Blob|null>}
+   */
+  async function stitchVideos(resultItems) {
+    // ── Guard 1: filter valid video clips ───────────────────
+    const clips = (resultItems || []).filter(
+      (r) => r.status === "ok" && r.modality === "video" && r.result?.data
+    );
+    if (clips.length < 2) {
+      if (combinedVideoStatus) combinedVideoStatus.textContent = "";
+      if (combinedVideoSection) combinedVideoSection.hidden = true;
+      if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+      return null;
+    }
+
+    // ── Guard 2: SharedArrayBuffer (REQ-BCV-11, AC-21) ───────
+    // SharedArrayBuffer is only available when the page is served with:
+    //   Cross-Origin-Opener-Policy: same-origin
+    //   Cross-Origin-Embedder-Policy: require-corp
+    // The Vite dev server (npm run dev:web) sets these automatically.
+    // If you are seeing this message, open the app via `npm run dev:web`
+    // instead of opening index.html directly from the file system.
+    if (typeof SharedArrayBuffer === "undefined") {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Combined video unavailable — open the app via \u2018npm run dev:web\u2019 " +
+          "so the server can supply the required COOP/COEP isolation headers.";
+      }
+      if (combinedVideoSection) combinedVideoSection.hidden = false;
+      return null;
+    }
+
+    // ── Guard 3: CDN helpers must be loaded ───────────────────
+    if (!window._FFmpeg || !window._toBlobURL) {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Combined video unavailable — ffmpeg.wasm CDN script not loaded.";
+      }
+      if (combinedVideoSection) combinedVideoSection.hidden = false;
+      return null;
+    }
+
+    // ── Guard 4: size pre-check (Design D6: base64 × 0.75 ≈ bytes) ─
+    const SIZE_LIMIT = 500 * 1024 * 1024; // 500 MB
+    const estimatedBytes = clips.reduce((sum, r) => {
+      const b64 = r.result.data.replace(/^data:[^,]+,/, "");
+      return sum + b64.length * 0.75;
+    }, 0);
+    if (estimatedBytes > SIZE_LIMIT) {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Combined video skipped — estimated decoded size exceeds 500 MB.";
+      }
+      if (combinedVideoSection) combinedVideoSection.hidden = false;
+      return null;
+    }
+
+    // ── Show section and initial status ───────────────────────
+    if (combinedVideoSection) combinedVideoSection.hidden = false;
+    if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
+    if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+    if (combinedVideoStatus)  combinedVideoStatus.textContent = "Loading ffmpeg.wasm…";
+
+    const FFmpeg    = window._FFmpeg;
+    const toBlobURL = window._toBlobURL;
+    const ffmpeg    = new FFmpeg();
+
+    // Forward progress events to the status span
+    ffmpeg.on("progress", ({ progress }) => {
+      if (combinedVideoStatus) {
+        const pct = Math.min(Math.round(progress * 100), 100);
+        combinedVideoStatus.textContent = "Stitching " + pct + "%…";
+      }
+    });
+
+    try {
+      // Load ffmpeg.wasm core from CDN (pinned to @0.12.6 for stability)
+      const BASE_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+      await ffmpeg.load({
+        coreURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.js",   "text/javascript"),
+        wasmURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.wasm", "application/wasm"),
+      });
+
+      if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";
+
+      // Write each clip as clipN.mp4 inside the ffmpeg virtual FS
+      const concatLines = [];
+      for (let i = 0; i < clips.length; i++) {
+        const r   = clips[i];
+        const b64 = r.result.data.replace(/^data:[^,]+,/, "");
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const name  = "clip" + i + ".mp4";
+        await ffmpeg.writeFile(name, bytes);
+        concatLines.push("file '" + name + "'");
+      }
+
+      // Write the concat manifest
+      const listTxt = new TextEncoder().encode(concatLines.join("\n") + "\n");
+      await ffmpeg.writeFile("list.txt", listTxt);
+
+      if (combinedVideoStatus) combinedVideoStatus.textContent = "Stitching…";
+
+      // Concatenate using stream-copy — no re-encode (Design D4)
+      await ffmpeg.exec([
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "list.txt",
+        "-c", "copy",
+        "combined.mp4",
+      ]);
+
+      // Read output and build Blob
+      const data = await ffmpeg.readFile("combined.mp4");
+      const blob = new Blob([data.buffer], { type: "video/mp4" });
+
+      // Cache and display
+      combinedVideoBlob    = blob;
+      combinedVideoDataUri = null; // not materialised as data URI (memory efficiency)
+
+      const url = URL.createObjectURL(blob);
+      if (combinedVideoPlayer) {
+        combinedVideoPlayer.src = url;
+      }
+      if (btnDownloadCombined) btnDownloadCombined.hidden = false;
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Ready · " + Math.round(blob.size / (1024 * 1024) * 10) / 10 + " MB";
+      }
+
+      return blob;
+    } catch (err) {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Stitch failed: " + (err.message || String(err));
+      }
+      combinedVideoBlob    = null;
+      combinedVideoDataUri = null;
+      if (btnDownloadCombined) btnDownloadCombined.hidden = true;
+      return null;
+    }
+  }
 
   /* ── BATCH RUNNER ─────────────────────────────────────────── */
 
@@ -2885,6 +3491,14 @@ ${shotCards}
     batchResultItems = [];
     batchShots.innerHTML = "";
 
+    // Reset combined video state before each new run (AC-11, REQ-BCV-06)
+    combinedVideoBlob    = null;
+    combinedVideoDataUri = null;
+    if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+    if (combinedVideoSection) combinedVideoSection.hidden = true;
+    if (combinedVideoStatus)  combinedVideoStatus.textContent = "";
+    if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
+
     // Switch to progress view
     batchPreflight.classList.add("hidden");
     batchProgress.classList.remove("hidden");
@@ -2896,9 +3510,9 @@ ${shotCards}
     batchCostTally.classList.add("hidden");
 
     const proxyBase = (proxyUrlInput.value || "http://localhost:3001").replace(/\/$/, "");
-    // Use the video-tab-specific provider (not the global one) for batch video runs.
-    const provider  = (videoProviderSelect?.value || proxyProviderSelect.value) || undefined;
-    const model     = videoModelSelect.value || undefined;
+    // TASK-12: Read provider + model from tabState["video"] (REQ-PM-01, S-09).
+    // tabState is the single source of truth; DOM selects no longer consulted.
+    const { provider, model } = tabState.get("video") ?? {};
 
     // Batch constraint defaults — read once and spread into every item
     const batchAspectRatio = batchAspectRatioEl?.value || undefined;
@@ -3013,6 +3627,41 @@ ${shotCards}
         batchCostTally.classList.remove("hidden");
         batchCostTally.textContent = "Total batch cost: $" + batchCost.toFixed(6);
       }
+
+      // ── Stitch combined video (REQ-BCV-06, REQ-BCV-07, AC-11,12,16,17,18) ─
+      const successCount = batchResultItems.filter(
+        (r) => r.status === "ok" && r.modality === "video" && r.result?.data
+      ).length;
+
+      if (successCount >= 2) {
+        // Show section early so the user sees progress feedback (AC-12, AC-16)
+        if (combinedVideoSection) combinedVideoSection.hidden = false;
+        try {
+          const stitchedBlob = await stitchVideos(batchResultItems);
+          if (stitchedBlob) {
+            // Materialise data URI for offline HTML export (TASK-13 / REQ-BCV-08)
+            combinedVideoDataUri = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(/** @type {string} */ (reader.result));
+              reader.readAsDataURL(stitchedBlob);
+            });
+            if (combinedVideoStatus) {
+              combinedVideoStatus.textContent =
+                "✓ " + successCount + " shots stitched · " +
+                Math.round(stitchedBlob.size / (1024 * 1024) * 10) / 10 + " MB";
+            }
+            if (btnDownloadCombined) btnDownloadCombined.hidden = false;
+          }
+          // On null return: stitchVideos already updated combinedVideoStatus with the reason
+        } catch (stitchErr) {
+          // AC-18: surface stitch errors without disrupting the batch result display
+          if (combinedVideoStatus) {
+            combinedVideoStatus.textContent =
+              "Stitch failed: " + (stitchErr.message || String(stitchErr));
+          }
+        }
+      }
+      // successCount < 2: section + button remain hidden (AC-17)
     } catch (err) {
       if (err.name === "AbortError") {
         batchProgressLabel.textContent =
@@ -3096,13 +3745,12 @@ ${shotCards}
       const fpsVal = Number(videoFps?.value);
       if (fpsVal > 0) videoOptions.fps   = fpsVal;
 
-      // Forward the video-tab-specific provider and model to the proxy so the
-      // correct provider (e.g. Luma AI) is selected instead of the server default.
-      // proxyPost() also injects the global provider when the payload lacks one.
-      const videoProvider = videoProviderSelect?.value || undefined;
-      const videoModel    = videoModelSelect?.value || undefined;
-      if (videoProvider)  videoOptions.provider = videoProvider;
-      if (videoModel)     videoOptions.model    = videoModel;
+      // TASK-12: Read provider + model from tabState["video"] so the correct
+      // provider (e.g. Luma AI) is forwarded to the proxy (REQ-PM-01, S-09).
+      // tabState is the single source of truth — direct DOM reads removed.
+      const { provider: videoProvider, model: videoModel } = tabState.get("video") ?? {};
+      if (videoProvider) videoOptions.provider = videoProvider;
+      if (videoModel)    videoOptions.model    = videoModel;
       // Attach the uploaded image references for image-to-video generation.
       if (videoFileRefs.length === 1) {
         videoOptions.fileRef = videoFileRefs[0];
@@ -3194,7 +3842,13 @@ ${shotCards}
     try {
       let result;
       if (modeSelect.value === "proxy") {
-        result = await proxyPost("/structured", { prompt, model: structuredModelSelect.value || undefined });
+        // TASK-12: Read provider + model from tabState["structured"] (REQ-PM-01, S-09).
+        const { provider: structProvider, model: structModel } = tabState.get("structured") ?? {};
+        result = await proxyPost("/structured", {
+          prompt,
+          provider: structProvider || undefined,
+          model:    structModel    || undefined,
+        });
       } else {
         result = await getClient().generateStructured(prompt);
       }

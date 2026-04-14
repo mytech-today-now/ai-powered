@@ -763,6 +763,10 @@ export class WebAiClient {
       const b64 = btoa(binary);
 
       const body: Record<string, unknown> = { audioBase64: b64 };
+      // Forward the Blob's MIME type so the proxy can pass it to the provider.
+      // audio.type is empty for programmatically constructed Blobs — omit
+      // the field in that case so the provider falls back to "audio/webm".
+      if (audio.type) body["mimeType"] = audio.type;
       if (this.opts.profile) body["profile"] = this.opts.profile;
       const res = await this.fetchWithResilience(
         () =>
@@ -779,11 +783,15 @@ export class WebAiClient {
       return data.text ?? data.transcript ?? "";
     }
 
-    // Direct mode — multipart form upload to Whisper endpoint
+    // Direct mode — multipart form upload to Whisper endpoint.
+    // Derive the filename extension from the Blob's MIME type so Whisper
+    // receives the correct file hint for video containers and audio formats.
     const { provider, apiKey } = this.opts;
     const model = this.resolveModel("audio", options?.model);
+    const directMimeType = audio.type || "audio/webm";
+    const directExt = directMimeType.split("/")[1]?.split(";")[0] ?? "webm";
     const form = new FormData();
-    form.append("file", audio, "audio.webm");
+    form.append("file", audio, `media.${directExt}`);
     form.append("model", model || "whisper-1");
 
     const res = await this.fetchWithResilience(
