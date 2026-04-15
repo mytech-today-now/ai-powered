@@ -150,7 +150,36 @@ function handleStatus(): void {
   }
 }
 
+/**
+ * Maps each known provider to the environment variable that holds its API key.
+ * Used by handleInit() to detect which providers are already configured.
+ */
+const INIT_PROVIDER_ENV_KEYS: ReadonlyArray<{ id: string; envKey: string }> = [
+  { id: "openai", envKey: "OPENAI_API_KEY" },
+  { id: "anthropic", envKey: "ANTHROPIC_API_KEY" },
+  { id: "xai", envKey: "XAI_API_KEY" },
+  { id: "venice", envKey: "VENICE_API_KEY" },
+  { id: "lumaai", envKey: "LUMAAI_API_KEY" },
+  { id: "runway", envKey: "RUNWAYML_API_SECRET" },
+  { id: "custom", envKey: "AI_CUSTOM_API_KEY" },
+];
+
 function handleInit(): void {
+  // --- Detect which providers already have API keys in the environment ---
+  // The .env loader has already injected env vars before this function runs.
+  const configuredProviders = INIT_PROVIDER_ENV_KEYS.filter(
+    (p) => (process.env[p.envKey] ?? "").trim().length > 0,
+  ).map((p) => p.id);
+
+  // Honour AI_PROVIDER if set; otherwise use the first detected provider,
+  // defaulting to "openai" when nothing is configured yet.
+  const envProvider = (process.env["AI_PROVIDER"] ?? "").trim();
+  const primaryProvider =
+    envProvider.length > 0 ? envProvider : (configuredProviders[0] ?? "openai");
+
+  // All detected providers except the primary become ordered fallbacks.
+  const fallbackProviders = configuredProviders.filter((id) => id !== primaryProvider);
+
   // --- Scaffold .ai-powered/ config dir ---
   if (!fs.existsSync(LOCAL_CONFIG_DIR)) {
     fs.mkdirSync(LOCAL_CONFIG_DIR, { recursive: true });
@@ -158,9 +187,23 @@ function handleInit(): void {
     console.log(`Created ${LOCAL_CONFIG_DIR}`);
   }
   if (!fs.existsSync(LOCAL_CONFIG_PATH)) {
-    const scaffold = { version: CURRENT_VERSION, provider: "openai", modality: "text" };
+    const scaffold: Record<string, unknown> = {
+      version: CURRENT_VERSION,
+      provider: primaryProvider,
+      modality: "text",
+    };
+    if (fallbackProviders.length > 0) {
+      scaffold["fallbackProviders"] = fallbackProviders;
+    }
     fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(scaffold, null, 2) + "\n", "utf-8");
 
+    if (fallbackProviders.length > 0) {
+      console.log(
+        `Detected providers from .env: ${[primaryProvider, ...fallbackProviders].join(", ")}`,
+      );
+      console.log(`  Primary:   ${primaryProvider}`);
+      console.log(`  Fallbacks: ${fallbackProviders.join(", ")}`);
+    }
     console.log(`Created ${LOCAL_CONFIG_PATH}`);
   }
 

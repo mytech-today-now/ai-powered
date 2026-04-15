@@ -103,6 +103,46 @@ describe("loadConfig with flags", () => {
 });
 
 // ---------------------------------------------------------------------------
+// loadConfig — AI_FALLBACK_PROVIDERS env var
+// ---------------------------------------------------------------------------
+
+describe("loadConfig AI_FALLBACK_PROVIDERS env var", () => {
+  const ORIGINAL = process.env["AI_FALLBACK_PROVIDERS"];
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) {
+      delete process.env["AI_FALLBACK_PROVIDERS"];
+    } else {
+      process.env["AI_FALLBACK_PROVIDERS"] = ORIGINAL;
+    }
+  });
+
+  it("parses a comma-separated list into fallbackProviders", () => {
+    process.env["AI_FALLBACK_PROVIDERS"] = "anthropic,xai";
+    const cfg = loadConfig({ flags: { mock: true } });
+    expect(cfg.fallbackProviders).toEqual(["anthropic", "xai"]);
+  });
+
+  it("trims whitespace around provider names", () => {
+    process.env["AI_FALLBACK_PROVIDERS"] = " anthropic , xai ";
+    const cfg = loadConfig({ flags: { mock: true } });
+    expect(cfg.fallbackProviders).toEqual(["anthropic", "xai"]);
+  });
+
+  it("single provider name works without trailing comma", () => {
+    process.env["AI_FALLBACK_PROVIDERS"] = "mock";
+    const cfg = loadConfig({ flags: { mock: true } });
+    expect(cfg.fallbackProviders).toEqual(["mock"]);
+  });
+
+  it("empty string leaves fallbackProviders at default []", () => {
+    process.env["AI_FALLBACK_PROVIDERS"] = "";
+    const cfg = loadConfig({ flags: { mock: true } });
+    expect(cfg.fallbackProviders).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // renderTemplate
 // ---------------------------------------------------------------------------
 
@@ -233,7 +273,7 @@ describe("listPricing", () => {
   });
 
   it("Luma AI ray-flash-2 has primaryUsd=0.04 and modality=video", () => {
-    const entry = listPricing({ model: "ray-flash-2" }).find(e => e.model === "ray-flash-2");
+    const entry = listPricing({ model: "ray-flash-2" }).find((e) => e.model === "ray-flash-2");
     expect(entry).toBeDefined();
     expect(entry!.modality).toBe("video");
     expect(entry!.primaryUsd).toBe(0.04);
@@ -241,13 +281,13 @@ describe("listPricing", () => {
   });
 
   it("Luma AI ray-2 has primaryUsd=0.14", () => {
-    const entry = listPricing({ model: "ray-2" }).find(e => e.model === "ray-2");
+    const entry = listPricing({ model: "ray-2" }).find((e) => e.model === "ray-2");
     expect(entry).toBeDefined();
     expect(entry!.primaryUsd).toBe(0.14);
   });
 
   it("gpt-4o has modality=text and correct rates", () => {
-    const entry = listPricing().find(e => e.model === "gpt-4o");
+    const entry = listPricing().find((e) => e.model === "gpt-4o");
     expect(entry).toBeDefined();
     expect(entry!.modality).toBe("text");
     expect(entry!.promptPer1kUsd).toBe(0.005);
@@ -360,4 +400,3 @@ describe("estimateCost", () => {
     expect(est.totalUsd).toBe(0.04);
   });
 });
-

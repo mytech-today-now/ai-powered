@@ -373,6 +373,17 @@ function envVarsToPartial(): PlainObject {
     ["AI_BUDGET_SESSION", "budgetSession", (v) => parseFloat(v)],
     ["AI_WARN_BUDGET", "warnBudget", (v) => parseFloat(v)],
     ["LOG_LEVEL", "debug", (v) => v === "debug" || v === "trace"],
+    // Comma-separated ordered list of fallback provider names.
+    // Example: AI_FALLBACK_PROVIDERS=anthropic,xai,mock
+    [
+      "AI_FALLBACK_PROVIDERS",
+      "fallbackProviders",
+      (v) =>
+        v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+    ],
     // Per-provider key env vars are handled separately in resolveApiKey().
   ];
 
