@@ -3405,11 +3405,16 @@ ${combinedSection}${shotCards}
     });
 
     try {
-      // Load ffmpeg.wasm core from CDN (pinned to @0.12.6 for stability)
-      const BASE_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+      // Load ffmpeg.wasm core from CDN (pinned to @0.12.6 for stability).
+      // workerURL is fetched via toBlobURL so the Worker is constructed from a
+      // same-origin blob URL — required when the page is served from a different
+      // origin (e.g. ngrok), where the CDN worker.js would be blocked by CORS.
+      const BASE_URL   = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+      const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
       await ffmpeg.load({
-        coreURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.js",   "text/javascript"),
-        wasmURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.wasm", "application/wasm"),
+        coreURL:   await toBlobURL(BASE_URL   + "/ffmpeg-core.js",   "text/javascript"),
+        wasmURL:   await toBlobURL(BASE_URL   + "/ffmpeg-core.wasm", "application/wasm"),
+        workerURL: await toBlobURL(FFMPEG_URL + "/worker.js",        "text/javascript"),
       });
 
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";

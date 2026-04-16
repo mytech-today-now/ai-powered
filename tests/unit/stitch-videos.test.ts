@@ -112,9 +112,11 @@ function makeStitcher(sizeLimit = 500 * 1024 * 1024) {
 
     try {
       const BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+      const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
       await ffmpeg.load({
         coreURL: await toBlobURL(`${BASE}/ffmpeg-core.js`, "text/javascript"),
         wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, "application/wasm"),
+        workerURL: await toBlobURL(`${FFMPEG_URL}/worker.js`, "text/javascript"),
       });
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";
 

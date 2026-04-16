@@ -1,6 +1,6 @@
 {
   "name": "ai-powered",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Unified AI client and CLI: multi-modal, multi-provider, browser-safe, fully mock-able",
   "type": "module",
   "main": "./dist/ai-powered/index.js",

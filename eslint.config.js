@@ -2,6 +2,10 @@
 import js from "@eslint/js";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
+// Custom rule: no-inline-frame-arithmetic (TASK-11 / correct-batch-programmatic-video)
+// Blocks `* frameRate`, `* fps`, `* fr` arithmetic outside durationToFrames.ts.
+// See: eslint-rules/no-inline-frame-arithmetic.js
+import noInlineFrameArithmetic from "./eslint-rules/no-inline-frame-arithmetic.js";
 
 /** @type {import("eslint").Linter.Config[]} */
 export default [
@@ -51,6 +55,18 @@ export default [
   {
     // Ignore built artifacts and dependency tree.
     ignores: ["dist/**", "dist-web/**", "node_modules/**"],
+  },
+  // ── no-inline-frame-arithmetic (AC-6) ─────────────────────────────────────
+  // Enforces that all frame-count derivation goes through durationToFrames().
+  // Active on TypeScript source and tests. ESLint rule file itself is excluded.
+  {
+    files: ["src/**/*.ts", "tests/**/*.ts"],
+    plugins: {
+      local: { rules: { "no-inline-frame-arithmetic": noInlineFrameArithmetic } },
+    },
+    rules: {
+      "local/no-inline-frame-arithmetic": "error",
+    },
   },
 ];
 
