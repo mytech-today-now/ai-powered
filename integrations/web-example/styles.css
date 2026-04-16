@@ -1005,3 +1005,118 @@ mark.reply-search-highlight {
   mark.reply-search-highlight { background: #854d0e; color: #fef9c3; }
 }
 
+/* ── Voice-to-text mic button ─────────────────────────── */
+
+/* bd-l8q6 – layout container: relative positioning anchors the abs. button */
+.input-with-mic {
+  position: relative;
+}
+
+/* bd-l8q6 – reserve space for the absolute-positioned mic button */
+.input-with-mic textarea {
+  padding-right: 2.6rem;
+}
+
+/* bd-avws – idle state: absolute top-right, transparent, secondary colour */
+.btn-mic {
+  position: absolute;
+  top:   .5rem;
+  right: .5rem;
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .25rem .375rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .75rem;
+  line-height: 1;
+  z-index: 1;
+}
+
+/* bd-avws – hover state: slight colour shift and translucent background */
+.btn-mic:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, .06);
+  opacity: .9;
+}
+
+.mic-icon {
+  width:  1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* bd-hd52 – recording state: red colour + pulsing animation */
+.btn-mic.recording {
+  color: #ef4444;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+/* bd-hd52 – keyframe: pulsing opacity to signal active recording */
+@keyframes mic-pulse {
+  0%,
+  100% { opacity: 1; }
+  50%  { opacity: .35; }
+}
+
+/* bd-odi8 – timer text: hidden by default; tabular nums keep width stable */
+.mic-timer {
+  display: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* bd-odi8 – timer visible only while button carries the .recording class */
+.btn-mic.recording .mic-timer {
+  display: inline;
+}
+
+
+/* bd-w58b – block display ensures the wrapper fills its parent column */
+.input-with-mic {
+  display: block;
+}
+
+/* bd-w58b – full-width textarea with explicit box model so padding-right
+   does not cause overflow on any viewport width */
+.input-with-mic textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+
+/* bd-dawk – recording state: red colour to signal active microphone capture */
+/* (the .recording class and colour are already set by bd-hd52; this block    */
+/*  re-declares .btn-mic.recording so the rule is authoritative for bd-dawk)  */
+.btn-mic.recording {
+  color: #ef4444;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+/* bd-dawk – keyframe override: spec requires 0.4 opacity at midpoint.
+   This later @keyframes declaration supersedes the bd-hd52 block (.35). */
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+
+/* bd-hfs7 – timer typography: 0.7 rem matches mic-icon visual weight;
+   vertical-align:middle keeps the M:SS text centred with the SVG icon.
+   (display:none + tabular-nums already set by bd-odi8; this is additive.) */
+.mic-timer {
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
+
+/* bd-0hp3 – inline mic error message injected by showMicError():
+   red text, slightly smaller than body copy, with breathing room above */
+.mic-error {
+  color: #ef4444;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}

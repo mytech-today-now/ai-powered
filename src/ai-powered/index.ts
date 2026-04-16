@@ -62,6 +62,7 @@ export {
   GrokProvider,
   VeniceProvider,
   CustomProvider,
+  VibevoiceProvider,
   createProvider,
   registerProvider,
 } from "./providers/index.js";
@@ -84,7 +85,6 @@ export type {
   AiPlugin,
 } from "./types.js";
 export {
-  AiPoweredError,
   ProviderCapabilityError,
   ProviderError,
   BudgetExceededError,
@@ -94,6 +94,26 @@ export {
   ValidationError,
 } from "./types.js";
 export type { ProviderFailure } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Payments (filmbuff-ai-powered Story 3)
+// ---------------------------------------------------------------------------
+export { fundAgentAccount } from "./payments.js";
+export type { FundOptions, FundResult } from "./payments.js";
+
+// ---------------------------------------------------------------------------
+// Agent error types (filmbuff-ai-powered Story 2)
+// ---------------------------------------------------------------------------
+// AiPoweredError is now the structured agent-facing error class with a typed
+// AgentErrorCode, `retryable` flag, and optional `retryAfterMs`.  It extends
+// Error directly so `err instanceof Error` is always true (REQ-SE-02).
+//
+// NOTE: The internal error-hierarchy base class (used by ProviderError,
+// BudgetExceededError, etc.) lives in types.ts and is intentionally NOT
+// re-exported here to avoid a duplicate-identifier conflict. Those classes
+// remain accessible via their own named exports above.
+export { AiPoweredError } from "./errors.js";
+export type { AgentErrorCode } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Template system re-exports

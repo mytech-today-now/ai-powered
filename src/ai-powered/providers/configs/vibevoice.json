@@ -1,0 +1,25 @@
+{
+  "provider": "vibevoice",
+  "updatedAt": "2026-04-16",
+  "reviewNote": "VibeVoice is a self-hosted ASR/TTS provider. All models have costPerUnit: 0 because pricing is determined by the operator's infrastructure, not per-API-call billing. Verify model IDs against the running VibeVoice server version.",
+  "models": [
+    {
+      "id": "vibevoice-asr-7b",
+      "modalities": ["audio"],
+      "description": "VibeVoice ASR 7B — high-accuracy offline automatic speech recognition model (7 billion parameters).",
+      "costPerUnit": 0
+    },
+    {
+      "id": "vibevoice-realtime-0.5b",
+      "modalities": ["audio"],
+      "description": "VibeVoice Realtime 0.5B — ultra-low-latency streaming speech recognition model optimised for real-time transcription.",
+      "costPerUnit": 0
+    },
+    {
+      "id": "vibevoice-tts-1.5b",
+      "modalities": ["audio"],
+      "description": "VibeVoice TTS 1.5B — high-quality offline text-to-speech synthesis model (1.5 billion parameters).",
+      "costPerUnit": 0
+    }
+  ]
+}

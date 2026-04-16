@@ -61,6 +61,7 @@ export const ProviderNameSchema = z.enum([
   "lumaai",
   "runway",
   "custom",
+  "vibevoice",
   "mock",
 ]);
 export type ProviderName = z.infer<typeof ProviderNameSchema>;

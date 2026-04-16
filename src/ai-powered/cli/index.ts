@@ -1237,6 +1237,67 @@ const initCmd = new Command("init")
   });
 
 // ---------------------------------------------------------------------------
+// mcp-server command (bd-5thd / REQ-MCP-01, REQ-MCP-05, D5)
+//
+// Starts the ai-powered MCP tool server (MCP Spec 2025-11-25).
+//
+// Usage:
+//   npx ai-powered mcp-server --transport stdio
+//   npx ai-powered mcp-server --transport http --port 3743
+//   npx ai-powered mcp-server --transport http --auth-token <secret>
+//
+// The MCP server is a SEPARATE entry point (REQ-MCP-09 / D5): importing
+// 'ai-powered' for library use does NOT load any MCP or Express code.
+// startMcpServer is loaded via a dynamic import() inside the action handler
+// so that non-MCP CLI commands pay no startup cost for MCP dependencies.
+// ---------------------------------------------------------------------------
+const mcpServerCmd = new Command("mcp-server")
+  .description(
+    "Start the ai-powered MCP tool server. " +
+      "Exposes all ai-powered functions as MCP tools (MCP Spec 2025-11-25).",
+  )
+  .addOption(
+    new Option(
+      "--transport <type>",
+      "Transport: 'stdio' reads JSON-RPC from stdin/writes to stdout; " +
+        "'http' starts an Express HTTP server on the specified port",
+    )
+      .choices(["stdio", "http"])
+      .default("stdio"),
+  )
+  .addOption(
+    new Option("--port <n>", "HTTP listen port (default 3743; HTTP transport only)")
+      .argParser((v) => parseInt(v, 10))
+      .default(3743),
+  )
+  .addOption(
+    new Option(
+      "--auth-token <token>",
+      "Bearer token for HTTP transport authentication. " +
+        "When set, every request must include 'Authorization: Bearer <token>' or receive HTTP 401 (REQ-MCP-06).",
+    ),
+  )
+  .action(async (opts: Record<string, unknown>) => {
+    try {
+      // Dynamic import keeps MCP/Express code out of the module graph for
+      // non-MCP CLI invocations (REQ-MCP-09: separate entry point / D5).
+      const { startMcpServer } = await import("../mcp-server.js");
+      await startMcpServer({
+        transport: opts["transport"] as "stdio" | "http",
+        port: opts["port"] as number,
+        ...(opts["authToken"] !== undefined && {
+          authToken: opts["authToken"] as string,
+        }),
+      });
+    } catch (err) {
+      process.stderr.write(
+        `[ai-powered] mcp-server failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(EXIT_ERROR);
+    }
+  });
+
+// ---------------------------------------------------------------------------
 // Register all commands on root program
 // ---------------------------------------------------------------------------
 program
@@ -1253,7 +1314,8 @@ program
   .addCommand(healthCmd)
   .addCommand(batchCmd)
   .addCommand(serveCmd)
-  .addCommand(sessionCmd);
+  .addCommand(sessionCmd)
+  .addCommand(mcpServerCmd);
 
 // ---------------------------------------------------------------------------
 // preAction hook: propagate global flags before any subcommand runs

@@ -108,6 +108,15 @@ const PROVIDER_META = [
     inputModalities: [],
   },
   {
+    // VibeVoice is a local ASR/TTS server; active when VIBEVOICE_API_URL is set.
+    // inputModalities: ["audio"] because transcribeAudio() consumes audio input.
+    id: "vibevoice",
+    name: "VibeVoice (local)",
+    envKey: "VIBEVOICE_API_URL",
+    modalities: ["audio"],
+    inputModalities: ["audio"],
+  },
+  {
     id: "mock",
     name: "Mock (testing)",
     envKey: "",
@@ -168,18 +177,27 @@ const ImageBodySchema = ClientOverrideSchema.merge(TemplateSchema)
     prompt: z.string().min(1, "prompt must not be empty"),
   });
 
+// audioBase64 is declared optional here so that the route handler can return
+// the spec-required flat error shape { error: 'audioBase64 is required.' }
+// instead of the generic Zod validation envelope. Presence is enforced explicitly
+// inside the route (bd-ms87). The optional provider field is inherited from
+// ClientOverrideSchema and forwarded via buildOverrides() to getAiClient().
 const TranscribeBodySchema = ClientOverrideSchema.extend({
-  audioBase64: z.string().min(1, "audioBase64 must not be empty"),
+  audioBase64: z.string().optional(),
   mimeType: z.string().optional(),
 });
 
 const OPENAI_TTS_MAX_CHARS = 4096;
+// text is declared optional here so that the route handler can return the
+// spec-required flat error shape { error: 'text is required.' } instead of
+// the generic Zod validation envelope. Length cap is still enforced by Zod.
+// The optional provider field is inherited from ClientOverrideSchema (bd-p3qx).
 const SpeakBodySchema = ClientOverrideSchema.extend({
   text: z
     .string()
-    .min(1, "text must not be empty")
-    .max(
-      OPENAI_TTS_MAX_CHARS,
+    .optional()
+    .refine(
+      (v) => v === undefined || v.length <= OPENAI_TTS_MAX_CHARS,
       `text must not exceed ${OPENAI_TTS_MAX_CHARS} characters (OpenAI TTS limit)`,
     ),
 });
@@ -404,12 +422,17 @@ export function createRouter(opts: ServeOptions): Router {
 
   // --- GET /providers ---
   // Returns all known providers with an `active` flag (true when the
-  // corresponding API key env-var is set, or when mock mode is enabled).
+  // corresponding API key / URL env-var is set and non-empty after trimming,
+  // or when mock mode is enabled).
+  // Design D4: using (envVal.trim() ?? '').length > 0 instead of !!trim()
+  // explicitly documents that VibeVoice uses a URL env-var (not a secret key)
+  // and makes the intent clear for future URL-based provider authors.
   router.get("/providers", (_req, res) => {
     const providerList = PROVIDER_META.map((p) => ({
       id: p.id,
       name: p.name,
-      active: p.id === "mock" ? Boolean(opts.mock) : Boolean(process.env[p.envKey]),
+      active:
+        p.id === "mock" ? Boolean(opts.mock) : (process.env[p.envKey]?.trim() ?? "").length > 0,
       modalities: [...p.modalities],
       inputModalities: [...p.inputModalities],
     }));
@@ -680,11 +703,20 @@ export function createRouter(opts: ServeOptions): Router {
   );
 
   // --- POST /audio/transcribe ---
+  // Optional `provider` field is forwarded via buildOverrides() → getAiClient()
+  // so callers may pin a specific provider per-request (bd-ms87).
   router.post(
     "/audio/transcribe",
     wrap(async (req, res, next) => {
       const body = parseBody(TranscribeBodySchema, req, res);
       if (!body) return;
+
+      // Explicit guard: return the flat error shape the spec requires.
+      if (!body.audioBase64) {
+        res.status(400).json({ error: "audioBase64 is required." });
+        return;
+      }
+
       const buffer = Buffer.from(body.audioBase64, "base64");
       const overrides = buildOverrides(body, opts);
       try {
@@ -700,11 +732,20 @@ export function createRouter(opts: ServeOptions): Router {
   );
 
   // --- POST /audio/speak ---
+  // Optional `provider` field is forwarded via buildOverrides() → getAiClient()
+  // so callers may pin a specific provider per-request (bd-p3qx).
   router.post(
     "/audio/speak",
     wrap(async (req, res, next) => {
       const body = parseBody(SpeakBodySchema, req, res);
       if (!body) return;
+
+      // Explicit guard: return the flat error shape the spec requires.
+      if (!body.text) {
+        res.status(400).json({ error: "text is required." });
+        return;
+      }
+
       const overrides = buildOverrides(body, opts);
       try {
         const client = await getAiClient("serve-speak", overrides as never);

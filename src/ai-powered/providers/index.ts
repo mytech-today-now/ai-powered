@@ -28,6 +28,7 @@ import { VeniceProvider } from "./venice.js";
 import { CustomProvider } from "./custom.js";
 import { LumaAIProvider } from "./lumaai.js";
 import { RunwayProvider } from "./runway.js";
+import { VibevoiceProvider } from "./vibevoice.js";
 
 export { MockProvider } from "./mock.js";
 export { OpenAiProvider } from "./openai.js";
@@ -37,6 +38,7 @@ export { VeniceProvider } from "./venice.js";
 export { CustomProvider } from "./custom.js";
 export { LumaAIProvider } from "./lumaai.js";
 export { RunwayProvider } from "./runway.js";
+export { VibevoiceProvider } from "./vibevoice.js";
 
 // ---------------------------------------------------------------------------
 // Provider registry
@@ -53,6 +55,7 @@ const REGISTRY = new Map<ProviderName, ProviderConstructor>([
   ["custom", CustomProvider],
   ["lumaai", LumaAIProvider],
   ["runway", RunwayProvider],
+  ["vibevoice", VibevoiceProvider],
 ]);
 
 /**

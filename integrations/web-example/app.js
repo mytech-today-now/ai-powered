@@ -4205,5 +4205,351 @@ ${combinedSection}${shotCards}
     return true;
   }
 
+  /* ── Voice-to-text helpers ───────────────────────────────── */
+
+  /**
+   * Formats elapsed seconds as a M:SS string.
+   * Example: formatMicTime(74) => '1:14'.
+   * Spec bd-grbn: .mic-timer SHALL display this format while recording.
+   *
+   * @param {number} secs - Non-negative integer seconds elapsed.
+   * @returns {string} Formatted time string.
+   */
+  function formatMicTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  /**
+   * Injects a <p class="mic-error"> message below the closest .input-group
+   * ancestor of btn. Replaces any existing .mic-error already positioned there.
+   * Auto-removes after 5 seconds.
+   * Spec bd-ymk4: permission-denied, NotFoundError, and network error messages.
+   *
+   * @param {HTMLElement} btn - The .btn-mic that triggered the error.
+   * @param {string}      msg - Human-readable error text to display.
+   */
+  function showMicError(btn, msg) {
+    const group = btn.closest('.input-group');
+    if (!group) return;
+    // Remove any prior error placed immediately after this input group.
+    const sibling = group.nextElementSibling;
+    if (sibling && sibling.classList.contains('mic-error')) sibling.remove();
+    const p = document.createElement('p');
+    p.className   = 'mic-error';
+    p.textContent = msg;
+    group.insertAdjacentElement('afterend', p);
+    setTimeout(() => { if (p.parentNode) p.remove(); }, 5000);
+  }
+
+  /**
+   * Appends trimmed text to a textarea with a single-space separator when the
+   * textarea already has content, then dispatches an 'input' event so all
+   * existing char-counter and change listeners fire.
+   * Spec bd-v23w: 'Hello world' SHALL be appended with space separator.
+   *
+   * @param {HTMLTextAreaElement} ta   - Target textarea element.
+   * @param {string}              text - Text to append (will be trimmed).
+   */
+  function appendTranscript(ta, text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    ta.value = ta.value.length > 0 ? ta.value + ' ' + trimmed : trimmed;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  /**
+   * Converts an audio Blob to base64 and posts it to the proxy
+   * POST /audio/transcribe endpoint, returning the transcript string.
+   * Used exclusively by the proxy-mode path in initMicButtons().
+   * Spec bd-87rh: assembles Blob → transcribes via proxyPost.
+   * Spec bd-i37y / Design D3: provider + model are read from tabState.get('audio')
+   * at call time so a provider switch made between recording sessions takes effect
+   * immediately — no stale closure values.
+   *
+   * @param {Blob} blob - Audio Blob recorded by MediaRecorder.
+   * @returns {Promise<string>} Transcribed text.
+   */
+  async function transcribeMicBlob(blob) {
+    const audioBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(/** @type {string} */ (reader.result).split(',')[1]);
+      reader.onerror = () => reject(new Error('Failed to read audio data.'));
+      reader.readAsDataURL(blob);
+    });
+    // Design D3: read tabState at call time, not at definition time, so any
+    // provider/model switch the user makes is honoured on the very next transcription.
+    const { provider, model } = tabState.get('audio') ?? {};
+    const result = await proxyPost('/audio/transcribe', {
+      audioBase64,
+      mimeType: blob.type || undefined,
+      provider: provider  || undefined,
+      model:    model     || undefined,
+    });
+    return result.text ?? '';
+  }
+
+  /**
+   * Wires all .btn-mic buttons with independent per-button closure state for
+   * voice-to-text recording.  Design D1: one closure per button → no shared
+   * mutable state between buttons; stopping one SHALL NOT affect others.
+   *
+   * Proxy mode (bd-87rh, modeSelect.value === 'proxy'):
+   *   getUserMedia → MediaRecorder (webm/ogg) → chunks → Blob →
+   *   size-check (< 500 B → error) → transcribeMicBlob → appendTranscript.
+   *
+   * Direct mode (bd-778j, all other modes):
+   *   SpeechRecognition with continuous:true, interimResults:true → live
+   *   interim overlay → final commit via appendTranscript.
+   *
+   * Edge cases covered (bd-7g46):
+   *   • blob < 500 B           → 'Recording too short'
+   *   • getUserMedia denied     → permission-denied message
+   *   • getUserMedia no device  → no-mic message
+   *   • proxyPost failure       → 'Transcription failed: <detail>'
+   *   • SpeechRecognition N/A   → proxy-or-Chrome instruction
+   *   • All error paths reset .recording CSS class and timer.
+   *
+   * Spec bd-l8by: invalid data-target values are silently skipped.
+   * Spec bd-95zq: called immediately on page load.
+   */
+  function initMicButtons() {
+    document.querySelectorAll('.btn-mic').forEach((btn) => {
+      const targetId = btn.dataset.target;
+      if (!targetId) return;
+      const ta = document.getElementById(targetId);
+      if (!ta) return; // silently skip unknown target
+
+      // ── Per-button closure state (Design D1) ─────────────
+      const state = {
+        recognition:   null,   // SpeechRecognition instance (direct mode)
+        mediaRecorder: null,   // MediaRecorder instance (proxy mode)
+        stream:        null,   // getUserMedia MediaStream (proxy mode)
+        chunks:        [],     // recorded audio chunks (proxy mode)
+        proxyError:    false,  // true when recorder.onerror fired; suppresses onstop errors
+        timerInterval: null,   // setInterval handle
+        elapsedSeconds: 0,
+        isRecording:   false,
+      };
+
+      const timerEl = btn.querySelector('.mic-timer');
+
+      function startTimer() {
+        state.elapsedSeconds = 0;
+        if (timerEl) timerEl.textContent = formatMicTime(0);
+        state.timerInterval = setInterval(() => {
+          state.elapsedSeconds++;
+          if (timerEl) timerEl.textContent = formatMicTime(state.elapsedSeconds);
+        }, 1000);
+      }
+
+      function stopTimer() {
+        clearInterval(state.timerInterval);
+        state.timerInterval = null;
+        if (timerEl) timerEl.textContent = '';
+      }
+
+      function setRecordingUi(recording) {
+        state.isRecording = recording;
+        btn.classList.toggle('recording', recording);
+        btn.title = recording ? 'Stop recording' : 'Record voice input';
+      }
+
+      // Tears down direct-mode recognition or proxy-mode stream+recorder and
+      // resets all UI state.  Safe to call multiple times (idempotent).
+      function stopRecording() {
+        setRecordingUi(false);
+        stopTimer();
+        if (state.recognition) {
+          try { state.recognition.stop(); } catch (_) { /* ignore double-stop */ }
+          state.recognition = null;
+        }
+        if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+          try { state.mediaRecorder.stop(); } catch (_) {}
+        }
+        state.mediaRecorder = null;
+        if (state.stream) {
+          state.stream.getTracks().forEach((t) => t.stop());
+          state.stream = null;
+        }
+        state.chunks = [];
+      }
+
+      btn.addEventListener('click', async () => {
+        // ── Stop path ─────────────────────────────────────
+        if (state.isRecording) {
+          if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
+            // Proxy mode: trigger onstop which handles blob assembly + transcription.
+            state.mediaRecorder.stop();
+          } else {
+            // Direct mode (or proxy recorder already inactive): full teardown.
+            stopRecording();
+          }
+          return;
+        }
+
+        // ── Proxy mode: MediaRecorder → POST /audio/transcribe ──────
+        if (modeSelect.value === 'proxy') {
+          let stream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          } catch (err) {
+            // bd-7g46 edge cases (2) and (3)
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+              showMicError(btn, 'Microphone access was denied. Allow microphone in browser settings and try again.');
+            } else if (err.name === 'NotFoundError') {
+              showMicError(btn, 'No microphone found. Connect a microphone and try again.');
+            } else {
+              showMicError(btn, 'Could not access microphone: ' + (err.message ?? err.name));
+            }
+            return;
+          }
+
+          // Prefer opus → webm → ogg; fall back to browser default.
+          const mimeType = (
+            ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']
+              .find((t) => MediaRecorder.isTypeSupported(t))
+          ) || '';
+
+          let recorder;
+          try {
+            recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+          } catch (err) {
+            stream.getTracks().forEach((t) => t.stop());
+            showMicError(btn, 'Could not start recording: ' + (err.message ?? String(err)));
+            return;
+          }
+
+          state.stream        = stream;
+          state.chunks        = [];
+          state.proxyError    = false;
+          state.mediaRecorder = recorder;
+
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) state.chunks.push(e.data);
+          };
+
+          recorder.onstop = async () => {
+            // Release microphone and reset recorder refs immediately.
+            if (state.stream) {
+              state.stream.getTracks().forEach((t) => t.stop());
+              state.stream = null;
+            }
+            state.mediaRecorder = null;
+            setRecordingUi(false);
+            stopTimer();
+
+            // Skip blob processing when recorder.onerror already reported an error.
+            if (state.proxyError) {
+              state.proxyError = false;
+              state.chunks = [];
+              return;
+            }
+
+            const blob = new Blob(state.chunks, { type: mimeType || 'audio/webm' });
+            state.chunks = [];
+
+            // bd-7g46 edge case (1): blob too small → no usable audio captured.
+            if (blob.size < 500) {
+              showMicError(btn, 'Recording too short. Hold the button longer and speak clearly.');
+              return;
+            }
+
+            // bd-7g46 edge case (4): proxyPost failure → user-visible message.
+            try {
+              const text = await transcribeMicBlob(blob);
+              if (text) appendTranscript(ta, text);
+            } catch (err) {
+              showMicError(btn, 'Transcription failed: ' + (err.message ?? String(err)));
+            }
+          };
+
+          recorder.onerror = (e) => {
+            // Flag so onstop skips blob processing (error already displayed here).
+            state.proxyError = true;
+            showMicError(btn, 'Recording error: ' + (e.error?.message ?? 'unknown'));
+            // Reset UI immediately; onstop will do final state cleanup.
+            setRecordingUi(false);
+            stopTimer();
+          };
+
+          setRecordingUi(true);
+          startTimer();
+          recorder.start(250); // request data every 250 ms for timely onstop assembly
+          return;
+        }
+
+        // ── Direct mode: Web Speech API ─────────────────────────────
+        // bd-7g46 edge case (5): SpeechRecognition unavailable.
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) {
+          showMicError(btn,
+            'Voice input requires proxy mode or Chrome/Edge with microphone access. ' +
+            'Switch to proxy mode, or open this page in Chrome/Edge and allow the microphone.');
+          return;
+        }
+
+        setRecordingUi(true);
+        startTimer();
+
+        const recognition      = new SpeechRec();
+        recognition.continuous     = true;
+        recognition.interimResults = true;
+        recognition.lang           = 'en-US';
+        state.recognition          = recognition;
+
+        // committedLength marks the boundary between finalized and interim text
+        // in ta.value, enabling live interim overlay without duplicating finals.
+        let committedLength = ta.value.length;
+
+        recognition.onresult = (event) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              // Reset to committed boundary, removing any interim overlay, then
+              // commit the finalized phrase.
+              ta.value = ta.value.slice(0, committedLength);
+              appendTranscript(ta, result[0].transcript);
+              committedLength = ta.value.length;
+            } else {
+              interim += result[0].transcript;
+            }
+          }
+          // Live interim preview (Spec AC-17).
+          if (interim) {
+            const sep = committedLength > 0 ? ' ' : '';
+            ta.value = ta.value.slice(0, committedLength) + sep + interim;
+          }
+        };
+
+        recognition.onerror = (event) => {
+          // bd-7g46 edge cases (2) and (3) for direct-mode.
+          let msg;
+          if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+            msg = 'Microphone access was denied. Allow microphone in browser settings and try again.';
+          } else if (event.error === 'audio-capture') {
+            msg = 'No microphone found. Connect a microphone and try again.';
+          } else {
+            msg = 'Speech recognition error: ' + event.error;
+          }
+          showMicError(btn, msg);
+          stopRecording(); // resets .recording CSS + timer
+        };
+
+        // Fired when recognition stops (explicit stop or browser auto-end).
+        recognition.onend = () => {
+          if (state.isRecording) stopRecording();
+        };
+
+        recognition.start();
+      });
+    });
+  }
+
+  // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
+  initMicButtons();
+
 })(); // end IIFE
 

@@ -169,8 +169,24 @@
         </div>
 
         <div class="input-group">
-          <textarea id="text-prompt" rows="3"
-            placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
+          <div class="input-with-mic">
+            <textarea id="text-prompt" rows="3"
+              placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
+            <button class="btn-mic" data-target="text-prompt"
+                    title="Click to start voice input"
+                    aria-label="Start voice input for text prompt"
+                    type="button">
+              <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8"  y1="23" x2="16" y2="23"/>
+              </svg>
+              <span class="mic-timer" aria-live="polite"></span>
+            </button>
+          </div>
           <span class="char-counter" id="text-prompt-counter"></span>
         </div>
         <div class="tab-settings-bar">
@@ -199,8 +215,24 @@
       <!-- ── IMAGE TAB ─────────────────────────────────────────────── -->
       <section class="tab-panel hidden" id="panel-image" role="tabpanel">
         <div class="input-group">
-          <textarea id="image-prompt" rows="2"
-            placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
+          <div class="input-with-mic">
+            <textarea id="image-prompt" rows="2"
+              placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
+            <button class="btn-mic" data-target="image-prompt"
+                    title="Click to start voice input"
+                    aria-label="Start voice input for image prompt"
+                    type="button">
+              <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8"  y1="23" x2="16" y2="23"/>
+              </svg>
+              <span class="mic-timer" aria-live="polite"></span>
+            </button>
+          </div>
           <span class="char-counter" id="image-prompt-counter"></span>
         </div>
         <div class="tab-settings-bar">
@@ -280,8 +312,24 @@
         <div class="audio-section">
           <h2 class="subsection-title">Text → Speech</h2>
           <div class="input-group">
-            <textarea id="tts-text" rows="2"
-              placeholder="Text to synthesize…">Hello! This demonstrates text-to-speech synthesis.</textarea>
+            <div class="input-with-mic">
+              <textarea id="tts-text" rows="2"
+                placeholder="Text to synthesize…">Hello! This demonstrates text-to-speech synthesis.</textarea>
+              <button class="btn-mic" data-target="tts-text"
+                      title="Click to start voice input"
+                      aria-label="Start voice input for TTS text"
+                      type="button">
+                <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8"  y1="23" x2="16" y2="23"/>
+                </svg>
+                <span class="mic-timer" aria-live="polite"></span>
+              </button>
+            </div>
             <span class="char-counter" id="tts-text-counter" data-maxlength="4096"></span>
           </div>
           <div class="model-row">
@@ -458,8 +506,24 @@
         <div class="video-sub-panel hidden" data-vtab="single">
 
           <div class="input-group">
-            <textarea id="video-prompt" rows="2"
-              placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
+            <div class="input-with-mic">
+              <textarea id="video-prompt" rows="2"
+                placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
+              <button class="btn-mic" data-target="video-prompt"
+                      title="Click to start voice input"
+                      aria-label="Start voice input for video prompt"
+                      type="button">
+                <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8"  y1="23" x2="16" y2="23"/>
+                </svg>
+                <span class="mic-timer" aria-live="polite"></span>
+              </button>
+            </div>
             <span class="char-counter" id="video-prompt-counter"></span>
           </div>
 
@@ -538,8 +602,24 @@
       <!-- ── STRUCTURED TAB ────────────────────────────────────────── -->
       <section class="tab-panel hidden" id="panel-structured" role="tabpanel">
         <div class="input-group">
-          <textarea id="structured-prompt" rows="4"
-            placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
+          <div class="input-with-mic">
+            <textarea id="structured-prompt" rows="4"
+              placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
+            <button class="btn-mic" data-target="structured-prompt"
+                    title="Click to start voice input"
+                    aria-label="Start voice input for structured prompt"
+                    type="button">
+              <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8"  y1="23" x2="16" y2="23"/>
+              </svg>
+              <span class="mic-timer" aria-live="polite"></span>
+            </button>
+          </div>
           <span class="char-counter" id="structured-prompt-counter"></span>
         </div>
         <div class="tab-settings-bar">
