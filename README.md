@@ -30,11 +30,12 @@ console.log(result.content);
 | Feature           | Detail                                                                                              |
 | ----------------- | --------------------------------------------------------------------------------------------------- |
 | **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                 |
-| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Luma AI · Runway · Custom/Ollama · Mock               |
+| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Luma AI · Runway · VibeVoice · Custom/Ollama · Mock   |
 | **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                    |
 | **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings |
 | **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                             |
-| **Browser**       | Vite ESM+UMD bundle · proxy mode (recommended) · direct mode (dev only)                             |
+| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners       |
+| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents           |
 | **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                      |
 
 ---
@@ -52,8 +53,9 @@ console.log(result.content);
 9. [Cross-Language Shell Integration](#cross-language-shell-integration)
 10. [Security Best Practices](#security-best-practices)
 11. [Architecture Overview](#architecture-overview)
-12. [Writing a Plugin](#writing-a-plugin)
-13. [Contributing](#contributing)
+12. [MCP Server](#mcp-server)
+13. [Writing a Plugin](#writing-a-plugin)
+14. [Contributing](#contributing)
 
 ---
 
@@ -103,21 +105,23 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 
 ### Environment variables
 
-| Variable              | Config key           | Example           |
-| --------------------- | -------------------- | ----------------- |
-| `OPENAI_API_KEY`      | `apiKey` (OpenAI)    | `sk-…`            |
-| `ANTHROPIC_API_KEY`   | `apiKey` (Anthropic) | `sk-ant-…`        |
-| `XAI_API_KEY`         | `apiKey` (xAI)       | `xai-…`           |
-| `VENICE_API_KEY`      | `apiKey` (Venice)    | `ven-…`           |
-| `LUMAAI_API_KEY`      | `apiKey` (Luma AI)   | `luma-…`          |
-| `RUNWAYML_API_SECRET` | `apiKey` (Runway)    | (from Runway app) |
-| `AI_CUSTOM_API_KEY`   | `apiKey` (custom)    | any               |
-| `AI_PROVIDER`         | `provider`           | `openai`          |
-| `AI_MODEL`            | `model`              | `gpt-4o`          |
-| `AI_PROFILE`          | `profile`            | `production`      |
-| `AI_MOCK`             | `mock`               | `true`            |
-| `AI_BUDGET_SESSION`   | `budgetSession`      | `1.00`            |
-| `LOG_LEVEL`           | `debug`              | `debug`           |
+| Variable                | Config key            | Example                 |
+| ----------------------- | --------------------- | ----------------------- |
+| `OPENAI_API_KEY`        | `apiKey` (OpenAI)     | `sk-…`                  |
+| `ANTHROPIC_API_KEY`     | `apiKey` (Anthropic)  | `sk-ant-…`              |
+| `XAI_API_KEY`           | `apiKey` (xAI)        | `xai-…`                 |
+| `VENICE_API_KEY`        | `apiKey` (Venice)     | `ven-…`                 |
+| `LUMAAI_API_KEY`        | `apiKey` (Luma AI)    | `luma-…`                |
+| `RUNWAYML_API_SECRET`   | `apiKey` (Runway)     | (from Runway app)       |
+| `VIBEVOICE_API_URL`     | `baseUrl` (VibeVoice) | `http://localhost:8080` |
+| `AI_CUSTOM_API_KEY`     | `apiKey` (custom)     | any                     |
+| `AI_PROVIDER`           | `provider`            | `openai`                |
+| `AI_MODEL`              | `model`               | `gpt-4o`                |
+| `AI_PROFILE`            | `profile`             | `production`            |
+| `AI_MOCK`               | `mock`                | `true`                  |
+| `AI_BUDGET_SESSION`     | `budgetSession`       | `1.00`                  |
+| `AI_FALLBACK_PROVIDERS` | `fallbackProviders`   | `anthropic,mock`        |
+| `LOG_LEVEL`             | `debug`               | `debug`                 |
 
 ### Example config file
 
@@ -158,6 +162,39 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 ```
 
 Supported `customProviderType` values: `"openai-compatible"` · `"ollama"` · `"other"`
+
+### VibeVoice (self-hosted ASR / TTS)
+
+VibeVoice is a self-hosted speech provider with zero per-call cost — billing is determined by your own infrastructure. Set `provider: "vibevoice"` and point `baseUrl` at your VibeVoice server:
+
+```json
+{
+  "provider": "vibevoice",
+  "baseUrl": "http://localhost:8080"
+}
+```
+
+Or export `VIBEVOICE_API_URL=http://your-server:8080` — the env var takes precedence over the default `http://localhost:8080` but is overridden by `baseUrl` in config.
+
+| Model ID                  | Capability | Description                                       |
+| ------------------------- | ---------- | ------------------------------------------------- |
+| `vibevoice-asr-7b`        | audio      | High-accuracy offline ASR (7 B parameters)        |
+| `vibevoice-realtime-0.5b` | audio      | Ultra-low-latency streaming ASR for real-time use |
+| `vibevoice-tts-1.5b`      | audio      | High-quality offline TTS (1.5 B parameters)       |
+
+VibeVoice supports `transcribeAudio` and `synthesizeSpeech`. It does not support text, image, video, or structured generation.
+
+### Auto-detected fallback providers (`AI_FALLBACK_PROVIDERS`)
+
+On `ai-powered --init`, the CLI probes available providers and writes a comma-separated list to `AI_FALLBACK_PROVIDERS`. This is also accepted directly in config:
+
+```bash
+export AI_FALLBACK_PROVIDERS=anthropic,mock
+```
+
+```json
+{ "fallbackProviders": ["anthropic", "mock"] }
+```
 
 ---
 
@@ -357,9 +394,20 @@ The proxy server and web demo support batch file input on the **Video tab**. Dro
 **Video**
 
 ```jsonl
-{"name":"Opening","prompt":"Aerial crane shot descending over a gleaming city skyline at dawn, 5 seconds","modality":"video"}
-{"name":"Title card","prompt":"Logo reveal with light-ray particle effect on black background, 3 seconds","modality":"video"}
+{"name":"Opening","prompt":"Aerial crane shot descending over a gleaming city skyline at dawn","modality":"video","duration":5}
+{"name":"Title card","prompt":"Logo reveal with light-ray particle effect on black background","modality":"video","duration":3}
 ```
+
+The `duration` field can be a plain number (seconds), a plain string (`"5"`, `"00:00:05"`), or the
+filmbuff-project object form — all three are accepted:
+
+```jsonl
+{"name":"Shot 1","prompt":"Wide establishing shot","modality":"video","duration":12}
+{"name":"Shot 2","prompt":"Close-up detail","modality":"video","duration":"00:00:08"}
+{"name":"Shot 3","prompt":"Drone flyover","modality":"video","duration":{"seconds":15,"formatted":"0:15"}}
+```
+
+After all shots have been generated the **⬡ Stitch** button combines every clip into a single combined MP4 using ffmpeg.wasm — no server required. The stitch operation runs entirely in the browser and works correctly under any origin, including ngrok tunnels.
 
 **Audio / TTS**
 
@@ -869,6 +917,7 @@ All endpoints accept per-request overrides (`provider`, `model`, `temperature`, 
 | venice    |  ✅  |  ✅   |   —   |   —   |     —      |
 | lumaai    |  —   |   —   |   —   |  ✅   |     —      |
 | runway    |  —   |   —   |   —   |  ✅   |     —      |
+| vibevoice |  —   |   —   |  ✅   |   —   |     —      |
 | mock      |  ✅  |  ✅   |  ✅   |  ✅   |     ✅     |
 
 ### OpenAI client quick-start (FilmBuff pattern)
@@ -926,6 +975,20 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 | ---------- | --------------- | ----------------------------------------------------------- |
 | **proxy**  | Production      | Key stays on your server — browser never sees it            |
 | **direct** | Dev / demo only | Key visible in DevTools — non-suppressible DOM banner shown |
+
+### Browser client features (v0.5.0)
+
+The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
+
+| Feature                  | Detail                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| **Circuit breaker**      | Opens after N consecutive failures; probes after a configurable reset window (App-008)     |
+| **Automatic retry**      | Exponential back-off with jitter on transient errors (App-008)                             |
+| **Budget enforcement**   | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown  |
+| **Typed `ProxyError`**   | Structured error object with `code`, `message`, `severity`; severity-aware UI banners      |
+| **Conversation history** | `localStorage`-backed session history; soft-reset keeps context while clearing the display |
+| **Archive toolbar**      | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference       |
+| **Provider dropdown**    | Populated dynamically from `GET /models`; per-request provider and model overrides         |
 
 ### Proxy mode (recommended)
 
@@ -1322,7 +1385,7 @@ A `BudgetExceededError` is thrown _before_ the API call if the projected cost wo
           ▼             ▼             ▼
     OpenAiProvider  AnthropicProvider  VeniceProvider
     GrokProvider    LumaAiProvider     RunwayProvider
-    CustomProvider  MockProvider
+    VibevoiceProvider  CustomProvider  MockProvider
 ```
 
 ### Config layers (lowest → highest precedence)
@@ -1351,6 +1414,38 @@ This package uses `"type": "module"` and ships only ES Modules. This decision wa
 - Avoid dual-package hazards (CJS/ESM singleton state issues)
 
 **Migration path for CJS consumers:** wrap the import in a dynamic `import()` or migrate to `"type": "module"`.
+
+---
+
+## MCP Server
+
+`ai-powered` ships a built-in **Model Context Protocol (MCP)** server (`src/ai-powered/mcp-server.ts`) that exposes all five modalities as MCP tools. Any MCP-capable agent or orchestrator can connect and call them without writing custom integration code.
+
+### Starting the MCP server
+
+```bash
+# Via CLI (stdio transport — the MCP default)
+ai-powered serve --mcp
+
+# Or programmatically
+import { createMcpServer } from "ai-powered";
+
+const server = createMcpServer({ provider: "openai" });
+await server.listen(); // stdio transport
+```
+
+### Exposed MCP tools
+
+| Tool name             | Modality   | Description                                       |
+| --------------------- | ---------- | ------------------------------------------------- |
+| `generate_text`       | text       | Generate text from a prompt                       |
+| `generate_image`      | image      | Generate an image from a description              |
+| `transcribe_audio`    | audio      | Transcribe base64-encoded audio to text           |
+| `synthesize_speech`   | audio      | Convert text to speech; returns base64 audio      |
+| `generate_video`      | video      | Generate a video clip from a prompt               |
+| `generate_structured` | structured | Generate a JSON object validated against a schema |
+
+All tools accept an optional `provider` and `model` override so agents can select the best backend per call.
 
 ---
 
