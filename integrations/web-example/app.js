@@ -3436,15 +3436,18 @@ ${combinedSection}${shotCards}
 
     try {
       // Load ffmpeg.wasm core from CDN (pinned to @0.12.6 for stability).
-      // workerURL is fetched via toBlobURL so the Worker is constructed from a
+      // classWorkerURL is converted to a blob URL so new Worker() uses a
       // same-origin blob URL — required when the page is served from a different
-      // origin (e.g. ngrok), where the CDN worker.js would be blocked by CORS.
+      // origin (e.g. ngrok), where constructing a Worker from a CDN URL is blocked.
+      // NOTE: workerURL in ffmpeg.load() is for multi-thread core workers and does
+      // NOT affect which URL new Worker() uses; classWorkerURL is the correct key.
       const BASE_URL   = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
       const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
+      const workerBlobURL = await toBlobURL(FFMPEG_URL + "/worker.js", "text/javascript");
       await ffmpeg.load({
-        coreURL:   await toBlobURL(BASE_URL   + "/ffmpeg-core.js",   "text/javascript"),
-        wasmURL:   await toBlobURL(BASE_URL   + "/ffmpeg-core.wasm", "application/wasm"),
-        workerURL: await toBlobURL(FFMPEG_URL + "/worker.js",        "text/javascript"),
+        classWorkerURL: workerBlobURL,
+        coreURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.js",   "text/javascript"),
+        wasmURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.wasm", "application/wasm"),
       });
 
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";
