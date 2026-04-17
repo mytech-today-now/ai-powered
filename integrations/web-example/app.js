@@ -2626,6 +2626,32 @@
   function parseJsonFile(text) {
     const items = [];
     const trimmed = text.trim();
+
+    /**
+     * Resolve duration from a raw JSON entry.
+     *
+     * Accepts:
+     *  - Plain number:  duration: 12
+     *  - Plain string:  duration: "12" | "00:00:12" | "288f@24"
+     *  - Object form:   duration: { seconds: 12, formatted: "0:12" }
+     *    (produced by filmbuff-project and similar shot-list exporters)
+     *
+     * Returns the resolved value (number or string) ready for the proxy,
+     * or undefined if the field is absent or unrecognisable.
+     */
+    function resolveDuration(entry) {
+      const raw = entry.duration;
+      if (raw === null || raw === undefined) return undefined;
+      if (typeof raw === "number") return raw;
+      if (typeof raw === "string" && raw !== "") return raw;
+      // Object form — accept .seconds (number) or .formatted (string)
+      if (typeof raw === "object") {
+        if (typeof raw.seconds === "number") return raw.seconds;
+        if (typeof raw.formatted === "string" && raw.formatted !== "") return raw.formatted;
+      }
+      return undefined;
+    }
+
     // Try as a JSON value first
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
@@ -2636,10 +2662,12 @@
         for (const entry of arr) {
           const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
           if (prompt) {
+            const duration = resolveDuration(entry);
             items.push({
               name: String(entry.name || entry.shot || entry.title || ("Shot " + (items.length + 1))).trim(),
               prompt,
               modality: String(entry.modality || "video"),
+              ...(duration !== undefined ? { duration } : {}),
             });
           }
         }
@@ -2654,10 +2682,12 @@
         const entry = JSON.parse(l);
         const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
         if (prompt) {
+          const duration = resolveDuration(entry);
           items.push({
             name: String(entry.name || entry.shot || ("Shot " + (items.length + 1))).trim(),
             prompt,
             modality: String(entry.modality || "video"),
+            ...(duration !== undefined ? { duration } : {}),
           });
         }
       } catch (_) { /* skip invalid lines */ }
