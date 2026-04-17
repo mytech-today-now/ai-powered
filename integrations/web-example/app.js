@@ -3420,52 +3420,108 @@ ${combinedSection}${shotCards}
     if (combinedVideoSection) combinedVideoSection.hidden = false;
     if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
     if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
-    if (combinedVideoStatus)  combinedVideoStatus.textContent = "Loading ffmpeg.wasm…";
 
     const FFmpeg    = window._FFmpeg;
     const toBlobURL = window._toBlobURL;
-    const ffmpeg    = new FFmpeg();
 
-    // Forward progress events to the status span
-    ffmpeg.on("progress", ({ progress }) => {
-      if (combinedVideoStatus) {
-        const pct = Math.min(Math.round(progress * 100), 100);
-        combinedVideoStatus.textContent = "Stitching " + pct + "%…";
-      }
-    });
+    // ── CDN load: up to 3 attempts (1 initial + 2 retries) ───────────────────
+    // classWorkerURL is a blob URL so new Worker() stays same-origin — required
+    // when the page is served from a cross-origin host (e.g. ngrok).
+    // A fresh FFmpeg instance is created for each attempt to avoid stale state
+    // left behind by a partial initialisation failure.
+    const LOAD_MAX_ATTEMPTS  = 3;      // 1 initial + 2 retries
+    const LOAD_TIMEOUT_MS    = 90_000; // 90 s per attempt — core wasm is ~25 MB
+    const LOAD_RETRY_WAIT_MS = 2_000;  // 2 s pause between retries
+    const BASE_URL   = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+    const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
 
-    try {
-      // Load ffmpeg.wasm core from CDN (pinned to @0.12.6 for stability).
-      // classWorkerURL is converted to a blob URL so new Worker() uses a
-      // same-origin blob URL — required when the page is served from a different
-      // origin (e.g. ngrok), where constructing a Worker from a CDN URL is blocked.
-      // NOTE: workerURL in ffmpeg.load() is for multi-thread core workers and does
-      // NOT affect which URL new Worker() uses; classWorkerURL is the correct key.
-      const BASE_URL   = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
-      const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
-      const workerBlobURL = await toBlobURL(FFMPEG_URL + "/worker.js", "text/javascript");
-      await ffmpeg.load({
-        classWorkerURL: workerBlobURL,
-        coreURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.js",   "text/javascript"),
-        wasmURL:   await toBlobURL(BASE_URL + "/ffmpeg-core.wasm", "application/wasm"),
+    let ffmpeg    = null;
+    let loadError = null;
+
+    for (let attempt = 1; attempt <= LOAD_MAX_ATTEMPTS; attempt++) {
+      const label = "attempt " + attempt + "/" + LOAD_MAX_ATTEMPTS;
+      if (combinedVideoStatus)
+        combinedVideoStatus.textContent = "Downloading ffmpeg.wasm (" + label + ")…";
+      console.log("[stitchVideos] ffmpeg load " + label + " — fetching CDN assets…");
+      const t0 = Date.now();
+
+      // Fresh instance per attempt — avoids partial-init state from a prior failure
+      ffmpeg = new FFmpeg();
+      ffmpeg.on("progress", ({ progress }) => {
+        if (combinedVideoStatus) {
+          const pct = Math.min(Math.round(progress * 100), 100);
+          combinedVideoStatus.textContent = "Stitching " + pct + "%…";
+        }
       });
 
+      try {
+        await Promise.race([
+          (async () => {
+            console.log("[stitchVideos]   → worker.js …");
+            const workerBlobURL = await toBlobURL(FFMPEG_URL + "/worker.js", "text/javascript");
+            console.log("[stitchVideos]   → ffmpeg-core.js …");
+            const coreURL = await toBlobURL(BASE_URL + "/ffmpeg-core.js", "text/javascript");
+            console.log("[stitchVideos]   → ffmpeg-core.wasm (~25 MB, slow on first use) …");
+            const wasmURL = await toBlobURL(BASE_URL + "/ffmpeg-core.wasm", "application/wasm");
+            console.log("[stitchVideos]   → assets ready in " + (Date.now() - t0) + " ms; calling ffmpeg.load() …");
+            await ffmpeg.load({ classWorkerURL: workerBlobURL, coreURL, wasmURL });
+            console.log("[stitchVideos]   → ffmpeg.load() resolved in " + (Date.now() - t0) + " ms");
+          })(),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error(
+                "ffmpeg.wasm download timed out after 90 s (" + label + ")"
+              )),
+              LOAD_TIMEOUT_MS
+            )
+          ),
+        ]);
+        loadError = null;
+        console.log("[stitchVideos] ffmpeg loaded successfully on " + label);
+        break; // ← exit retry loop
+      } catch (err) {
+        loadError = err;
+        if (attempt < LOAD_MAX_ATTEMPTS) {
+          console.warn(
+            "[stitchVideos] Load " + label + " failed: " + err.message +
+            " — retrying in " + (LOAD_RETRY_WAIT_MS / 1000) + " s…"
+          );
+          if (combinedVideoStatus)
+            combinedVideoStatus.textContent =
+              "Download failed (" + label + ") — retrying in " +
+              (LOAD_RETRY_WAIT_MS / 1000) + " s…";
+          await new Promise((resolve) => setTimeout(resolve, LOAD_RETRY_WAIT_MS));
+        } else {
+          console.error(
+            "[stitchVideos] All " + LOAD_MAX_ATTEMPTS + " load attempts failed.", err
+          );
+        }
+      }
+    }
+
+    try {
+      // Surface the final load failure if all retry attempts were exhausted
+      if (loadError) throw loadError;
+
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";
+      console.log("[stitchVideos] Writing " + clips.length + " clips to ffmpeg virtual FS…");
 
       // Write each clip as clipN.mp4 inside the ffmpeg virtual FS
       const concatLines = [];
       for (let i = 0; i < clips.length; i++) {
-        const r   = clips[i];
-        const b64 = r.result.data.replace(/^data:[^,]+,/, "");
+        const r     = clips[i];
+        const b64   = r.result.data.replace(/^data:[^,]+,/, "");
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const name  = "clip" + i + ".mp4";
         await ffmpeg.writeFile(name, bytes);
         concatLines.push("file '" + name + "'");
+        console.log("[stitchVideos]   → wrote " + name + " (" + bytes.length + " bytes)");
       }
 
       // Write the concat manifest
       const listTxt = new TextEncoder().encode(concatLines.join("\n") + "\n");
       await ffmpeg.writeFile("list.txt", listTxt);
+      console.log("[stitchVideos] Concat manifest written (" + clips.length + " entries); executing ffmpeg…");
 
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Stitching…";
 
@@ -3477,10 +3533,13 @@ ${combinedSection}${shotCards}
         "-c", "copy",
         "combined.mp4",
       ]);
+      console.log("[stitchVideos] ffmpeg.exec() complete; reading output…");
 
       // Read output and build Blob
       const data = await ffmpeg.readFile("combined.mp4");
       const blob = new Blob([data.buffer], { type: "video/mp4" });
+      const sizeMB = Math.round(blob.size / (1024 * 1024) * 10) / 10;
+      console.log("[stitchVideos] Combined video ready — " + sizeMB + " MB");
 
       // Cache and display
       combinedVideoBlob    = blob;
@@ -3492,12 +3551,12 @@ ${combinedSection}${shotCards}
       }
       if (btnDownloadCombined) btnDownloadCombined.hidden = false;
       if (combinedVideoStatus) {
-        combinedVideoStatus.textContent =
-          "Ready · " + Math.round(blob.size / (1024 * 1024) * 10) / 10 + " MB";
+        combinedVideoStatus.textContent = "Ready · " + sizeMB + " MB";
       }
 
       return blob;
     } catch (err) {
+      console.error("[stitchVideos] Stitch failed:", err);
       if (combinedVideoStatus) {
         combinedVideoStatus.textContent =
           "Stitch failed: " + (err.message || String(err));

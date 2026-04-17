@@ -1,7 +1,7 @@
 /**
  * @file tests/unit/stitch-videos.test.ts
  *
- * Unit tests for the stitchVideos() browser function — bd-iwbi / T-BCV-01..T-BCV-06.
+ * Unit tests for the stitchVideos() browser function — bd-iwbi / T-BCV-01..T-BCV-08.
  *
  * stitchVideos() is defined inside the app.js IIFE and closes over DOM refs and
  * window globals. This file mirrors its logic via makeStitcher() — a factory that
@@ -35,7 +35,12 @@ declare global {
 // All other logic is a faithful copy of the production code.
 // ---------------------------------------------------------------------------
 
-function makeStitcher(sizeLimit = 500 * 1024 * 1024) {
+function makeStitcher(
+  sizeLimit = 500 * 1024 * 1024,
+  loadMaxAttempts = 3,
+  loadTimeoutMs = 90_000,
+  loadRetryWaitMs = 2_000,
+) {
   return async function stitchVideos(resultItems: unknown[]): Promise<Blob | null> {
     const combinedVideoStatus = document.getElementById("combined-video-status");
     const combinedVideoSection = document.getElementById(
@@ -100,26 +105,74 @@ function makeStitcher(sizeLimit = 500 * 1024 * 1024) {
     if (combinedVideoSection) combinedVideoSection.hidden = false;
     if (combinedVideoPlayer) combinedVideoPlayer.src = "";
     if (btnDownloadCombined) btnDownloadCombined.hidden = true;
-    if (combinedVideoStatus) combinedVideoStatus.textContent = "Loading ffmpeg.wasm…";
 
     const FFmpegCtor = window._FFmpeg as new () => FfmpegInstance;
     const toBlobURL = window._toBlobURL as (url: string, type: string) => Promise<string>;
-    const ffmpeg = new FFmpegCtor();
 
-    ffmpeg.on("progress", () => {
-      /* status updates handled in production; omitted in tests */
-    });
+    // ── CDN load: retry loop — mirrors app.js production logic exactly ───────
+    const BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+    const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
+
+    let ffmpeg!: FfmpegInstance;
+    let loadError: unknown = null;
+
+    for (let attempt = 1; attempt <= loadMaxAttempts; attempt++) {
+      const label = `attempt ${attempt}/${loadMaxAttempts}`;
+      if (combinedVideoStatus)
+        combinedVideoStatus.textContent = `Downloading ffmpeg.wasm (${label})…`;
+      console.log(`[stitchVideos] ffmpeg load ${label} — fetching CDN assets…`);
+
+      // Fresh instance per attempt — avoids partial-init state from a prior failure
+      ffmpeg = new FFmpegCtor();
+      ffmpeg.on("progress", () => {
+        /* status updates handled in production; omitted in tests */
+      });
+
+      try {
+        await Promise.race([
+          (async () => {
+            const workerBlobURL = await toBlobURL(`${FFMPEG_URL}/worker.js`, "text/javascript");
+            await ffmpeg.load({
+              classWorkerURL: workerBlobURL,
+              coreURL: await toBlobURL(`${BASE}/ffmpeg-core.js`, "text/javascript"),
+              wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, "application/wasm"),
+            });
+          })(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `ffmpeg.wasm download timed out after ${Math.round(loadTimeoutMs / 1000)} s (${label})`,
+                  ),
+                ),
+              loadTimeoutMs,
+            ),
+          ),
+        ]);
+        loadError = null;
+        console.log(`[stitchVideos] ffmpeg loaded successfully on ${label}`);
+        break; // ← exit retry loop on success
+      } catch (err: unknown) {
+        loadError = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (attempt < loadMaxAttempts) {
+          console.warn(`[stitchVideos] Load ${label} failed: ${msg} — retrying…`);
+          if (combinedVideoStatus)
+            combinedVideoStatus.textContent = `Download failed (${label}) — retrying in ${loadRetryWaitMs / 1000} s…`;
+          await new Promise<void>((resolve) => setTimeout(resolve, loadRetryWaitMs));
+        } else {
+          console.error(`[stitchVideos] All ${loadMaxAttempts} load attempts failed.`, err);
+        }
+      }
+    }
 
     try {
-      const BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
-      const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
-      const workerBlobURL = await toBlobURL(`${FFMPEG_URL}/worker.js`, "text/javascript");
-      await ffmpeg.load({
-        classWorkerURL: workerBlobURL,
-        coreURL: await toBlobURL(`${BASE}/ffmpeg-core.js`, "text/javascript"),
-        wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, "application/wasm"),
-      });
+      // Surface the final load failure if all retry attempts were exhausted
+      if (loadError) throw loadError;
+
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";
+      console.log(`[stitchVideos] Writing ${clips.length} clips to ffmpeg virtual FS…`);
 
       const concatLines: string[] = [];
       for (let i = 0; i < clips.length; i++) {
@@ -130,8 +183,10 @@ function makeStitcher(sizeLimit = 500 * 1024 * 1024) {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         await ffmpeg.writeFile(`clip${i}.mp4`, bytes);
         concatLines.push(`file 'clip${i}.mp4'`);
+        console.log(`[stitchVideos]   → wrote clip${i}.mp4 (${bytes.length} bytes)`);
       }
       await ffmpeg.writeFile("list.txt", new TextEncoder().encode(concatLines.join("\n") + "\n"));
+      console.log(`[stitchVideos] Concat manifest written; executing ffmpeg…`);
       if (combinedVideoStatus) combinedVideoStatus.textContent = "Stitching…";
 
       await ffmpeg.exec([
@@ -145,17 +200,20 @@ function makeStitcher(sizeLimit = 500 * 1024 * 1024) {
         "copy",
         "combined.mp4",
       ]);
+      console.log(`[stitchVideos] ffmpeg.exec() complete; reading output…`);
 
       const rawData = await ffmpeg.readFile("combined.mp4");
       const blob = new Blob([(rawData as Uint8Array).buffer], { type: "video/mp4" });
+      const sizeMB = Math.round((blob.size / (1024 * 1024)) * 10) / 10;
+      console.log(`[stitchVideos] Combined video ready — ${sizeMB} MB`);
 
       if (combinedVideoPlayer) combinedVideoPlayer.src = URL.createObjectURL(blob);
       if (btnDownloadCombined) btnDownloadCombined.hidden = false;
-      if (combinedVideoStatus)
-        combinedVideoStatus.textContent = `Ready · ${Math.round((blob.size / (1024 * 1024)) * 10) / 10} MB`;
+      if (combinedVideoStatus) combinedVideoStatus.textContent = `Ready · ${sizeMB} MB`;
       return blob;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[stitchVideos] Stitch failed:`, err);
       if (combinedVideoStatus) combinedVideoStatus.textContent = `Stitch failed: ${msg}`;
       if (btnDownloadCombined) btnDownloadCombined.hidden = true;
       return null;
@@ -237,7 +295,7 @@ function statusText(): string {
 // T-BCV-01..T-BCV-06
 // ---------------------------------------------------------------------------
 
-describe("stitchVideos() — bd-iwbi / T-BCV-01..T-BCV-06", () => {
+describe("stitchVideos() — bd-iwbi / T-BCV-01..T-BCV-08", () => {
   let savedSAB: typeof SharedArrayBuffer | undefined;
 
   beforeEach(() => {
@@ -357,5 +415,40 @@ describe("stitchVideos() — bd-iwbi / T-BCV-01..T-BCV-06", () => {
 
     expect(result).toBeNull();
     expect(statusText()).toBe("Stitch failed: Codec parameters are not compatible");
+  });
+
+  // ── T-BCV-07 ──────────────────────────────────────────────────────────────
+  it("T-BCV-07: toBlobURL fails on attempt 1, succeeds on attempt 2 → Blob returned (retry recovers)", async () => {
+    // loadMaxAttempts=2 (1 retry), retryWait=0 ms so the test stays fast.
+    const { MockFFmpegClass, instance } = makeMockFFmpeg();
+    window._FFmpeg = MockFFmpegClass;
+    window._toBlobURL = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network glitch")) // attempt 1 fails on worker.js
+      .mockResolvedValue("blob:core"); // attempt 2 (all 3 assets) succeeds
+
+    const result = await makeStitcher(500 * 1024 * 1024, 2, 90_000, 0)([clip(), clip(), clip()]);
+
+    expect(result).toBeInstanceOf(Blob);
+    // A fresh FFmpeg instance is created for each attempt
+    expect(MockFFmpegClass).toHaveBeenCalledTimes(2);
+    // load() only resolves once — on the successful second attempt
+    expect(instance.load).toHaveBeenCalledOnce();
+  });
+
+  // ── T-BCV-08 ──────────────────────────────────────────────────────────────
+  it("T-BCV-08: all load attempts fail → null returned; #combined-video-status starts with 'Stitch failed'", async () => {
+    // loadMaxAttempts=2, retryWait=0 ms so the test stays fast.
+    const { MockFFmpegClass, instance } = makeMockFFmpeg();
+    window._FFmpeg = MockFFmpegClass;
+    window._toBlobURL = vi.fn().mockRejectedValue(new Error("CDN unreachable"));
+
+    const result = await makeStitcher(500 * 1024 * 1024, 2, 90_000, 0)([clip(), clip(), clip()]);
+
+    expect(result).toBeNull();
+    expect(statusText()).toMatch(/^Stitch failed:/);
+    // Two FFmpeg instances created (one per attempt), but load() never resolved
+    expect(MockFFmpegClass).toHaveBeenCalledTimes(2);
+    expect(instance.load).not.toHaveBeenCalled();
   });
 });
