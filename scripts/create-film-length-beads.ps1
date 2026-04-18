@@ -1,0 +1,143 @@
+# create-film-length-beads.ps1
+# Creates all Beads tasks for film-length with full descriptions from OpenSpec artifacts.
+# Run from repository root:  pwsh -File .\scripts\create-film-length-beads.ps1
+#
+# Sources: openspec/changes/film-length/{proposal,deltas,design,implementation,tasks,summary}.md
+#          openspec/changes/film-length/specs/server-stitch/spec.md
+#          openspec/changes/film-length/specs/stitch-client/spec.md
+#          openspec/changes/film-length/tests/test-plan.md
+#          openspec/changes/film-length/examples/stitch-examples.md
+#          openspec/changes/film-length/film-length.json
+#          openspec/changes/film-length/README.md
+#
+# NOTE: Uses --json flag so bd create writes JSON to the pipeline (not Write-Host),
+# allowing regex to reliably capture the new issue ID from the JSON output.
+
+. .\scripts\beads-helpers.ps1
+
+Write-Host "`n=== Creating film-length Beads Tasks ===" -ForegroundColor Cyan
+
+# ---------------------------------------------------------------------------
+# STORY — top-level tracking issue
+# ---------------------------------------------------------------------------
+$story = bd create "[film-length] STORY: Server-Side Video Stitching via POST /stitch" `
+  -Description "Feature | Priority: High | Estimate: ~8 hours / 12 tasks / 4 phases | Status: draft | Labels: video, ffmpeg, server-side, refactor, performance, stitching | Spec authority: openspec/changes/film-length/specs/server-stitch/spec.md + specs/stitch-client/spec.md. PROBLEM: stitchVideos() in integrations/web-example/app.js concatenates AI video clips in the browser via ffmpeg.wasm (CDN). Three compounding problems: (1) ~25 MB jsDelivr CDN download per batch run — alone can exhaust the 4.5-min retry budget. (2) SharedArrayBuffer requirement needs COOP+COEP headers on every response, breaking third-party iframes. (3) Opaque WASM panics with no codec detail or remediation hint. SOLUTION: New POST /stitch route on the Express proxy accepts ordered base64 MP4 data URIs, writes clips to UUID-scoped temp dir, runs native ffmpeg -f concat -safe 0 -c copy (lossless, 2-8 s vs 90-270 s), returns combined MP4 as base64 data URI. MODIFIED FILES: src/ai-powered/server/routes.ts, src/ai-powered/server/index.ts, vite.config.ts, integrations/web-example/app.js, integrations/web-example/index.html. NEW TEST FILES: tests/unit/spawn-ffmpeg.test.ts, tests/unit/stitch-route.test.ts, tests/integration/stitch-endpoint.test.ts. No new npm dependencies. No breaking changes. stitchVideos() signature unchanged. AC-01 through AC-11 in summary.md. Source: openspec/changes/film-length/README.md | proposal.md | summary.md | film-length.json" `
+  -Priority 1 -Type task --json
+$storyId = [regex]::Match($story, 'bd-[a-z0-9]+').Value
+Write-Host "Story: $storyId"
+
+# ---------------------------------------------------------------------------
+# PHASE 0 — Server Scaffolding (Imports and Schema)
+# ---------------------------------------------------------------------------
+$t1 = bd create "[film-length] T-001 TASK-01: Add Node.js built-in imports to routes.ts" `
+  -Description "PHASE-0 CODE | File: src/ai-powered/server/routes.ts | Location: after the existing import block, before the '// Multer' section comment (~line 55). INSERT five imports using 'node:' prefix (prevents npm package shadowing per REQ-SS-01): import os from 'node:os'; import path from 'node:path'; import fs from 'node:fs/promises'; import { spawn } from 'node:child_process'; import { randomUUID } from 'node:crypto'; RULES (REQ-SS-01): ALL five must use 'node:' prefix. No additional npm packages are required. This is an additive-only change — no runtime behavior change. VERIFICATION: npx tsc --noEmit passes after additions. Confirm 'node:' prefix present on all five imports. Source: openspec/changes/film-length/tasks.md TASK-01 | implementation.md §1 | specs/server-stitch/spec.md REQ-SS-01 | deltas.md MODIFIED: proxy-server" `
+  -Priority 1 -Type task --json
+$t1Id = [regex]::Match($t1, 'bd-[a-z0-9]+').Value
+
+$t2 = bd create "[film-length] T-002 TASK-02: Add StitchBodySchema after BatchBodySchema in routes.ts" `
+  -Description "PHASE-0 CODE | File: src/ai-powered/server/routes.ts | Location: after BatchBodySchema definition (~line 241) in the Zod schemas section. ADD: const StitchBodySchema = z.object({ clips: z.array(z.string().min(1, 'each clip must be a non-empty base64 data URI')).min(2, 'at least 2 clips are required to stitch a combined video').max(20, 'maximum of 20 clips per stitch request'), }); RULES (REQ-SS-02): clips array with min(2) and max(20); each element min(1). Validation: < 2 clips -> HTTP 400 Zod error; > 20 clips -> HTTP 400 Zod error; empty string in array -> HTTP 400 per-element Zod error. Confirm existing BatchBodySchema and other schemas are unaffected. VERIFICATION: npx tsc --noEmit passes. AC-03: POST /stitch with 1 clip -> 400 'at least 2 clips are required to stitch a combined video'. AC-04: POST /stitch with 21 clips -> 400 'maximum of 20 clips per stitch request'. Source: openspec/changes/film-length/tasks.md TASK-02 | implementation.md §2 | specs/server-stitch/spec.md REQ-SS-02 | deltas.md ADDED: server-stitch" `
+  -Priority 1 -Type task --json
+$t2Id = [regex]::Match($t2, 'bd-[a-z0-9]+').Value
+
+# ---------------------------------------------------------------------------
+# PHASE 1 — Server Route, Body Limit, and Vite Proxy
+# ---------------------------------------------------------------------------
+$t3 = bd create "[film-length] T-003 TASK-03: Implement spawnFfmpeg() helper above createRouter()" `
+  -Description "PHASE-1 CODE | File: src/ai-powered/server/routes.ts | Location: directly above 'export function createRouter(opts)' (~line 310). ADD private function: function spawnFfmpeg(args: string[], cwd: string): Promise<string> — uses spawn('ffmpeg', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }). RULES (REQ-SS-03): (1) Collect stderr chunks into Buffer[]. (2) Call proc.stdout.resume() to drain stdout silently. (3) On close code 0: resolve with full stderr string. (4) On close non-zero: reject with Error containing exit code, full command ('ffmpeg ' + args.join(' ')), and LAST 2048 BYTES of stderr (not full stderr — avoids verbose version banner). (5) On 'error' event code ENOENT: reject with actionable install-hint Error (brew/apt-get/scoop/@ffmpeg-installer/ffmpeg). Other errors: reject(err). DESIGN: D1 — native spawn over fluent-ffmpeg (minimal dep surface, full stderr capture). D4 — 2KB tail preserves diagnostic while dropping banner. VERIFICATION: npx tsc --noEmit passes. Run unit tests: $env:AI_MOCK='true'; npm test -- tests/unit/spawn-ffmpeg. Tests: T-SF-01 (resolves on code 0), T-SF-02 (rejects non-zero with tail stderr), T-SF-03 (ENOENT install-hint), T-SF-04 (stderr trimmed to 2048 bytes). Source: openspec/changes/film-length/tasks.md TASK-03 | implementation.md §3 | specs/server-stitch/spec.md REQ-SS-03 | design.md D1 D4 | tests/test-plan.md T-SF-01..04" `
+  -Priority 1 -Type task --json
+$t3Id = [regex]::Match($t3, 'bd-[a-z0-9]+').Value
+
+$t4 = bd create "[film-length] T-004 TASK-04: Add POST /stitch route handler inside createRouter()" `
+  -Description "PHASE-1 CODE | File: src/ai-powered/server/routes.ts | Location: inside createRouter(), after POST /batch closing }); and BEFORE mountCompatRoutes(router, opts). ADD router.post('/stitch', wrap(async (req, res, next) => { … })). SIX-STEP HANDLER (REQ-SS-04): (1) Validate: parseBody(StitchBodySchema, req, res) — return early if null (already sent 400). (2) Create temp dir: path.join(os.tmpdir(), 'ai-powered-stitch-' + randomUUID()). (3) Write clips: for each body.clips[i] strip data URI prefix (/^data:[^,]+,/), decode base64, write as clip{i}.mp4; append 'file clip{i}.mp4' to concatLines. (4) Write manifest: concatLines.join('\n') + '\n' to list.txt. (5) Spawn: await spawnFfmpeg(['-y','-f','concat','-safe','0','-i','list.txt','-c','copy','combined.mp4'], tmpDir). (6) Read + respond: read combined.mp4, compute sizeMB = parseFloat((bytes.length/(1024*1024)).toFixed(1)), respond res.json({ data: 'data:video/mp4;base64,' + bytes.toString('base64'), sizeMB }). CATCH: if (!mapError(err, res)) next(err). FINALLY: fs.rm(tmpDir, { recursive: true, force: true }).catch(warn) — always runs. LOGGING (REQ-SS-08): info on tmpDir create, each clip write, ffmpeg spawn, combined ready; warn on cleanup fail. DESIGN: D2 — UUID per request for concurrent safety. D3 — -c copy only (stream-copy, lossless). VERIFICATION: npx tsc --noEmit. Run: $env:AI_MOCK='true'; npm test -- tests/integration/stitch-endpoint. AC-02 (200 with data+sizeMB), AC-10 (temp dir cleaned up). Source: openspec/changes/film-length/tasks.md TASK-04 | implementation.md §4 | specs/server-stitch/spec.md REQ-SS-04 REQ-SS-07 REQ-SS-08 | design.md D2 D3 | tests/test-plan.md T-SE-01..06" `
+  -Priority 1 -Type task --json
+$t4Id = [regex]::Match($t4, 'bd-[a-z0-9]+').Value
+
+$t5 = bd create "[film-length] T-005 TASK-05: Raise express.json body limit to 200mb in index.ts" `
+  -Description "PHASE-1 CODE | File: src/ai-powered/server/index.ts | Location: line 171. CHANGE: express.json({ limit: '10mb' }) -> express.json({ limit: '200mb' }). RATIONALE (REQ-SS-05, design.md D5): 4-clip Luma AI batch (5s clips ~5-6 MB each) encodes to ~21-32 MB base64 JSON body. 10-clip batch reaches ~53-80 MB. 200 MB ceiling safely handles up to ~24 clips without rejecting normal batch sizes. Server binds to 127.0.0.1 by default — not internet-exposed, no meaningful DoS risk. DESIGN D5: 200 MB chosen; 100 MB would safely handle ~12 typical clips if tighter cap preferred. VERIFICATION: npx tsc --noEmit passes. Manual check: curl -X POST localhost:3001/stitch -H 'Content-Type: application/json' -d '{\"clips\":[]}' returns 400 (not 413) confirming limit is active. ERROR SCENARIO: body > 200 MB -> HTTP 413 from Express before route handler (see stitch-examples.md Example G). Source: openspec/changes/film-length/tasks.md TASK-05 | implementation.md §5 | specs/server-stitch/spec.md REQ-SS-05 | design.md D5 | deltas.md MODIFIED: proxy-server" `
+  -Priority 1 -Type task --json
+$t5Id = [regex]::Match($t5, 'bd-[a-z0-9]+').Value
+
+$t6 = bd create "[film-length] T-006 TASK-06: Add /stitch to apiPaths in vite.config.ts" `
+  -Description "PHASE-1 CODE | File: vite.config.ts | Location: apiPaths array (~line 98). INSERT '/stitch' after '/batch': const apiPaths = [ ..., '/batch', '/stitch', // <- new: server-side video concat (POST /stitch) '/upload', ... ]; RULES (REQ-SS-06): '/stitch' must appear in apiPaths so Vite dev-server forwards fetch('/stitch', ...) from browser to Express proxy on port 3001 during npm run dev. VERIFICATION: Vite dev-server restart; confirm fetch('/stitch', ...) is proxied to localhost:3001/stitch. Smoke test SM-02 (curl) and SM-04 (3-shot browser batch) require this proxy entry. Without this entry the browser receives a Vite 404 and the Combined Video section never appears. Source: openspec/changes/film-length/tasks.md TASK-06 | implementation.md §6 | specs/server-stitch/spec.md REQ-SS-06 | deltas.md MODIFIED: vite-proxy | summary.md Scope" `
+  -Priority 1 -Type task --json
+$t6Id = [regex]::Match($t6, 'bd-[a-z0-9]+').Value
+
+$t7 = bd create "[film-length] T-007 TASK-07: Update stale COOP/COEP comment in vite.config.ts" `
+  -Description "PHASE-1 CODE | File: vite.config.ts | Location: stale comment ~line 126 referencing SharedArrayBuffer/ffmpeg.wasm. REPLACE with: // Cross-origin isolation headers — retained for compatibility with browsers // that may require cross-origin isolation for other features (e.g. // performance.now() precision, Atomics). Video stitching now runs server-side // via POST /stitch and no longer requires SharedArrayBuffer in the browser. IMPORTANT: Comment update ONLY — no code logic changes. The COOP/COEP middleware from accept-mp4 is RETAINED (deviation D1 in deltas.md: headers preserved for other cross-origin isolation uses, not stitching). VERIFICATION: Confirm no code logic changed. npx tsc --noEmit passes. Source: openspec/changes/film-length/tasks.md TASK-07 | implementation.md §6 | deltas.md MODIFIED: vite-proxy (Known Deviation D1) | summary.md Scope" `
+  -Priority 3 -Type task --json
+$t7Id = [regex]::Match($t7, 'bd-[a-z0-9]+').Value
+
+# ---------------------------------------------------------------------------
+# PHASE 2 — Browser-Side Replacement
+# ---------------------------------------------------------------------------
+$t8 = bd create "[film-length] T-008 TASK-08: Delete old stitchVideos() (~230 lines) from app.js" `
+  -Description "PHASE-2 CODE | File: integrations/web-example/app.js | Location: the '/* -- STITCH VIDEOS --' comment block (~line 3340). DELETE from that comment block through the closing '}' of the function body (~line 3569) — approximately 230 lines total. RULES (REQ-SC-01): After deletion, ZERO references to the following must remain in app.js: window._FFmpeg, window._toBlobURL, SharedArrayBuffer, ffmpeg.exec(), ffmpeg.writeFile(), ffmpeg.readFile(), ffmpeg.load(), FFmpeg (class name), toBlobURL. CRITICAL: This is an ATOMIC transition — old and new stitchVideos() cannot coexist safely (design.md Migration Plan Phase 2). Delete the old function BEFORE inserting the new one (TASK-09). VERIFICATION: grep -n '_FFmpeg\|_toBlobURL\|SharedArrayBuffer\|ffmpeg\.exec\|ffmpeg\.load' integrations/web-example/app.js — expected: no output. AC-06: stitchVideos() contains no references to removed symbols. Source: openspec/changes/film-length/tasks.md TASK-08 | specs/stitch-client/spec.md REQ-SC-01 | deltas.md MODIFIED: stitch-client | examples/stitch-examples.md Example K" `
+  -Priority 1 -Type task --json
+$t8Id = [regex]::Match($t8, 'bd-[a-z0-9]+').Value
+
+$t9 = bd create "[film-length] T-009 TASK-09: Insert new stitchVideos() (~75 lines) in app.js" `
+  -Description "PHASE-2 CODE | File: integrations/web-example/app.js | Location: same position as deleted block (TASK-08). INSERT async function stitchVideos(resultItems) — ~75 lines. FUNCTION STRUCTURE (REQ-SC-02): GUARD 1 — filter clips where r.status==='ok' && r.modality==='video' && r.result?.data; if clips.length < 2: hide section + return null (NO network call). UI PREP — show section, clear player src, hide download btn, set status 'Sending clips to server...'. Read base from proxyUrlInput.value.trim() || 'http://localhost:3001'. GUARD 2 — fetch(base + '/stitch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ clips: clipDataUris }) }). If !resp.ok: parse JSON error body (.catch(() => ({error:resp.statusText}))) and throw. Parse json; if !json.data throw. SUCCESS PATH — b64=json.data.replace(/^data:[^,]+,/,''); bytes=Uint8Array.from(atob(b64),(c)=>c.charCodeAt(0)); blob=new Blob([bytes],{type:'video/mp4'}); sizeMB=json.sizeMB??...; set combinedVideoBlob, combinedVideoDataUri, player src via URL.createObjectURL, show download btn, set status 'Ready · N MB'; return blob. CATCH — log error, set status 'Stitch failed: '+err.message, null blobs, hide download btn, return null. ALL DOM ELEMENT REFS must be null-guarded (REQ-SC-06). SIGNATURE unchanged: async function stitchVideos(resultItems) — runBatch() and clearBatch() callers require zero changes (REQ-SC-03, AC-05). UNIT TESTS: $env:AI_MOCK='true'; npm test -- tests/unit/stitch-route. T-SR-01 (< 2 clips: null + no fetch), T-SR-02 (2-clip success: Blob), T-SR-03 (500 from server: null + status). Source: openspec/changes/film-length/tasks.md TASK-09 | implementation.md §7 | specs/stitch-client/spec.md REQ-SC-02..06 | examples/stitch-examples.md Examples A B E F" `
+  -Priority 1 -Type task --json
+$t9Id = [regex]::Match($t9, 'bd-[a-z0-9]+').Value
+
+$t10 = bd create "[film-length] T-010 TASK-10: Remove ffmpeg.wasm CDN script block from index.html" `
+  -Description "PHASE-2 CODE | File: integrations/web-example/index.html | Location: <script type='module'> block (~lines 668-678). DELETE entire block: <script type='module'> import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js'; import { toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js'; window._FFmpeg = FFmpeg; window._toBlobURL = toBlobURL; </script> EXPECTED final state near </body>: <script src='../../dist-web/ai-powered.umd.js'></script> <script src='app.js'></script> </body> </html> RULES (REQ-SC-04): DOM elements #combined-video-section, #combined-video-player, #combined-video-status, #btn-download-combined MUST be retained — they are used by new stitchVideos(). ZERO new CDN dependencies added. VERIFICATION: AC-07: grep 'cdn.jsdelivr.net.*ffmpeg' integrations/web-example/index.html — expected no output. Manual browser check: console no longer shows window._FFmpeg or window._toBlobURL defined. Source: openspec/changes/film-length/tasks.md TASK-10 | implementation.md §8 | specs/stitch-client/spec.md REQ-SC-04 | deltas.md MODIFIED: batch-combined-video | summary.md CDN Removal" `
+  -Priority 1 -Type task --json
+$t10Id = [regex]::Match($t10, 'bd-[a-z0-9]+').Value
+
+$t11 = bd create "[film-length] T-011 TASK-11: Audit and remove _FFmpeg/_toBlobURL global type declarations" `
+  -Description "PHASE-2 AUDIT | Command: grep -r '_FFmpeg\|_toBlobURL' src/ --include='*.d.ts' --include='*.ts' — expected: no output after this task is complete. RULES (REQ-SC-05): Remove any window._FFmpeg or window._toBlobURL augmentations found in *.d.ts files under src/. These were added to support the ffmpeg.wasm approach and are now dead code. VERIFICATION: npx tsc --noEmit passes after removal. AC-06: stitchVideos() in app.js contains no references to FFmpeg, toBlobURL, SharedArrayBuffer, _FFmpeg, _toBlobURL. Also run: grep -r '_FFmpeg\|_toBlobURL\|SharedArrayBuffer\|ffmpeg\.exec\|ffmpeg\.load' integrations/web-example/app.js integrations/web-example/index.html — expected no output (see stitch-examples.md Example K). If no augmentations found, this task is a zero-change verification pass. Source: openspec/changes/film-length/tasks.md TASK-11 | implementation.md §9 | specs/stitch-client/spec.md REQ-SC-05 | examples/stitch-examples.md Example K" `
+  -Priority 2 -Type task --json
+$t11Id = [regex]::Match($t11, 'bd-[a-z0-9]+').Value
+
+# ---------------------------------------------------------------------------
+# PHASE 3 — Tests and Verification
+# ---------------------------------------------------------------------------
+$t12 = bd create "[film-length] T-012 TASK-12: Build, full test suite, smoke tests, and ffprobe verification" `
+  -Description "PHASE-3 VERIFY | ALL EXISTING TESTS MUST CONTINUE TO PASS — ZERO REGRESSIONS PERMITTED. AUTOMATED CHECKS: (1) npm run build — zero TypeScript errors (AC-08). (2) $env:AI_MOCK='true'; npm test — all existing + new tests pass; 0 regressions. (3) npm run lint — zero lint errors. MANUAL SMOKE TESTS: SM-01: ffmpeg -version succeeds in proxy terminal (AC-01). SM-02: curl test (stitch-examples.md Example C/D) returns valid combined.mp4 (AC-11). SM-03: ffprobe combined.mp4 reports positive duration and correct codec h264 (AC-11). SM-04: 3-shot browser batch -> Combined Video section appears, plays all 3 shots, download button enabled, status 'Ready · N.N MB' (AC-05). SM-05: 1-shot batch -> #combined-video-section and #btn-download-combined remain hidden throughout. SM-06: POST /stitch with 1 clip -> HTTP 400 'at least 2 clips are required to stitch a combined video' (AC-03). SM-07: POST /stitch with 21 clips -> HTTP 400 'maximum of 20 clips per stitch request' (AC-04). SM-08: Proxy not running -> browser #combined-video-status = 'Stitch failed: Failed to fetch' (AC-09 variant). ADDITIONAL CHECKS: Confirm no API keys or secrets in git log --all -p. Confirm DOM elements #combined-video-section, #combined-video-player, #combined-video-status, #btn-download-combined still present in index.html. Confirm temp dir cleaned up after each request (AC-10). Confirm ffmpeg not in PATH -> status 'Stitch failed: Server stitch failed (500): ffmpeg not found in PATH...' (AC-09). New test files: tests/unit/spawn-ffmpeg.test.ts (T-SF-01..04), tests/unit/stitch-route.test.ts (T-SR-01..03), tests/integration/stitch-endpoint.test.ts (T-SE-01..06). Source: openspec/changes/film-length/tasks.md TASK-12 | tests/test-plan.md (full) | summary.md Acceptance Criteria AC-01..11 | examples/stitch-examples.md Examples C D" `
+  -Priority 1 -Type task --json
+$t12Id = [regex]::Match($t12, 'bd-[a-z0-9]+').Value
+
+# ---------------------------------------------------------------------------
+# DEPENDENCIES
+# ---------------------------------------------------------------------------
+Write-Host "`n=== Setting up dependencies ===" -ForegroundColor Cyan
+
+# PHASE 0 chain: TASK-02 needs imports from TASK-01
+bd dep add $t2Id $t1Id   # T-002 (StitchBodySchema) blocked by T-001 (imports must exist)
+
+# PHASE 1 chain: spawnFfmpeg needs schema; route needs helper; Vite comment follows apiPaths
+bd dep add $t3Id $t2Id   # T-003 (spawnFfmpeg) blocked by T-002 (schema in place)
+bd dep add $t4Id $t3Id   # T-004 (POST /stitch route) blocked by T-003 (helper must exist)
+bd dep add $t5Id $t2Id   # T-005 (body limit) blocked by T-002 (Phase 0 complete — additive gating)
+bd dep add $t6Id $t2Id   # T-006 (vite apiPaths) blocked by T-002 (Phase 0 complete)
+bd dep add $t7Id $t6Id   # T-007 (COOP/COEP comment) blocked by T-006 (apiPaths updated first)
+
+# PHASE 2 chain: browser replacement after server route complete; sequential delete-then-insert
+bd dep add $t8Id $t4Id   # T-008 (delete old stitchVideos) blocked by T-004 (server route ready)
+bd dep add $t9Id $t8Id   # T-009 (insert new stitchVideos) blocked by T-008 (old deleted first)
+bd dep add $t10Id $t9Id  # T-010 (remove CDN block) blocked by T-009 (new fn in place first)
+bd dep add $t11Id $t10Id # T-011 (audit type decls) blocked by T-010 (CDN block removed)
+
+# PHASE 3 blocked by all Phase 1 and Phase 2 steps complete
+bd dep add $t12Id $t11Id # T-012 (full verify) blocked by T-011 (Phase 2 complete)
+bd dep add $t12Id $t5Id  # T-012 (full verify) blocked by T-005 (body limit raised)
+bd dep add $t12Id $t7Id  # T-012 (full verify) blocked by T-007 (vite comment updated)
+
+# ---------------------------------------------------------------------------
+# SUMMARY
+# ---------------------------------------------------------------------------
+Write-Host "`n=== film-length Tasks Created ===" -ForegroundColor Green
+Write-Host "Story:  $storyId"
+Write-Host "Phase 0 (Imports and Schema — routes.ts):"
+Write-Host "  T-001: $t1Id  T-002: $t2Id"
+Write-Host "Phase 1 (Server Route, Body Limit, Vite Proxy):"
+Write-Host "  T-003: $t3Id  T-004: $t4Id  T-005: $t5Id  T-006: $t6Id  T-007: $t7Id"
+Write-Host "Phase 2 (Browser-Side Replacement):"
+Write-Host "  T-008: $t8Id  T-009: $t9Id  T-010: $t10Id  T-011: $t11Id"
+Write-Host "Phase 3 (Build, Test Suite, Smoke Tests):"
+Write-Host "  T-012: $t12Id"
+Write-Host ""
+Write-Host "Run 'bd ready' to see the first unblocked tasks." -ForegroundColor Yellow
+
+bd stats
