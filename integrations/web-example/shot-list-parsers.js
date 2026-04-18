@@ -41,7 +41,22 @@ export function _buildItem(entry, globalRefs, existing) {
     ).trim(),
     prompt,
     modality: String(entry.modality || "video"),
-    ...(entry.duration    !== undefined ? { duration:    entry.duration    } : {}),
+    // spec: filmbuff/docs/specs/batch-shot-list-spec.md v1.0.0 §2, §8
+    ...(entry.duration !== undefined ? (() => {
+      const raw = typeof entry.duration === "object" && entry.duration !== null
+        ? (entry.duration.seconds ?? entry.duration)
+        : entry.duration;
+      const coerced = typeof raw === "number"
+        ? (Number.isInteger(raw) ? raw : Math.round(raw))
+        : raw;
+      if (typeof raw === "number" && !Number.isInteger(raw)) {
+        console.warn(
+          `[batch-ingest] duration ${raw} is not an integer; ` +
+          `rounded to ${coerced}. See filmbuff/docs/specs/batch-shot-list-spec.md §2`,
+        );
+      }
+      return { duration: coerced };
+    })() : {}),
     ...(entry.fps         !== undefined ? { fps:         entry.fps         } : {}),
     ...(entry.aspectRatio !== undefined ? { aspectRatio: entry.aspectRatio } : {}),
     ...(entry.resolution  !== undefined ? { resolution:  entry.resolution  } : {}),
@@ -273,3 +288,50 @@ export function parseMdFile(text) {
   return items;
 }
 
+// ---------------------------------------------------------------------------
+// Testable pure helpers (exported so unit tests can import without a DOM)
+// ---------------------------------------------------------------------------
+
+/**
+ * Last-line-of-defense guard: return a new array of shot items with every
+ * `duration` field coerced to an integer via Math.round().
+ *
+ * Does NOT mutate the source array or its items (spec: xai-submit-guard §2,
+ * design.md D7).
+ *
+ * @param {Object[]} items - Parsed shot items (output of parseJsonFile / parseMdFile).
+ * @returns {Object[]} New array; items without a duration key pass through unchanged.
+ */
+export function toSafeItems(items) {
+  return items.map((item) => ({
+    ...item,
+    ...(item.duration !== undefined
+      ? { duration: Math.round(item.duration) } // spec: batch-shot-list-spec.md v1.0.0 §2
+      : {}),
+  }));
+}
+
+/** @type {RegExp} Accepts positive integers only (no floats, no leading zeros, no zero) */
+const DURATION_PATTERN = /^[1-9][0-9]*$/;
+
+/**
+ * Validate a Duration (s) input string.
+ *
+ * Rules (spec: duration-ui-validation/spec.md):
+ *   - Must match DURATION_PATTERN (positive integer; rejects floats, negatives, zero, empty).
+ *   - Must be in the range [3, 60] (spec: batch-shot-list-spec.md v1.0.0 §2).
+ *
+ * @param {string} value - Raw input string from the batch-duration <input>.
+ * @returns {string|null} Error message if invalid; null if valid.
+ */
+export function validateDuration(value) {
+  const trimmed = (value || "").trim();
+  if (!DURATION_PATTERN.test(trimmed)) {
+    return "Duration must be a whole number (e.g., 5)";
+  }
+  const n = parseInt(trimmed, 10);
+  if (n < 3 || n > 60) {
+    return "Duration must be between 3 and 60 seconds";
+  }
+  return null; // valid
+}

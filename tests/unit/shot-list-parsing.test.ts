@@ -14,6 +14,8 @@ import {
   parseJsonFile,
   parseMdFile,
   _buildItem,
+  toSafeItems,
+  validateDuration,
 } from "../../integrations/web-example/shot-list-parsers.js";
 
 // ---------------------------------------------------------------------------
@@ -390,6 +392,56 @@ describe("parseMdFile — ## References section support", () => {
 // ---------------------------------------------------------------------------
 // Suite: _buildItem — reference resolution priority cascade (P-REF)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Suite: Duration coercion — T-DUR-01 through T-DUR-04
+// ---------------------------------------------------------------------------
+
+describe("duration coercion — ingest and submit guard", () => {
+  // T-DUR-01: _buildItem() rounds the exact IEEE 754 float produced by filmbuff
+  it("T-DUR-01: _buildItem() rounds float duration to nearest integer on ingest", () => {
+    const entry = { prompt: "Dialogue scene", duration: 5.800000000000001 };
+    const item = _buildItem(entry, {}, 0);
+    expect(item).not.toBeNull();
+    expect(Number.isInteger(item!.duration)).toBe(true);
+    expect(item!.duration).toBe(6);
+  });
+
+  // T-DUR-02: _buildItem() passes integer duration through unchanged (no-regression)
+  it("T-DUR-02: _buildItem() passes integer duration through unchanged", () => {
+    const entry = { prompt: "Action scene", duration: 8 };
+    const item = _buildItem(entry, {}, 0);
+    expect(item).not.toBeNull();
+    expect(item!.duration).toBe(8);
+    expect(Number.isInteger(item!.duration)).toBe(true);
+  });
+
+  // T-DUR-03: toSafeItems() applies Math.round() defence without mutating source
+  it("T-DUR-03: toSafeItems() coerces float duration to integer before API call", () => {
+    const items = [
+      { name: "Shot 1", prompt: "Test A", modality: "video", duration: 5.800000000000001 },
+      { name: "Shot 2", prompt: "Test B", modality: "video", duration: 8 },
+    ];
+    const safe = toSafeItems(items);
+    expect(Number.isInteger(safe[0].duration)).toBe(true);
+    expect(safe[0].duration).toBe(6);
+    expect(safe[1].duration).toBe(8);
+    // Original array must NOT be mutated (design.md D7)
+    expect(items[0].duration).toBe(5.800000000000001);
+  });
+
+  // T-DUR-04: validateDuration() rejects float input with descriptive inline error
+  it("T-DUR-04: validateDuration rejects float input with inline error message", () => {
+    expect(validateDuration("5.5")).toBe("Duration must be a whole number (e.g., 5)");
+    expect(validateDuration("0")).toBe("Duration must be a whole number (e.g., 5)");
+    expect(validateDuration("abc")).toBe("Duration must be a whole number (e.g., 5)");
+    expect(validateDuration("2")).toBe("Duration must be between 3 and 60 seconds");
+    expect(validateDuration("61")).toBe("Duration must be between 3 and 60 seconds");
+    expect(validateDuration("5")).toBeNull();
+    expect(validateDuration("3")).toBeNull();
+    expect(validateDuration("60")).toBeNull();
+  });
+});
 
 describe("_buildItem — reference resolution priority cascade", () => {
   // P-REF-01: references is array → key-list lookup in merged globalRefs + _inlineRefs

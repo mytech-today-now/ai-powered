@@ -665,17 +665,6 @@
     <script src="../../dist-web/jszip.min.js"></script>
     <script src="../../dist-web/ai-powered.umd.js"></script>
     <script src="app.js"></script>
-    <!--
-      ffmpeg.wasm CDN imports — pinned semver to prevent silent upstream breakage.
-      Not bundled: ffmpeg.wasm + core is ~25 MB; consistent with jszip CDN pattern.
-      Sets window._FFmpeg and window._toBlobURL for use by stitchVideos() in app.js.
-    -->
-    <script type="module">
-      import { FFmpeg }     from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
-      import { toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js";
-      window._FFmpeg    = FFmpeg;
-      window._toBlobURL = toBlobURL;
-    </script>
   </body>
 </html>
 

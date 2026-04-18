@@ -108,6 +108,7 @@ export default defineConfig(({ command }) => {
       "/video",
       "/structured",
       "/batch",
+      "/stitch", // server-side video concat via POST /stitch (REQ-SS-06)
       "/upload", // multipart file upload for reference images (mobile camera photos)
       "/files", // serves uploaded file blobs; required for Luma AI keyframe URLs
       "/v1",
@@ -123,11 +124,10 @@ export default defineConfig(({ command }) => {
       define: sharedDefine,
       resolve: { alias: webAlias },
       server: {
-        // Cross-origin isolation headers required by ffmpeg.wasm (SharedArrayBuffer).
-        // See: https://ffmpegwasm.netlify.app/#installation (Vite section).
-        // COOP prevents the document from sharing a browsing context group with
-        // cross-origin popups; COEP blocks cross-origin resources that don't opt in
-        // via CORP or CORS — together they unlock SharedArrayBuffer in the browser.
+        // Cross-origin isolation headers — retained for compatibility with browsers
+        // that may require cross-origin isolation for other features (e.g.
+        // performance.now() precision, Atomics).  Video stitching now runs server-side
+        // via POST /stitch and no longer requires SharedArrayBuffer in the browser.
         headers: {
           "Cross-Origin-Opener-Policy": "same-origin",
           "Cross-Origin-Embedder-Policy": "require-corp",
@@ -160,8 +160,8 @@ export default defineConfig(({ command }) => {
               res.setHeader("Content-Type", mime);
               // Repeat isolation headers explicitly: this middleware pipes directly
               // to res via createReadStream, which can bypass Vite's global
-              // server.headers injection.  Without these, dist-web assets would be
-              // served without COOP/COEP, breaking SharedArrayBuffer for ffmpeg.wasm.
+              // server.headers injection.  Without explicit headers here, dist-web
+              // assets would be served without COOP/COEP cross-origin isolation.
               res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
               res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
               // CORP: same-origin tells the browser this resource is safe to embed

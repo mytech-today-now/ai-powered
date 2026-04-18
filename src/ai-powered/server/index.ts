@@ -9,7 +9,7 @@
  *               Strict-Transport-Security on every response
  *   3. CORS — configurable origin (default http://localhost:5173)
  *   4. express-rate-limit — default 60 req/min, returns 429 on exceed
- *   5. express.json body parser — 10 MB limit
+ *   5. express.json body parser — 200 MB limit (REQ-SS-05 / design.md D5)
  *   6. API routes from server/routes.ts (Zod-validated per route)
  *   7. Centralised error handler:
  *        BudgetExceededError          → 402
@@ -168,7 +168,10 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   );
 
   // 4. Body parser
-  app.use(express.json({ limit: "10mb" }));
+  // 200 MB ceiling: a 24-clip Luma AI batch (~5-6 MB each) encodes to ~86 MB
+  // base64 JSON.  The server binds to 127.0.0.1 by default so DoS risk is
+  // minimal.  (REQ-SS-05 / design.md D5)
+  app.use(express.json({ limit: "200mb" }));
 
   // 5. Pino HTTP request/response logger
   app.use((req: Request, res: Response, next: NextFunction) => {

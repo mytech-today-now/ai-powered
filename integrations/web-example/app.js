@@ -3340,232 +3340,170 @@ ${combinedSection}${shotCards}
   /* ── STITCH VIDEOS ────────────────────────────────────────── */
 
   /**
-   * Concatenate all successful video clips in `resultItems` into a single
-   * combined MP4 using ffmpeg.wasm (stream-copy, no re-encode).
+   * Concatenate all successful video clips in `resultItems` via the Express
+   * proxy server (POST /stitch) using native ffmpeg (stream-copy, no re-encode,
+   * 2–8 s vs 90–270 s for ffmpeg.wasm).
    *
-   * Guard order (returns null on any failure):
+   * Guard order (returns null without a network call on guard failure):
    *   1. Filter for valid video clips — requires ≥ 2.
-   *   2. SharedArrayBuffer must exist (cross-origin isolation required).
-   *   3. window._FFmpeg and window._toBlobURL must be defined (CDN loaded).
-   *   4. Estimated decoded size must be ≤ 500 MB (base64 × 0.75 heuristic).
    *
    * On success: updates combinedVideoBlob / combinedVideoDataUri, shows the
    * combined-video-section, sets the player src, and reveals the download btn.
    *
-   * Design D4: -c copy only — no re-encode. Mixed resolution will fail and the
-   * error is caught and reported via combinedVideoStatus.
-   * Design D6: 0.75 factor for base64 → bytes is ~1 % accurate for large files;
-   * avoids doubling memory by doing a pre-load size check rather than decoding.
-   *
-   * REQ-BCV-05 | AC-11,12,16,17,18,21
+   * REQ-SC-02 | AC-05,09,11
    *
    * @param {object[]} resultItems  - Array of batch result objects from the NDJSON stream.
    * @returns {Promise<Blob|null>}
    */
   async function stitchVideos(resultItems) {
-    // ── Guard 1: filter valid video clips ───────────────────
+    // ── Guard 1: filter valid video clips (REQ-SC-02) ────────
+    // Requires ≥ 2 successful video clips — if not, hide section and return
+    // immediately without making any network request (REQ-SC-02, Example B).
     const clips = (resultItems || []).filter(
       (r) => r.status === "ok" && r.modality === "video" && r.result?.data
     );
     if (clips.length < 2) {
-      if (combinedVideoStatus) combinedVideoStatus.textContent = "";
+      if (combinedVideoStatus)  combinedVideoStatus.textContent = "";
       if (combinedVideoSection) combinedVideoSection.hidden = true;
       if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
       return null;
     }
 
-    // ── Guard 2: SharedArrayBuffer (REQ-BCV-11, AC-21) ───────
-    // SharedArrayBuffer is only available when the page is served with:
-    //   Cross-Origin-Opener-Policy: same-origin
-    //   Cross-Origin-Embedder-Policy: require-corp
-    // The Vite dev server (npm run dev:web) sets these automatically.
-    // If you are seeing this message, open the app via `npm run dev:web`
-    // instead of opening index.html directly from the file system.
-    if (typeof SharedArrayBuffer === "undefined") {
-      if (combinedVideoStatus) {
-        combinedVideoStatus.textContent =
-          "Combined video unavailable — open the app via \u2018npm run dev:web\u2019 " +
-          "so the server can supply the required COOP/COEP isolation headers.";
-      }
-      if (combinedVideoSection) combinedVideoSection.hidden = false;
-      return null;
-    }
-
-    // ── Guard 3: CDN helpers must be loaded ───────────────────
-    if (!window._FFmpeg || !window._toBlobURL) {
-      if (combinedVideoStatus) {
-        combinedVideoStatus.textContent =
-          "Combined video unavailable — ffmpeg.wasm CDN script not loaded.";
-      }
-      if (combinedVideoSection) combinedVideoSection.hidden = false;
-      return null;
-    }
-
-    // ── Guard 4: size pre-check (Design D6: base64 × 0.75 ≈ bytes) ─
-    const SIZE_LIMIT = 500 * 1024 * 1024; // 500 MB
-    const estimatedBytes = clips.reduce((sum, r) => {
-      const b64 = r.result.data.replace(/^data:[^,]+,/, "");
-      return sum + b64.length * 0.75;
-    }, 0);
-    if (estimatedBytes > SIZE_LIMIT) {
-      if (combinedVideoStatus) {
-        combinedVideoStatus.textContent =
-          "Combined video skipped — estimated decoded size exceeds 500 MB.";
-      }
-      if (combinedVideoSection) combinedVideoSection.hidden = false;
-      return null;
-    }
-
-    // ── Show section and initial status ───────────────────────
+    // ── UI prep: show section, clear player, set initial status ─
     if (combinedVideoSection) combinedVideoSection.hidden = false;
     if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
     if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+    if (combinedVideoStatus)  combinedVideoStatus.textContent = "Sending clips to server\u2026";
 
-    const FFmpeg    = window._FFmpeg;
-    const toBlobURL = window._toBlobURL;
+    // ── Read proxy base URL (REQ-SC-04) ──────────────────────
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
 
-    // ── CDN load: up to 3 attempts (1 initial + 2 retries) ───────────────────
-    // classWorkerURL is a blob URL so new Worker() stays same-origin — required
-    // when the page is served from a cross-origin host (e.g. ngrok).
-    // A fresh FFmpeg instance is created for each attempt to avoid stale state
-    // left behind by a partial initialisation failure.
-    const LOAD_MAX_ATTEMPTS  = 3;      // 1 initial + 2 retries
-    const LOAD_TIMEOUT_MS    = 90_000; // 90 s per attempt — core wasm is ~25 MB
-    const LOAD_RETRY_WAIT_MS = 2_000;  // 2 s pause between retries
-    const BASE_URL   = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
-    const FFMPEG_URL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm";
-
-    let ffmpeg    = null;
-    let loadError = null;
-
-    for (let attempt = 1; attempt <= LOAD_MAX_ATTEMPTS; attempt++) {
-      const label = "attempt " + attempt + "/" + LOAD_MAX_ATTEMPTS;
-      if (combinedVideoStatus)
-        combinedVideoStatus.textContent = "Downloading ffmpeg.wasm (" + label + ")…";
-      console.log("[stitchVideos] ffmpeg load " + label + " — fetching CDN assets…");
-      const t0 = Date.now();
-
-      // Fresh instance per attempt — avoids partial-init state from a prior failure
-      ffmpeg = new FFmpeg();
-      ffmpeg.on("progress", ({ progress }) => {
-        if (combinedVideoStatus) {
-          const pct = Math.min(Math.round(progress * 100), 100);
-          combinedVideoStatus.textContent = "Stitching " + pct + "%…";
-        }
-      });
-
-      try {
-        await Promise.race([
-          (async () => {
-            console.log("[stitchVideos]   → worker.js …");
-            const workerBlobURL = await toBlobURL(FFMPEG_URL + "/worker.js", "text/javascript");
-            console.log("[stitchVideos]   → ffmpeg-core.js …");
-            const coreURL = await toBlobURL(BASE_URL + "/ffmpeg-core.js", "text/javascript");
-            console.log("[stitchVideos]   → ffmpeg-core.wasm (~25 MB, slow on first use) …");
-            const wasmURL = await toBlobURL(BASE_URL + "/ffmpeg-core.wasm", "application/wasm");
-            console.log("[stitchVideos]   → assets ready in " + (Date.now() - t0) + " ms; calling ffmpeg.load() …");
-            await ffmpeg.load({ classWorkerURL: workerBlobURL, coreURL, wasmURL });
-            console.log("[stitchVideos]   → ffmpeg.load() resolved in " + (Date.now() - t0) + " ms");
-          })(),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error(
-                "ffmpeg.wasm download timed out after 90 s (" + label + ")"
-              )),
-              LOAD_TIMEOUT_MS
-            )
-          ),
-        ]);
-        loadError = null;
-        console.log("[stitchVideos] ffmpeg loaded successfully on " + label);
-        break; // ← exit retry loop
-      } catch (err) {
-        loadError = err;
-        if (attempt < LOAD_MAX_ATTEMPTS) {
-          console.warn(
-            "[stitchVideos] Load " + label + " failed: " + err.message +
-            " — retrying in " + (LOAD_RETRY_WAIT_MS / 1000) + " s…"
-          );
-          if (combinedVideoStatus)
-            combinedVideoStatus.textContent =
-              "Download failed (" + label + ") — retrying in " +
-              (LOAD_RETRY_WAIT_MS / 1000) + " s…";
-          await new Promise((resolve) => setTimeout(resolve, LOAD_RETRY_WAIT_MS));
-        } else {
-          console.error(
-            "[stitchVideos] All " + LOAD_MAX_ATTEMPTS + " load attempts failed.", err
-          );
-        }
-      }
-    }
+    // ── POST /stitch — send clips to Express proxy for native ffmpeg concat ──
 
     try {
-      // Surface the final load failure if all retry attempts were exhausted
-      if (loadError) throw loadError;
+      // Build ordered array of data URIs from valid clips.
+      const clipDataUris = clips.map((r) => r.result.data);
+      if (combinedVideoStatus)
+        combinedVideoStatus.textContent =
+          "Stitching on server (" + clips.length + " clips)\u2026";
+      // POST /stitch with ordered clip data URIs (REQ-SC-02, AC-09)
+      const resp = await fetch(base + "/stitch", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ clips: clipDataUris }),
+      });
 
-      if (combinedVideoStatus) combinedVideoStatus.textContent = "Writing clips…";
-      console.log("[stitchVideos] Writing " + clips.length + " clips to ffmpeg virtual FS…");
-
-      // Write each clip as clipN.mp4 inside the ffmpeg virtual FS
-      const concatLines = [];
-      for (let i = 0; i < clips.length; i++) {
-        const r     = clips[i];
-        const b64   = r.result.data.replace(/^data:[^,]+,/, "");
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const name  = "clip" + i + ".mp4";
-        await ffmpeg.writeFile(name, bytes);
-        concatLines.push("file '" + name + "'");
-        console.log("[stitchVideos]   → wrote " + name + " (" + bytes.length + " bytes)");
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(
+          "Server stitch failed (" + resp.status + "): " + (errBody.error || resp.statusText)
+        );
       }
 
-      // Write the concat manifest
-      const listTxt = new TextEncoder().encode(concatLines.join("\n") + "\n");
-      await ffmpeg.writeFile("list.txt", listTxt);
-      console.log("[stitchVideos] Concat manifest written (" + clips.length + " entries); executing ffmpeg…");
+      const json = await resp.json();
+      if (!json.data) throw new Error("Server returned no data URI for combined video.");
 
-      if (combinedVideoStatus) combinedVideoStatus.textContent = "Stitching…";
+      // Decode base64 data URI → Blob (avoids storing two copies in memory)
+      const b64   = json.data.replace(/^data:[^,]+,/, "");
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const blob  = new Blob([bytes], { type: "video/mp4" });
+      const sizeMB = json.sizeMB ?? Math.round(blob.size / (1024 * 1024) * 10) / 10;
 
-      // Concatenate using stream-copy — no re-encode (Design D4)
-      await ffmpeg.exec([
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "list.txt",
-        "-c", "copy",
-        "combined.mp4",
-      ]);
-      console.log("[stitchVideos] ffmpeg.exec() complete; reading output…");
-
-      // Read output and build Blob
-      const data = await ffmpeg.readFile("combined.mp4");
-      const blob = new Blob([data.buffer], { type: "video/mp4" });
-      const sizeMB = Math.round(blob.size / (1024 * 1024) * 10) / 10;
-      console.log("[stitchVideos] Combined video ready — " + sizeMB + " MB");
-
-      // Cache and display
+      // Cache blobs + update UI (REQ-SC-06: null-guard all DOM refs)
       combinedVideoBlob    = blob;
-      combinedVideoDataUri = null; // not materialised as data URI (memory efficiency)
-
+      combinedVideoDataUri = json.data;
       const url = URL.createObjectURL(blob);
-      if (combinedVideoPlayer) {
-        combinedVideoPlayer.src = url;
-      }
-      if (btnDownloadCombined) btnDownloadCombined.hidden = false;
-      if (combinedVideoStatus) {
-        combinedVideoStatus.textContent = "Ready · " + sizeMB + " MB";
-      }
+      if (combinedVideoPlayer)  combinedVideoPlayer.src    = url;
+      if (btnDownloadCombined)  btnDownloadCombined.hidden = false;
+      if (combinedVideoStatus)  combinedVideoStatus.textContent = "Ready \u00b7 " + sizeMB + " MB";
 
       return blob;
     } catch (err) {
       console.error("[stitchVideos] Stitch failed:", err);
-      if (combinedVideoStatus) {
-        combinedVideoStatus.textContent =
-          "Stitch failed: " + (err.message || String(err));
-      }
+      if (combinedVideoStatus)
+        combinedVideoStatus.textContent = "Stitch failed: " + (err.message || String(err));
       combinedVideoBlob    = null;
       combinedVideoDataUri = null;
       if (btnDownloadCombined) btnDownloadCombined.hidden = true;
       return null;
     }
+  }
+
+  /* ── DURATION ERROR MESSAGING (spec: duration-error-messaging/spec.md) ── */
+
+  /**
+   * Format a video API error body into a human-readable message.
+   * Detects duration type errors (422 i32 failures) and surfaces a clear explanation.
+   *
+   * @param {string} errorBody  - Raw error string from the API (e.g. ProxyError.message).
+   * @param {number} shotIndex  - 0-based index of the failing shot for context in message.
+   * @returns {string} Human-readable error message; original `errorBody` if not a duration error.
+   */
+  function formatVideoApiError(errorBody, shotIndex) {
+    const isDurationTypeError =
+      (errorBody.includes("expected i32") || errorBody.includes("expected a string")) &&
+      errorBody.includes("duration");
+    if (isDurationTypeError) {
+      const match = errorBody.match(/floating point `([^`]+)`/);
+      const badValue = match ? match[1] : "unknown";
+      return (
+        `Shot ${shotIndex + 1} failed: Duration must be a whole number of seconds. ` +
+        `The value "${badValue}" is not a valid integer. Re-generate the shot list ` +
+        `with a corrected duration, or manually edit the shot-list file to use an integer value.`
+      );
+    }
+    return errorBody;
+  }
+
+  /* ── DURATION VALIDATION (spec: duration-ui-validation/spec.md) ── */
+
+  /** @type {RegExp} Accepts positive integers only (rejects floats, negatives, zero, empty) */
+  const DURATION_PATTERN = /^[1-9][0-9]*$/;
+
+  /**
+   * Validate a Duration (s) input string.
+   *
+   * @param {string} value - Raw input string from the batch-duration <input>.
+   * @returns {string|null} Error message if invalid; null if valid.
+   */
+  function validateDuration(value) {
+    const trimmed = (value || "").trim();
+    if (!DURATION_PATTERN.test(trimmed)) {
+      return "Duration must be a whole number (e.g., 5)";
+    }
+    const n = parseInt(trimmed, 10);
+    if (n < 3 || n > 60) {
+      return "Duration must be between 3 and 60 seconds";
+    }
+    return null; // valid
+  }
+
+  // Duration (s) validation — spec: batch-shot-list-spec.md v1.0.0 §2
+  let batchDurationError = null;
+  const batchDurationHint = document.createElement("span");
+  batchDurationHint.className = "field-error-hint";
+  batchDurationHint.style.cssText = "color:var(--danger);font-size:0.85em;display:block;min-height:1.2em";
+  if (batchDurationEl && batchDurationEl.parentNode) {
+    batchDurationEl.parentNode.insertBefore(batchDurationHint, batchDurationEl.nextSibling);
+  }
+
+  function applyDurationValidation() {
+    batchDurationError = batchDurationEl?.value ? validateDuration(batchDurationEl.value) : null;
+    batchDurationHint.textContent = batchDurationError || "";
+    // Disable Run button while duration input is present but invalid
+    if (batchDurationEl?.value && batchDurationError !== null) {
+      btnBatchRun.disabled = true;
+    } else if (!batchDurationError) {
+      // Only re-enable if no other condition is disabling it (items loaded)
+      if (batchItems.length > 0) {
+        btnBatchRun.disabled = false;
+      }
+    }
+  }
+
+  if (batchDurationEl) {
+    batchDurationEl.addEventListener("change", applyDurationValidation);
+    batchDurationEl.addEventListener("blur",   applyDurationValidation);
   }
 
   /* ── BATCH RUNNER ─────────────────────────────────────────── */
@@ -3622,8 +3560,16 @@ ${combinedSection}${shotCards}
       ? parseInt(batchFpsEl.value, 10) || undefined
       : undefined;
 
+    // Last-line-of-defense guard — spec: filmbuff/docs/specs/batch-shot-list-spec.md v1.0.0 §2
+    const safeItems = batchItems.map(item => ({
+      ...item,
+      ...(item.duration !== undefined
+        ? { duration: Math.round(item.duration) } // spec: batch-shot-list-spec.md v1.0.0 §2
+        : {}),
+    }));
+
     const payload = {
-      items: batchItems.map((item) => ({
+      items: safeItems.map((item) => ({
         // Identity fields — always from the shot item
         modality: item.modality || "video",
         name:     item.name,
@@ -3769,16 +3715,25 @@ ${combinedSection}${shotCards}
             case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
             case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
             case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-            default:  showGlobalError(`${err.message}`, "error");
+            default: {
+              const rawMsg = err.message || String(err);
+              const friendlyMsg = formatVideoApiError(rawMsg, done_count);
+              showGlobalError(friendlyMsg, "error");
+              batchProgressLabel.textContent = "Error: " + friendlyMsg;
+              break;
+            }
           }
         } else {
-          showGlobalError(err.message ?? "Unexpected error", "error");
+          const rawMsg = err.message ?? "Unexpected error";
+          const friendlyMsg = formatVideoApiError(rawMsg, done_count);
+          showGlobalError(friendlyMsg, "error");
         }
         batchProgressBar.classList.add("progress-bar--error");
         batchProgress.classList.remove("hidden");
       }
     } finally {
-      btnBatchRun.disabled = false;
+      // Re-enable Run only when there is no active duration-validation error
+      btnBatchRun.disabled = batchDurationError !== null;
       btnCancelBatch.style.display = "none";
     }
   }

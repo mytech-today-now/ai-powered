@@ -55,6 +55,16 @@ import {
 } from "./file-handler.js";
 
 // ---------------------------------------------------------------------------
+// Node.js built-in imports — 'node:' prefix prevents npm package shadowing
+// (REQ-SS-01). No additional npm packages required.
+// ---------------------------------------------------------------------------
+import * as os from "node:os";
+import * as path from "node:path";
+import * as fs from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+
+// ---------------------------------------------------------------------------
 // Multer — multipart/form-data file upload middleware (50 MiB hard limit)
 // ---------------------------------------------------------------------------
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 52_428_800 } });
@@ -240,6 +250,14 @@ const BatchBodySchema = ClientOverrideSchema.extend({
   items: z.array(BatchItemSchema).min(1, "items must not be empty"),
 });
 
+/** Body for POST /stitch — ordered base64 MP4 data URIs to concatenate. */
+const StitchBodySchema = z.object({
+  clips: z
+    .array(z.string().min(1, "each clip must be a non-empty base64 data URI"))
+    .min(2, "at least 2 clips are required to stitch a combined video")
+    .max(20, "maximum of 20 clips per stitch request"),
+});
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -372,6 +390,66 @@ function resolveFileBlocks(
   return fileRefs.flatMap((ref) => {
     const block = resolveFileBlock(ref, provider, model);
     return block ? [block] : [];
+  });
+}
+
+// ---------------------------------------------------------------------------
+// spawnFfmpeg — native ffmpeg wrapper (REQ-SS-03)
+// D1: native spawn over fluent-ffmpeg — minimal dep surface + full stderr capture.
+// D4: tail-2KB preserves diagnostic while dropping verbose version banner.
+// ---------------------------------------------------------------------------
+
+/**
+ * Spawn a native `ffmpeg` process and wait for completion.
+ *
+ * @param args - CLI arguments to pass after `ffmpeg`
+ * @param cwd  - Working directory for the process (UUID-scoped temp dir)
+ * @returns    Resolves with the full stderr string on exit code 0.
+ * @throws     Error with tail-2KB stderr on non-zero exit, or an actionable
+ *             install-hint error when ffmpeg is not found in PATH (ENOENT).
+ */
+function spawnFfmpeg(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const stderrChunks: Buffer[] = [];
+    proc.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    // Drain stdout silently — concat output goes to the file, not stdout.
+    proc.stdout.resume();
+
+    proc.on("close", (code) => {
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (code === 0) {
+        resolve(stderr);
+      } else {
+        // Tail the last 2 KB to avoid swamping logs with the version banner.
+        const tail = stderr.slice(-2048);
+        reject(
+          new Error(
+            `ffmpeg exited with code ${code}.\nCommand: ffmpeg ${args.join(" ")}\nStderr (tail 2 KB):\n${tail}`,
+          ),
+        );
+      }
+    });
+
+    proc.on("error", (err) => {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(
+          new Error(
+            "ffmpeg not found in PATH. Install it on the server host:\n" +
+              "  macOS:   brew install ffmpeg\n" +
+              "  Ubuntu:  sudo apt-get install -y ffmpeg\n" +
+              "  Windows: scoop install ffmpeg\n" +
+              "Or use: npm install @ffmpeg-installer/ffmpeg",
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
   });
 }
 
@@ -1037,6 +1115,65 @@ export function createRouter(opts: ServeOptions): Router {
 
       res.end();
       void baseOverrides; // suppress unused-var lint
+    }),
+  );
+
+  // --- POST /stitch ---
+  // Accepts ordered base64 MP4 data URIs, writes clips to a UUID-scoped temp
+  // dir, runs native ffmpeg -f concat -safe 0 -c copy (lossless stream-copy,
+  // 2–8 s), and returns the combined MP4 as a base64 data URI.
+  // D2: UUID per request ensures concurrent requests never collide.
+  // D3: -c copy only — stream-copy, completely lossless, fastest path.
+  // REQ-SS-04 / REQ-SS-07 / REQ-SS-08
+  router.post(
+    "/stitch",
+    wrap(async (req, res, next) => {
+      const body = parseBody(StitchBodySchema, req, res);
+      if (!body) return;
+
+      const logger = getLogger();
+      const tmpDir = path.join(os.tmpdir(), "ai-powered-stitch-" + randomUUID());
+
+      try {
+        // Step 1: Create UUID-scoped temp directory.
+        await fs.mkdir(tmpDir, { recursive: true });
+        logger.info({ tmpDir, clipCount: body.clips.length }, "POST /stitch: temp dir created");
+
+        // Step 2: Write each clip as clipN.mp4 and accumulate concat manifest lines.
+        const concatLines: string[] = [];
+        for (let i = 0; i < body.clips.length; i++) {
+          const dataUri = body.clips[i]!;
+          const base64 = dataUri.replace(/^data:[^,]+,/, "");
+          const bytes = Buffer.from(base64, "base64");
+          const clipName = `clip${i}.mp4`;
+          await fs.writeFile(path.join(tmpDir, clipName), bytes);
+          concatLines.push(`file '${clipName}'`);
+          logger.info({ clipName, sizeBytes: bytes.length }, "POST /stitch: clip written");
+        }
+
+        // Step 3: Write the ffmpeg concat manifest.
+        await fs.writeFile(path.join(tmpDir, "list.txt"), concatLines.join("\n") + "\n", "utf8");
+
+        // Step 4: Spawn ffmpeg — stream-copy, lossless, no re-encode.
+        logger.info({ clips: body.clips.length }, "POST /stitch: spawning ffmpeg concat…");
+        await spawnFfmpeg(
+          ["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "combined.mp4"],
+          tmpDir,
+        );
+
+        // Step 5: Read combined output and respond.
+        const combinedBytes = await fs.readFile(path.join(tmpDir, "combined.mp4"));
+        const sizeMB = parseFloat((combinedBytes.length / (1024 * 1024)).toFixed(1));
+        logger.info({ sizeMB, clips: body.clips.length }, "POST /stitch: combined video ready");
+        res.json({ data: "data:video/mp4;base64," + combinedBytes.toString("base64"), sizeMB });
+      } catch (err) {
+        if (!mapError(err, res)) next(err);
+      } finally {
+        // Step 6: Always clean up — even on error. Warn-only; never throws.
+        fs.rm(tmpDir, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+          getLogger().warn({ tmpDir, err: cleanupErr }, "POST /stitch: temp cleanup failed");
+        });
+      }
     }),
   );
 
