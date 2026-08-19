@@ -40,8 +40,14 @@ coverage/
 # WIP / INTERNAL MATERIALS  (not for public repo)
 # =============================================================================
 
+# Marketing, sales, investor, and business-plan materials
+marketing/
+
 # Prompt-engineering artifacts and JIRA drafts
 ai-prompts/
+
+# Internal AI agent skills / instructions
+.agents/
 
 # Root-level WIP prompt files
 TOC-prompt.md

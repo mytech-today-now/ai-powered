@@ -3395,8 +3395,12 @@ ${combinedSection}${shotCards}
 
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
+        const base   = errBody.error || resp.statusText;
+        const detail = Array.isArray(errBody.issues) && errBody.issues.length
+          ? " \u2014 " + errBody.issues.join("; ")
+          : "";
         throw new Error(
-          "Server stitch failed (" + resp.status + "): " + (errBody.error || resp.statusText)
+          "Server stitch failed (" + resp.status + "): " + base + detail
         );
       }
 

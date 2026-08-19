@@ -69,10 +69,14 @@ function makeStitcher(fetchFn: typeof fetch = globalThis.fetch) {
       if (!resp.ok) {
         const errBody = (await resp.json().catch(() => ({ error: resp.statusText }))) as {
           error?: string;
+          issues?: string[];
         };
-        throw new Error(
-          `Server stitch failed (${resp.status}): ${errBody.error ?? resp.statusText}`,
-        );
+        const base = errBody.error ?? resp.statusText;
+        const detail =
+          Array.isArray(errBody.issues) && errBody.issues.length
+            ? ` \u2014 ${errBody.issues.join("; ")}`
+            : "";
+        throw new Error(`Server stitch failed (${resp.status}): ${base}${detail}`);
       }
 
       const json = (await resp.json()) as { data?: string; sizeMB?: number };
@@ -119,10 +123,10 @@ function statusText() {
 }
 
 // ---------------------------------------------------------------------------
-// Tests — T-SR-01..T-SR-03
+// Tests — T-SR-01..T-SR-04
 // ---------------------------------------------------------------------------
 
-describe("stitchVideos() server-side — T-SR-01..T-SR-03", () => {
+describe("stitchVideos() server-side — T-SR-01..T-SR-04", () => {
   beforeEach(() => {
     setupDom();
     Object.defineProperty(URL, "createObjectURL", {
@@ -180,5 +184,31 @@ describe("stitchVideos() server-side — T-SR-01..T-SR-03", () => {
     expect(result).toBeNull();
     expect(statusText()).toMatch(/^Stitch failed: Server stitch failed \(500\)/);
     expect(statusText()).toContain("ffmpeg exited with code 1");
+  });
+
+  // ── T-SR-04 ───────────────────────────────────────────────────────────────
+  it("T-SR-04: HTTP 400 with issues[] → null; status appends joined issues after the error", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({
+        error: "Validation error",
+        issues: [
+          "clips.2: each clip must be a non-empty base64 data URI",
+          "clips: at least 2 clips are required to stitch a combined video",
+        ],
+      }),
+    });
+    const stitchVideos = makeStitcher(mockFetch as typeof fetch);
+
+    const result = await stitchVideos([clip(), clip()]);
+
+    expect(result).toBeNull();
+    expect(statusText()).toMatch(/^Stitch failed: Server stitch failed \(400\): Validation error/);
+    expect(statusText()).toContain("clips.2: each clip must be a non-empty base64 data URI");
+    expect(statusText()).toContain(
+      "clips: at least 2 clips are required to stitch a combined video",
+    );
   });
 });
