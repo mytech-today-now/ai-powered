@@ -22,7 +22,8 @@
  *   config.baseUrl            Required for all types (except "ollama" where
  *                             http://localhost:11434 is used as default).
  *   config.apiKey             Optional bearer token; omitted when empty.
- *   config.customHeaders      Optional extra HTTP headers forwarded verbatim.
+ *   config.customHeaders      Optional extra HTTP headers forwarded verbatim
+ *                             to provider requests; server-side only.
  *   config.customProviderType Defaults to "openai-compatible".
  *   config.model              Required; no global default can be inferred.
  */

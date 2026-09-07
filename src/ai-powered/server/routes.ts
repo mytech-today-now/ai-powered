@@ -5,7 +5,7 @@
  *
  * Routes mounted by createServer() in index.ts:
  *   GET  /health               – liveness probe
- *   GET  /config               – resolved config with all API keys masked
+ *   GET  /config               – browser-safe resolved config (masked/omitted secrets)
  *   GET  /models               – list models (optional ?modality=)
  *   GET  /pricing              – full MODEL_PRICING table (optional ?modality= ?model=)
  *   POST /text                 – generate text (blocking or plain-text stream)
@@ -37,10 +37,10 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { getAiClient, loadConfig, maskApiKey, listPricing } from "../index.js";
+import { getAiClient, loadConfig, listPricing } from "../index.js";
 import { getTemplate, renderTemplate } from "../templates/index.js";
 import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
-import { getLogger } from "../utils.js";
+import { getLogger, serializePublicConfig } from "../utils.js";
 import type { ProviderCallOptions } from "../providers/index.js";
 import type { ServeOptions } from "./index.js";
 import { selectI2VProvider } from "./smart-default.js";
@@ -480,8 +480,9 @@ export function createRouter(opts: ServeOptions): Router {
   });
 
   // --- GET /config ---
-  // Returns the resolved configuration with all API keys masked.  The raw key
-  // is NEVER sent to the browser; maskApiKey() is called unconditionally.
+  // Returns the resolved configuration in browser-safe form.  Public fields
+  // stay intact, but secret-bearing values such as apiKey/customHeaders are
+  // masked or omitted before the JSON response is sent to the browser.
   router.get("/config", (_req, res) => {
     try {
       const overrides = {
@@ -490,8 +491,7 @@ export function createRouter(opts: ServeOptions): Router {
         ...(opts.profile ? { profile: opts.profile } : {}),
       };
       const cfg = loadConfig({ flags: overrides as never });
-      const safe = { ...cfg, apiKey: maskApiKey(cfg.apiKey ?? "") };
-      res.json(safe);
+      res.json(serializePublicConfig(cfg));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });

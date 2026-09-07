@@ -43,6 +43,91 @@ export function maskApiKey(key: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Public config serialization
+// ---------------------------------------------------------------------------
+
+const CONFIG_REDACTED_VALUE = "[REDACTED]";
+const CONFIG_KEYS_TO_OMIT = new Set(["customHeaders", "profiles"]);
+
+const CONFIG_SENSITIVE_KEY_PATTERNS = [
+  /^api[_-]?key$/i,
+  /(?:^|[_-])access[_-]?token$/i,
+  /(?:^|[_-])refresh[_-]?token$/i,
+  /(?:^|[_-])id[_-]?token$/i,
+  /(?:^|[_-])auth[_-]?token$/i,
+  /(?:^|[_-])client[_-]?secret$/i,
+  /(?:^|[_-])secret$/i,
+  /(?:^|[_-])password$/i,
+  /(?:^|[_-])passphrase$/i,
+  /(?:^|[_-])authorization$/i,
+  /(?:^|[_-])credential(s)?$/i,
+  /(?:^|[_-])private[_-]?key$/i,
+];
+
+function isSensitiveConfigKey(key: string): boolean {
+  return CONFIG_SENSITIVE_KEY_PATTERNS.some((pattern) => pattern.test(key));
+}
+
+function sanitizeConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeConfigValue(item));
+  }
+  if (value && typeof value === "object") {
+    return sanitizeConfigObject(value as Record<string, unknown>);
+  }
+  return value;
+}
+
+function sanitizeSensitiveValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSensitiveValue(item));
+  }
+  if (value && typeof value === "object") {
+    return sanitizeConfigObject(value as Record<string, unknown>);
+  }
+  return CONFIG_REDACTED_VALUE;
+}
+
+function sanitizeConfigObject(source: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(source)) {
+    if (CONFIG_KEYS_TO_OMIT.has(key)) {
+      continue;
+    }
+    if (key === "apiKey") {
+      result["apiKey"] = maskApiKey(typeof value === "string" ? value : "");
+      continue;
+    }
+    if (isSensitiveConfigKey(key)) {
+      result[key] = sanitizeSensitiveValue(value);
+      continue;
+    }
+    result[key] = sanitizeConfigValue(value);
+  }
+
+  return result;
+}
+
+/**
+ * Serialises any config-like object into a browser-safe JSON shape.
+ *
+ * Public fields are preserved, `apiKey` is always masked, `customHeaders` and
+ * `profiles` are omitted entirely, and nested secret-like fields are redacted
+ * recursively by name so future credential bags do not leak raw values.
+ */
+export function serializePublicConfig(config: unknown): Record<string, unknown> {
+  if (!config || typeof config !== "object") {
+    return { apiKey: CONFIG_REDACTED_VALUE };
+  }
+
+  const source = config as Record<string, unknown>;
+  const safe = sanitizeConfigObject(source);
+  safe["apiKey"] = maskApiKey(typeof source["apiKey"] === "string" ? source["apiKey"] : "");
+  return safe;
+}
+
+// ---------------------------------------------------------------------------
 // Token estimation
 // ---------------------------------------------------------------------------
 

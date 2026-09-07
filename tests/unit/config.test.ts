@@ -1,14 +1,16 @@
 /**
  * @file tests/unit/config.test.ts
  *
- * Unit tests for: AiConfigSchema, maskApiKey, renderTemplate, loadConfig
- * flag-layering, and ConversationSession.  All tests run with AI_MOCK=true
+ * Unit tests for: AiConfigSchema, maskApiKey, serializePublicConfig,
+ * renderTemplate, loadConfig flag-layering, and ConversationSession.  All
+ * tests run with AI_MOCK=true
  * (set by vitest.config.ts) — no API credentials required.
  */
 
 import { AiConfigSchema, ConfigError, loadConfig } from "../../src/ai-powered/core.js";
 import {
   maskApiKey,
+  serializePublicConfig,
   listPricing,
   lookupModelPricing,
   calculateCost,
@@ -39,6 +41,64 @@ describe("maskApiKey", () => {
   });
   it("returns [REDACTED] for unrecognised key format", () => {
     expect(maskApiKey("totally-random-key")).toBe("[REDACTED]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serializePublicConfig
+// ---------------------------------------------------------------------------
+
+describe("serializePublicConfig", () => {
+  it("masks apiKey, omits empty customHeaders, and keeps safe fields unchanged", () => {
+    const publicConfig = serializePublicConfig({
+      provider: "openai",
+      temperature: 0.42,
+      apiKey: "sk-test-secret",
+      customHeaders: {},
+    });
+
+    expect(publicConfig.provider).toBe("openai");
+    expect(publicConfig.temperature).toBe(0.42);
+    expect(publicConfig.apiKey).toBe("sk-****");
+    expect(publicConfig).not.toHaveProperty("customHeaders");
+  });
+
+  it("returns [REDACTED] when apiKey is missing", () => {
+    const publicConfig = serializePublicConfig({ provider: "openai", stream: false });
+
+    expect(publicConfig.provider).toBe("openai");
+    expect(publicConfig.stream).toBe(false);
+    expect(publicConfig.apiKey).toBe("[REDACTED]");
+    expect(publicConfig).not.toHaveProperty("customHeaders");
+  });
+
+  it("redacts nested secret-like fields recursively", () => {
+    const publicConfig = serializePublicConfig({
+      provider: "openai",
+      credentials: {
+        accessToken: "token-123",
+        nested: {
+          clientSecret: "secret-abc",
+          apiKey: "sk-nested-secret",
+          publicValue: "ok",
+        },
+      },
+      metadata: {
+        authorization: "Bearer secret",
+      },
+    });
+
+    expect(publicConfig.credentials).toEqual({
+      accessToken: "[REDACTED]",
+      nested: {
+        clientSecret: "[REDACTED]",
+        apiKey: "sk-****",
+        publicValue: "ok",
+      },
+    });
+    expect(publicConfig.metadata).toEqual({
+      authorization: "[REDACTED]",
+    });
   });
 });
 

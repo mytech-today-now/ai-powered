@@ -1,10 +1,11 @@
 /**
  * @file tests/server/routes.test.ts
  *
- * Unit/integration tests for provider-aware audio routes.
+ * Unit/integration tests for provider-aware audio routes and /config redaction.
  *
  * Tests run against a real Express server started in mock mode.
- * All 10 tests exercise provider-routing behaviour for /audio/* endpoints.
+ * All 12 tests exercise provider-routing behaviour for /audio/* endpoints and
+ * the browser-safe /config regression.
  *
  * Tests:
  *   R1  – POST /audio/transcribe without provider defaults to mock provider in mock mode
@@ -17,10 +18,13 @@
  *   R8  – POST /audio/transcribe missing audioBase64 → 400 {error:"audioBase64 is required."}
  *   R9  – POST /audio/speak with provider=vibevoice accepted; returns 200 {audio, mimeType}
  *   R10 – POST /audio/speak missing text → 400 {error:"text is required."}
+ *   R11 – GET /config masks apiKey and omits raw customHeaders
+ *   R12 – GET /config returns the same { error } shape when config loading throws
  */
 
 import * as http from "node:http";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import * as aiPowered from "../../src/ai-powered/index.js";
 import { createServer } from "../../src/ai-powered/server/index.js";
 
 // ---------------------------------------------------------------------------
@@ -29,11 +33,19 @@ import { createServer } from "../../src/ai-powered/server/index.js";
 
 let server: http.Server;
 let port: number;
+const SERVER_CONFIG_OVERRIDES = {
+  apiKey: "sk-test-server",
+  customHeaders: {
+    Authorization: "Bearer server-secret",
+    "x-trace-id": "trace-123",
+  },
+  temperature: 0.42,
+};
 
 beforeAll(
   () =>
     new Promise<void>((resolve) => {
-      const app = createServer({ mock: true });
+      const app = createServer({ mock: true, configOverrides: SERVER_CONFIG_OVERRIDES });
       server = app.listen(0, "127.0.0.1", () => {
         port = (server.address() as { port: number }).port;
         resolve();
@@ -243,5 +255,37 @@ describe("R10 – POST /audio/speak missing text", () => {
     const body = (await readJson(res)) as Record<string, unknown>;
     expect(res.statusCode).toBe(400);
     expect(body.error).toBe("text is required.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R11/R12 – GET /config redaction regression
+// ---------------------------------------------------------------------------
+describe("R11/R12 – GET /config redaction regression", () => {
+  it("masks apiKey, omits raw customHeaders, and preserves public fields", async () => {
+    const res = await getJson("/config");
+    const body = (await readJson(res)) as Record<string, unknown>;
+
+    expect(res.statusCode).toBe(200);
+    expect(body.apiKey).toBe("sk-****");
+    expect(body.temperature).toBe(0.42);
+    expect(body.mock).toBe(true);
+    expect(body).not.toHaveProperty("customHeaders");
+  });
+
+  it("returns the same 500 error shape when loadConfig throws", async () => {
+    const spy = vi.spyOn(aiPowered, "loadConfig").mockImplementationOnce(() => {
+      throw new Error("config blew up");
+    });
+
+    try {
+      const res = await getJson("/config");
+      const body = (await readJson(res)) as Record<string, unknown>;
+
+      expect(res.statusCode).toBe(500);
+      expect(body).toEqual({ error: "config blew up" });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
