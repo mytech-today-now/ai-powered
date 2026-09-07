@@ -10,7 +10,14 @@ import { AiClient } from "../../src/ai-powered/client.js";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { AiConfigSchema } from "../../src/ai-powered/core.js";
 import { BudgetExceededError, ProviderError, AiPoweredError } from "../../src/ai-powered/types.js";
-import type { AiPlugin, RequestContext, ResponseContext } from "../../src/ai-powered/types.js";
+import type {
+  AiPlugin,
+  RequestContext,
+  ResponseContext,
+  VideoResult,
+  ModelDescriptor,
+} from "../../src/ai-powered/types.js";
+import type { Modality, InputModality } from "../../src/ai-powered/core.js";
 import type { ProviderCallOptions } from "../../src/ai-powered/providers/base.js";
 import type { TextResult } from "../../src/ai-powered/types.js";
 import type { AiConfig } from "../../src/ai-powered/core.js";
@@ -43,10 +50,71 @@ class RecordingMockProvider extends MockProvider {
   }
 }
 
+class DispatchRecordingProvider extends MockProvider {
+  readonly name: "venice" | "mock";
+  readonly supportedModalities: Modality[] = ["video"];
+  videoCalls: Array<{ prompt: string; options?: ProviderCallOptions }> = [];
+  imageCalls: Array<{ imageUrl: string; prompt: string; options?: ProviderCallOptions }> = [];
+
+  constructor(config: AiConfig, name: "venice" | "mock") {
+    super(config);
+    this.name = name;
+  }
+
+  private _videoResult(): VideoResult {
+    return {
+      modality: "video",
+      provider: this.name,
+      model: "mock-video-v1",
+      data: "data:video/mp4;base64,AAAAAA==",
+      mimeType: "video/mp4",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      cost: { totalUsd: 0, isEstimate: false },
+      latencyMs: 1,
+    };
+  }
+
+  override async generateVideo(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<VideoResult> {
+    this.videoCalls.push({ prompt, options: options ? { ...options } : undefined });
+    return this._videoResult();
+  }
+
+  async generateVideoFromImage(
+    imageUrl: string,
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<VideoResult> {
+    this.imageCalls.push({ imageUrl, prompt, options: options ? { ...options } : undefined });
+    return this._videoResult();
+  }
+
+  override async listModels(
+    _modality?: Modality,
+    _accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    return [];
+  }
+}
+
 function makeClient(overrides: Record<string, unknown> = {}, plugins: AiPlugin[] = []): AiClient {
   const config = AiConfigSchema.parse({ ...baseConfig, ...overrides });
   const provider = new MockProvider(config);
   return new AiClient(config, provider, plugins);
+}
+
+function makeDispatchClient(name: "venice" | "mock"): {
+  client: AiClient;
+  provider: DispatchRecordingProvider;
+} {
+  const config =
+    name === "venice"
+      ? AiConfigSchema.parse({ provider: "venice", apiKey: "venice-test-key", fallback: false })
+      : AiConfigSchema.parse({ provider: "mock", fallback: false });
+  const provider = new DispatchRecordingProvider(config, name);
+  return { client: new AiClient(config, provider), provider };
 }
 
 function makeRecordingClient(
@@ -75,6 +143,43 @@ describe("AiClient.generateText", () => {
     expect(typeof result.content).toBe("string");
     expect(result.usage.totalTokens).toBeGreaterThan(0);
     expect(result.cost.totalUsd).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateVideo dispatch
+// ---------------------------------------------------------------------------
+
+describe("AiClient.generateVideo dispatch", () => {
+  it("routes Venice image-keyframe requests to generateVideoFromImage", async () => {
+    const { client, provider } = makeDispatchClient("venice");
+
+    const result = await client.generateVideo("motion prompt", {
+      images: ["https://example.com/frame.jpg"],
+    });
+
+    expect(provider.imageCalls).toHaveLength(1);
+    expect(provider.videoCalls).toHaveLength(0);
+    expect(provider.imageCalls[0]).toMatchObject({
+      imageUrl: "https://example.com/frame.jpg",
+      prompt: "motion prompt",
+    });
+    expect(result.provider).toBe("venice");
+  });
+
+  it("keeps non-Venice providers on generateVideo even when images are present", async () => {
+    const { client, provider } = makeDispatchClient("mock");
+
+    const result = await client.generateVideo("motion prompt", {
+      images: ["https://example.com/frame.jpg"],
+    });
+
+    expect(provider.videoCalls).toHaveLength(1);
+    expect(provider.imageCalls).toHaveLength(0);
+    expect(provider.videoCalls[0]).toMatchObject({
+      prompt: "motion prompt",
+    });
+    expect(result.provider).toBe("mock");
   });
 });
 

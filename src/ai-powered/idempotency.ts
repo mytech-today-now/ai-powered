@@ -3,18 +3,17 @@
  *
  * Redis-backed idempotency cache for `generateSingleShot` and `submitSingleShot`.
  *
- * When `opts.idempotencyKey` is set, the call result is stored in Redis (or an
- * in-memory fallback) and returned directly on re-submission — without calling the
- * AI provider a second time.  This prevents double-billing and duplicate generation
- * in retry-heavy agent workflows.
+ * When `opts.idempotencyKey` is set, the call result is stored in Redis and returned
+ * directly on re-submission — without calling the AI provider a second time.  This
+ * prevents double-billing and duplicate generation in retry-heavy agent workflows.
  *
  * ## Storage selection
  *
- * | `AIPOWERED_REDIS_URL` | `ioredis` importable | Storage used          |
- * |-----------------------|----------------------|-----------------------|
- * | not set               | —                    | **disabled** (silent) |
- * | set                   | yes                  | Redis                 |
- * | set                   | no (not installed)   | In-memory Map + warn  |
+ * | `AIPOWERED_REDIS_URL` | `ioredis` importable | Storage used                 |
+ * |-----------------------|----------------------|------------------------------|
+ * | not set               | —                    | **disabled** (silent)        |
+ * | set                   | yes                  | Redis                        |
+ * | set                   | no (not installed)   | explicit non-retryable error |
  *
  * ## Cache key format (spec §idempotency-cache)
  *
@@ -35,6 +34,8 @@
  * REQ-IC-04 — Same key + different shotId   → IDEMPOTENCY_CONFLICT.
  * REQ-IC-05 — AIPOWERED_REDIS_URL absent → no error; result.idempotent always false.
  * REQ-IC-07 — Atomic SET NX prevents duplicate writes on concurrent calls.
+ * REQ-IC-08 — AIPOWERED_REDIS_URL set but ioredis unavailable → explicit error;
+ *   no in-memory fallback.
  *
  * Spec: openspec/changes/filmbuff-ai-powered/specs/idempotency-cache/spec.md
  */
@@ -61,7 +62,7 @@ interface IdempotencyMeta {
 
 /**
  * Minimal Redis-like interface used by this module.
- * Implemented by ioredis and by the in-memory fallback alike.
+ * Implemented by ioredis.
  * @internal
  */
 interface RedisLike {
@@ -72,44 +73,25 @@ interface RedisLike {
 }
 
 // ---------------------------------------------------------------------------
-// In-memory fallback (used when ioredis is unavailable / AIPOWERED_REDIS_URL set)
+// Redis dependency failure handling
 // ---------------------------------------------------------------------------
 
-class InMemoryRedis implements RedisLike {
-  private readonly store = new Map<string, { value: string; expiresAt: number }>();
+const REDIS_DEPENDENCY_ERROR_PREFIX =
+  "[ai-powered] idempotency: AIPOWERED_REDIS_URL is set, but ioredis could not be loaded. " +
+  "Redis-backed idempotency is unavailable. Install ioredis or unset AIPOWERED_REDIS_URL.";
 
-  async get(key: string): Promise<string | null> {
-    const entry = this.store.get(key);
-    if (entry === undefined) return null;
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return null;
-    }
-    return entry.value;
-  }
-
-  async set(
-    key: string,
-    value: string,
-    _exMode: "EX",
-    ttl: number,
-    nxMode: "NX",
-  ): Promise<string | null> {
-    if (nxMode === "NX" && this.store.has(key)) return null; // already set
-    this.store.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
-    return "OK";
-  }
-
-  async quit(): Promise<unknown> {
-    return undefined;
-  }
+function failRedisDependency(error: unknown): never {
+  const detail = error instanceof Error && error.message.length > 0 ? ` (${error.message})` : "";
+  const message = `${REDIS_DEPENDENCY_ERROR_PREFIX}${detail}`;
+  process.stderr.write(message + "\n");
+  throw new AiPoweredError("PROVIDER_ERROR", message, false);
 }
 
 // ---------------------------------------------------------------------------
 // Singleton Redis client
 // ---------------------------------------------------------------------------
 
-/** Cached client instance (null = disabled; InMemoryRedis = fallback; real ioredis = production). */
+/** Cached client instance (null = disabled; real ioredis = production). */
 let _redisClient: RedisLike | null | undefined = undefined; // undefined = not yet resolved
 
 async function getClient(): Promise<RedisLike | null> {
@@ -128,17 +110,12 @@ async function getClient(): Promise<RedisLike | null> {
     // `optionalDependencies`).  The static `import type` above provides full
     // TypeScript coverage; the runtime import here triggers actual connection.
     // If ioredis is absent (e.g. stripped from a minimal deploy), the catch
-    // block handles the ModuleNotFoundError gracefully.
+    // block fails fast with an explicit operator-visible error.
     const { Redis } = await import("ioredis");
     // IoRedis implements a superset of RedisLike; cast is safe.
     _redisClient = new Redis(redisUrl) as unknown as RedisLike;
-  } catch {
-    // ioredis not installed — fall back to in-memory with a warning (graceful degradation).
-    process.stderr.write(
-      "[ai-powered] idempotency: ioredis not available; using in-memory fallback. " +
-        "Install ioredis for production Redis-backed idempotency.\n",
-    );
-    _redisClient = new InMemoryRedis();
+  } catch (error) {
+    failRedisDependency(error);
   }
   return _redisClient;
 }

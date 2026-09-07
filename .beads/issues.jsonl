@@ -3721,3 +3721,12 @@
 {"id":"bd-lfmm","updated_at":"2026-09-07T10:40:17Z","status":"in-progress","claimed_by":"kyle_"}
 {"id":"bd-lfmm","updated_at":"2026-09-07T10:40:31Z","status":"in-progress","claimed_by":"kyle_"}
 {"id":"bd-lfmm","status":"closed","close_reason":"Removed unsupported Runway turbo models from public lists/pricing/config and added regression tests.","updated_at":"2026-09-07T10:45:27Z"}
+{"id":"bd-b9xc","title":"[venice-video] Route Venice image-to-video through public video API","status":"open","priority":1,"issue_type":"task","description":"Venice implements generateVideoFromImage(), but public video routes still dispatch through generateVideo() only. Add provider-aware routing so Venice image-keyframe requests reach the Venice queue path while preserving existing non-Venice and text-to-video behavior.","labels":[],"dependencies":[],"claimed_by":"","close_reason":"","created_at":"2026-09-07T10:58:21Z","updated_at":"2026-09-07T10:58:21Z"}
+{"id":"bd-b9xc","updated_at":"2026-09-07T10:58:27Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-b9xc","status":"closed","close_reason":"Venice image-to-video now dispatches through the public video API, with regression coverage for Venice and non-Venice paths.","updated_at":"2026-09-07T11:07:29Z"}
+{"id":"bd-es9s","updated_at":"2026-09-07T11:40:33Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-es9s","status":"closed","close_reason":"Fail fast when Redis is configured but ioredis is missing; no silent fallback","updated_at":"2026-09-07T11:46:44Z"}
+{"id":"bd-q0c4","updated_at":"2026-09-07T12:22:06Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-r6n3","updated_at":"2026-09-07T12:22:07Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-q0c4","status":"closed","close_reason":"done","updated_at":"2026-09-07T12:27:38Z"}
+{"id":"bd-r6n3","status":"closed","close_reason":"done","updated_at":"2026-09-07T12:27:38Z"}

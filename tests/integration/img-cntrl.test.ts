@@ -23,6 +23,7 @@ import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { ProviderCapabilityError, ProviderError } from "../../src/ai-powered/types.js";
 import { LimitsValidator } from "../../src/ai-powered/limits-validator.js";
 import { createServer } from "../../src/ai-powered/server/index.js";
+import { _clearFileRefStore, storeFileRef } from "../../src/ai-powered/server/file-handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — build a mock AiClient + provider pair for call-option spy tests
@@ -104,6 +105,11 @@ afterAll(
       server.close((err) => (err ? reject(err) : resolve()));
     }),
 );
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  _clearFileRefStore();
+});
 
 // ---------------------------------------------------------------------------
 // I1-01 — generateImage no size options
@@ -424,6 +430,48 @@ describe("I1-14: POST /image route — options forwarded through mock server", (
     expect(res.status).toBe(200);
     const body = res.body as { modality?: string };
     expect(body.modality).toBe("image");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// I1-14b — attachment validation on POST /image
+// ---------------------------------------------------------------------------
+
+describe("I1-14b: POST /image — attachment validation", () => {
+  it("returns 400 when fileRef is missing and never calls generateImage", async () => {
+    const spy = vi.spyOn(MockProvider.prototype, "generateImage");
+    const res = await post(port, "/image", {
+      prompt: "a blue square",
+      fileRef: "00000000-0000-4000-8000-000000000001",
+    });
+
+    expect(res.status).toBe(400);
+    const body = res.body as { error?: string };
+    expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toMatch(/not found|expired/i);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 when the attached MIME is unsupported by the provider", async () => {
+    const fileRef = storeFileRef({
+      filename: "doc.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 12,
+      base64Content: Buffer.from("%PDF-1.4 tiny stub").toString("base64"),
+      provider: "openai",
+    });
+    const spy = vi.spyOn(MockProvider.prototype, "generateImage");
+    const res = await post(port, "/image", {
+      prompt: "a blue square",
+      provider: "venice",
+      fileRef,
+    });
+
+    expect(res.status).toBe(422);
+    const body = res.body as { error?: string };
+    expect(body.error).toMatch(/does not support/i);
+    expect(body.error).toMatch(/application\/pdf/i);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

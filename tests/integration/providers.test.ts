@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { vi } from "vitest";
+import { vi, afterEach } from "vitest";
 import { AiConfigSchema, loadConfig } from "../../src/ai-powered/core.js";
 import { AiClient } from "../../src/ai-powered/client.js";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
@@ -20,6 +20,7 @@ import { AnthropicProvider } from "../../src/ai-powered/providers/anthropic.js";
 import { ProviderCapabilityError, ProviderError } from "../../src/ai-powered/types.js";
 import { getLogger } from "../../src/ai-powered/utils.js";
 import { createProvider } from "../../src/ai-powered/providers/index.js";
+import { _clearFileRefStore } from "../../src/ai-powered/server/file-handler.js";
 
 // ---------------------------------------------------------------------------
 // Luma AI SDK mock — must be declared before any imports of lumaai
@@ -703,6 +704,11 @@ describe("POST /batch — server route", () => {
     15_000,
   );
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _clearFileRefStore();
+  });
+
   afterAll(
     () =>
       new Promise<void>((resolve, reject) => {
@@ -987,12 +993,13 @@ describe("POST /upload — server route", () => {
     const fileRef = upBody["fileRef"] as string;
 
     // Step 2: use fileRef in POST /text
+    const spy = vi.spyOn(MockProvider.prototype, "generateText");
+    spy.mockClear();
     const textRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
       const payload = JSON.stringify({
         prompt: "Describe this image",
         fileRef,
         provider: "openai",
-        mock: true,
       });
       const req = http.request(
         {
@@ -1014,6 +1021,18 @@ describe("POST /upload — server route", () => {
     expect(textRes.statusCode).toBe(200);
     const textBody = (await readBody(textRes)) as Record<string, unknown>;
     expect(textBody).toHaveProperty("content");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith(
+      "Describe this image",
+      expect.objectContaining({ messages: expect.any(Array) }),
+    );
+    const [, options] = spy.mock.calls[0]!;
+    const messages = options?.messages as Array<{
+      role: string;
+      content: Array<Record<string, unknown>>;
+    }>;
+    expect(messages[0]?.content[0]).toEqual({ type: "text", text: "Describe this image" });
+    expect(messages[0]?.content[1]).toMatchObject({ type: "image_url" });
   });
 
   // I-UP-4: fileRef from I-UP-2 used in POST /text → 200 with text response
@@ -1107,15 +1126,16 @@ describe("POST /upload — server route", () => {
     expect(body["error"] as string).toContain("lumaai");
   });
 
-  // I-UP-10: Unknown fileRef in POST /text → 200 (graceful text-only fallback)
-  it("I-UP-10: unknown fileRef in POST /text → 200 graceful fallback", async () => {
+  // I-UP-10: Unknown fileRef in POST /text → 400 validation error
+  it("I-UP-10: unknown fileRef in POST /text → 400 validation error", async () => {
     const fakeRef = "00000000-0000-4000-8000-000000000001";
+    const spy = vi.spyOn(MockProvider.prototype, "generateText");
+    spy.mockClear();
     const textRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
       const payload = JSON.stringify({
         prompt: "Hello",
         fileRef: fakeRef,
         provider: "openai",
-        mock: true,
       });
       const req = http.request(
         {
@@ -1134,9 +1154,37 @@ describe("POST /upload — server route", () => {
       req.write(payload);
       req.end();
     });
-    expect(textRes.statusCode).toBe(200);
+    expect(textRes.statusCode).toBe(400);
     const body = (await readBody(textRes)) as Record<string, unknown>;
-    expect(body).toHaveProperty("content");
+    expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toMatch(/not found|expired/i);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  // I-UP-15: provider-specific MIME rejection on POST /text
+  it("I-UP-15: PDF fileRef used with provider=venice in POST /text → 422 validation error", async () => {
+    const upRes = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      { fieldname: "file", filename: "doc.pdf", contentType: "application/pdf", data: TINY_PDF },
+    );
+    expect(upRes.statusCode).toBe(201);
+    const upBody = (await readBody(upRes)) as Record<string, unknown>;
+    const fileRef = upBody["fileRef"] as string;
+
+    const spy = vi.spyOn(MockProvider.prototype, "generateText");
+    spy.mockClear();
+    const textRes = await postText(uploadPort, {
+      prompt: "Summarise this document",
+      fileRef,
+      provider: "venice",
+    });
+
+    expect(textRes.statusCode).toBe(422);
+    const body = (await readBody(textRes)) as Record<string, unknown>;
+    expect(body.error).toMatch(/does not support/i);
+    expect(body.error).toMatch(/application\/pdf/i);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   // I-UP-11: The same uploaded fileRef can be reused multiple times before expiry.

@@ -16,8 +16,11 @@
 import * as http from "node:http";
 import { vi, describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
+import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { createServer } from "../../src/ai-powered/server/index.js";
+import { _clearFileRefStore, storeFileRef } from "../../src/ai-powered/server/file-handler.js";
 import { getLogger } from "../../src/ai-powered/utils.js";
+import type { VideoResult } from "../../src/ai-powered/types.js";
 
 // ---------------------------------------------------------------------------
 // HTTP helper — reads raw text (needed for NDJSON)
@@ -93,6 +96,7 @@ afterAll(
 );
 
 afterEach(() => vi.restoreAllMocks());
+afterEach(() => _clearFileRefStore());
 
 // ---------------------------------------------------------------------------
 // V2-01 — two-item batch returns two NDJSON lines, both status 'ok'
@@ -196,7 +200,7 @@ describe("V2-04: POST /batch — item with no controls calls generateVideo witho
       items: [{ modality: "video", prompt: "plain clip" }],
     });
     expect(status).toBe(200);
-    expect(spy).toHaveBeenCalledWith("plain clip", undefined);
+    expect(spy).toHaveBeenCalledWith("plain clip", {});
   });
 });
 
@@ -315,9 +319,144 @@ describe("V2-06: POST /video — all five controls forwarded, response has modal
     });
 
     expect(status).toBe(200);
-    expect(spy).toHaveBeenCalledWith("a simple still life", undefined);
+    expect(spy).toHaveBeenCalledWith("a simple still life", {});
 
     const data = JSON.parse(text) as { modality?: string };
     expect(data.modality).toBe("video");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V2-07 — Venice /video route dispatches image-keyframe requests to Venice
+// ---------------------------------------------------------------------------
+
+describe("V2-07: POST /video — Venice image-keyframe requests reach generateVideoFromImage", () => {
+  let veniceServer: http.Server;
+  let venicePort: number;
+  let originalVeniceApiKey: string | undefined;
+  let originalPublicBaseUrl: string | undefined;
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        originalVeniceApiKey = process.env["VENICE_API_KEY"];
+        originalPublicBaseUrl = process.env["PROXY_PUBLIC_BASE_URL"];
+        process.env["VENICE_API_KEY"] = "venice-test-key";
+        process.env["PROXY_PUBLIC_BASE_URL"] = "https://public.example.test";
+
+        const app = createServer({
+          mock: false,
+          configOverrides: {
+            provider: "venice",
+            apiKey: "venice-test-key",
+          },
+        });
+        veniceServer = app.listen(0, "127.0.0.1", () => {
+          venicePort = (veniceServer.address() as { port: number }).port;
+          resolve();
+        });
+      }),
+    15_000,
+  );
+
+  afterAll(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        _clearFileRefStore();
+        if (originalVeniceApiKey === undefined) {
+          delete process.env["VENICE_API_KEY"];
+        } else {
+          process.env["VENICE_API_KEY"] = originalVeniceApiKey;
+        }
+        if (originalPublicBaseUrl === undefined) {
+          delete process.env["PROXY_PUBLIC_BASE_URL"];
+        } else {
+          process.env["PROXY_PUBLIC_BASE_URL"] = originalPublicBaseUrl;
+        }
+        veniceServer.close((err) => (err ? reject(err) : resolve()));
+      }),
+  );
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _clearFileRefStore();
+  });
+
+  it("sends Venice keyframes through the public URL bridge and into generateVideoFromImage", async () => {
+    const fileRef = storeFileRef({
+      filename: "frame.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+      base64Content: Buffer.from("venice-frame").toString("base64"),
+      provider: "venice",
+    });
+    const expectedImageUrl = `https://public.example.test/files/${fileRef}`;
+    const spy = vi.spyOn(VeniceProvider.prototype, "generateVideoFromImage").mockResolvedValue({
+      modality: "video",
+      provider: "venice",
+      model: "wan-2.5-preview-image-to-video",
+      data: "data:video/mp4;base64,AAAAAA==",
+      mimeType: "video/mp4",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      cost: { totalUsd: 0, isEstimate: false },
+      latencyMs: 1,
+    } as VideoResult);
+
+    const { status, text } = await postRaw(venicePort, "/video", {
+      provider: "venice",
+      prompt: "a slow cinematic reveal",
+      fileRef,
+    });
+
+    expect(status).toBe(200);
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith(
+      expectedImageUrl,
+      "a slow cinematic reveal",
+      expect.objectContaining({
+        images: [expectedImageUrl],
+      }),
+    );
+
+    const body = JSON.parse(text) as { provider?: string; modality?: string };
+    expect(body.provider).toBe("venice");
+    expect(body.modality).toBe("video");
+  });
+
+  it("returns 400 when the attached fileRef is missing", async () => {
+    const spy = vi.spyOn(VeniceProvider.prototype, "generateVideoFromImage");
+    const { status, text } = await postRaw(venicePort, "/video", {
+      provider: "venice",
+      prompt: "a slow cinematic reveal",
+      fileRef: "00000000-0000-4000-8000-000000000001",
+    });
+
+    expect(status).toBe(400);
+    const body = JSON.parse(text) as { error?: string };
+    expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toMatch(/not found|expired/i);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 when the attached MIME type is unsupported", async () => {
+    const fileRef = storeFileRef({
+      filename: "doc.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 12,
+      base64Content: Buffer.from("%PDF-1.4 tiny stub").toString("base64"),
+      provider: "openai",
+    });
+    const spy = vi.spyOn(VeniceProvider.prototype, "generateVideoFromImage");
+    const { status, text } = await postRaw(venicePort, "/video", {
+      provider: "venice",
+      prompt: "a slow cinematic reveal",
+      fileRef,
+    });
+
+    expect(status).toBe(422);
+    const body = JSON.parse(text) as { error?: string };
+    expect(body.error).toMatch(/does not support/i);
+    expect(body.error).toMatch(/application\/pdf/i);
+    expect(spy).not.toHaveBeenCalled();
   });
 });

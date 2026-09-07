@@ -95,6 +95,14 @@ export type CallOptions = ProviderCallOptions;
 const VALID_MODALITIES = new Set<Modality>(["text", "image", "audio", "video", "structured"]);
 const VALID_MESSAGE_ROLES = new Set(["system", "user", "assistant"] as const);
 
+type VeniceVideoProvider = BaseProvider & {
+  generateVideoFromImage(
+    imageUrl: string,
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<VideoResult>;
+};
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -683,6 +691,26 @@ export class AiClient {
     return callOptions;
   }
 
+  /**
+   * Routes Venice image-keyframe requests to the Venice queue API while
+   * keeping the shared generateVideo() path for every other provider.
+   */
+  private _generateVideoForProvider(
+    provider: BaseProvider,
+    prompt: string,
+    options: ProviderCallOptions,
+  ): Promise<VideoResult> {
+    const veniceProvider = provider as Partial<VeniceVideoProvider>;
+    if (
+      provider.name === "venice" &&
+      options.images?.length &&
+      typeof veniceProvider.generateVideoFromImage === "function"
+    ) {
+      return veniceProvider.generateVideoFromImage(options.images[0]!, prompt, options);
+    }
+    return provider.generateVideo(prompt, options);
+  }
+
   // ---------------------------------------------------------------------------
   // Public methods
   // ---------------------------------------------------------------------------
@@ -844,7 +872,7 @@ export class AiClient {
     let result: VideoResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateVideo(effectivePrompt, callOptions),
+        (provider) => this._generateVideoForProvider(provider, effectivePrompt, callOptions),
         callOptions.signal,
         callOptions.model,
       );

@@ -39,7 +39,11 @@ import multer from "multer";
 import { z } from "zod";
 import { getAiClient, loadConfig, listPricing } from "../index.js";
 import { getTemplate, renderTemplate } from "../templates/index.js";
-import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
+import {
+  BudgetExceededError,
+  AllProvidersExhaustedError,
+  ProviderCapabilityError,
+} from "../types.js";
 import { getLogger, serializePublicConfig } from "../utils.js";
 import type { ProviderCallOptions } from "../providers/index.js";
 import type { ServeOptions } from "./index.js";
@@ -341,56 +345,112 @@ function mapError(err: unknown, res: Response): boolean {
  *
  * Returns `undefined` when:
  *   - `fileRef` is not provided (no file attached to the request)
- *   - the token is not found in the in-memory store (e.g. expired or invalid)
- *   - `buildFileContentBlock()` throws (unsupported MIME for the provider)
  *
- * Failures are logged at warn level and silently ignored so that the
- * generation request can still proceed without the attachment.
+ * Returns an attachment validation error when:
+ *   - the token is not found in the in-memory store (e.g. expired or invalid)
+ *   - `buildFileContentBlock()` rejects the MIME type for the provider
+ *
+ * Unexpected errors are allowed to bubble so the request fails safely.
  */
-function resolveFileBlock(
+interface ResolvedFileRef {
+  fileRef: string;
+  entry: {
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    base64Content: string;
+    provider: string;
+    model?: string;
+    fileId?: string;
+  };
+  block: Record<string, unknown>;
+}
+
+interface AttachmentValidationError {
+  status: 400 | 422;
+  error: string;
+}
+
+function isAttachmentValidationError(
+  value: ResolvedFileRef[] | ResolvedFileRef | AttachmentValidationError | undefined,
+): value is AttachmentValidationError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "status" in value &&
+    "error" in value
+  );
+}
+
+function resolveFileRef(
   fileRef: string | undefined,
   provider: string,
   model: string,
-): Record<string, unknown> | undefined {
+): ResolvedFileRef | AttachmentValidationError | undefined {
   if (!fileRef) return undefined;
   const entry = lookupFileRef(fileRef);
   if (!entry) {
-    getLogger().warn({ fileRef }, "fileRef token not found; ignoring attachment");
-    return undefined;
+    return {
+      status: 400,
+      error: `Attachment fileRef "${fileRef}" was not found or expired. Re-upload the file and try again.`,
+    };
   }
   try {
-    return buildFileContentBlock(
+    const block = buildFileContentBlock(
       provider,
       model,
       { filename: entry.filename, mimeType: entry.mimeType },
       entry.base64Content,
       entry.fileId,
     );
+    return { fileRef, entry, block };
   } catch (err) {
-    getLogger().warn(
-      { fileRef, provider, mimeType: entry.mimeType, err },
-      "buildFileContentBlock failed; ignoring attachment",
-    );
-    return undefined;
+    if (err instanceof ProviderCapabilityError) {
+      return {
+        status: 422,
+        error: `Provider "${provider}" does not support attached file type "${entry.mimeType}". Re-upload a supported file or remove the attachment.`,
+      };
+    }
+    throw err;
   }
 }
 
 /**
  * Resolve an array of `fileRef` UUID tokens into provider-native content blocks.
  *
- * Filters out any refs that are missing, expired, or produce an unsupported
- * MIME block.  Returns an empty array when `fileRefs` is empty or undefined.
+ * Returns an attachment validation error when any ref is missing or the
+ * provider rejects its MIME type.
  */
-function resolveFileBlocks(
+function resolveFileRefs(
   fileRefs: string[] | undefined,
   provider: string,
   model: string,
-): Array<Record<string, unknown>> {
+): ResolvedFileRef[] | AttachmentValidationError {
   if (!fileRefs?.length) return [];
-  return fileRefs.flatMap((ref) => {
-    const block = resolveFileBlock(ref, provider, model);
-    return block ? [block] : [];
-  });
+
+  const resolved: ResolvedFileRef[] = [];
+  for (const ref of fileRefs) {
+    const result = resolveFileRef(ref, provider, model);
+    if (!result) continue;
+    if (isAttachmentValidationError(result)) return result;
+    resolved.push(result);
+  }
+  return resolved;
+}
+
+function resolveFileBlocks(fileRefs: ResolvedFileRef[]): Array<Record<string, unknown>> {
+  return fileRefs.map((ref) => ref.block);
+}
+
+/**
+ * Convert stored fileRef tokens into publicly reachable /files/:uuid URLs.
+ *
+ * The caller is responsible for ensuring the resulting URLs are used only for
+ * providers that require server-fetched image keyframes.
+ */
+function resolvePublicFileUrls(fileRefs: ResolvedFileRef[], baseUrl: string): string[] {
+  return fileRefs.map((ref) => `${baseUrl}/files/${ref.fileRef}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -679,7 +739,12 @@ export function createRouter(opts: ServeOptions): Router {
       const overrides = buildOverrides(body, opts);
       const effectiveProvider =
         (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
-      const fileBlock = resolveFileBlock(body.fileRef, effectiveProvider, body.model ?? "");
+      const fileResolution = resolveFileRef(body.fileRef, effectiveProvider, body.model ?? "");
+      if (isAttachmentValidationError(fileResolution)) {
+        res.status(fileResolution.status).json({ error: fileResolution.error });
+        return;
+      }
+      const fileBlock = fileResolution?.block;
       const messages = fileBlock
         ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, fileBlock] }]
         : undefined;
@@ -753,11 +818,16 @@ export function createRouter(opts: ServeOptions): Router {
         : body.fileRef
           ? [body.fileRef]
           : [];
-      const fileBlocks = resolveFileBlocks(
+      const fileRefsResolution = resolveFileRefs(
         activeFileRefs.length ? activeFileRefs : undefined,
         effectiveProvider,
         body.model ?? "",
       );
+      if (isAttachmentValidationError(fileRefsResolution)) {
+        res.status(fileRefsResolution.status).json({ error: fileRefsResolution.error });
+        return;
+      }
+      const fileBlocks = resolveFileBlocks(fileRefsResolution);
       const messages = fileBlocks.length
         ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, ...fileBlocks] }]
         : undefined;
@@ -856,41 +926,69 @@ export function createRouter(opts: ServeOptions): Router {
           : [];
 
       // Luma AI rejects base64 data: URIs for keyframe images; it requires
-      // publicly accessible HTTPS URLs.  Build one public URL per fileRef from
-      // PROXY_PUBLIC_BASE_URL pointing to GET /files/:uuid.  Other providers
-      // receive standard resolved content blocks (base64 data URIs).
-      let lumaImageUrls: string[] = [];
+      // Venice and Luma AI reject base64 data: URIs for keyframe images; they
+      // require publicly accessible HTTPS URLs.  Build one public URL per
+      // fileRef from PROXY_PUBLIC_BASE_URL pointing to GET /files/:uuid.
+      // Other providers receive standard resolved content blocks (base64 data URIs).
+      let publicImageUrls: string[] = [];
       let fileBlock: Record<string, unknown> | undefined;
 
-      if (activeFileRefs.length && effectiveProvider === "lumaai") {
+      const liveVideoProviders = activeFileRefs.length
+        ? opts.mock
+          ? PROVIDER_META.filter((p) => (p.modalities as readonly string[]).includes("video")).map(
+              (p) => p.id,
+            )
+          : PROVIDER_META.filter(
+              (p) =>
+                (p.modalities as readonly string[]).includes("video") &&
+                Boolean(process.env[p.envKey]),
+            ).map((p) => p.id)
+        : [];
+      const routingDecision = activeFileRefs.length
+        ? selectI2VProvider(effectiveProvider, activeFileRefs.length, liveVideoProviders)
+        : undefined;
+      const routedProvider = routingDecision?.provider ?? effectiveProvider;
+      const usesPublicImageUrls = routedProvider === "lumaai" || routedProvider === "venice";
+
+      const refsToValidate =
+        activeFileRefs.length && usesPublicImageUrls
+          ? activeFileRefs.slice(0, routingDecision?.effectiveImageCount ?? activeFileRefs.length)
+          : activeFileRefs;
+      const resolvedFileRefs = resolveFileRefs(
+        refsToValidate.length ? refsToValidate : undefined,
+        routedProvider,
+        body.model ?? "",
+      );
+      if (isAttachmentValidationError(resolvedFileRefs)) {
+        res.status(resolvedFileRefs.status).json({ error: resolvedFileRefs.error });
+        return;
+      }
+
+      if (activeFileRefs.length && usesPublicImageUrls) {
         const baseUrl = (process.env["PROXY_PUBLIC_BASE_URL"] ?? "").replace(/\/+$/, "");
         if (!baseUrl) {
           res.status(422).json({
             error:
-              "Luma AI requires a publicly accessible image URL for image-to-video. " +
+              `${routedProvider === "venice" ? "Venice" : "Luma AI"} requires a publicly accessible image URL for image-to-video. ` +
               "Set the PROXY_PUBLIC_BASE_URL environment variable to this server's public-facing " +
-              "address (e.g. https://abc123.ngrok.io) so Luma's servers can fetch the uploaded image.",
+              "address (e.g. https://abc123.ngrok.io) so the provider can fetch the uploaded image.",
           });
           return;
         }
-        lumaImageUrls = activeFileRefs
-          .filter((ref) => lookupFileRef(ref) !== undefined)
-          .map((ref) => `${baseUrl}/files/${ref}`);
+        publicImageUrls = resolvePublicFileUrls(resolvedFileRefs, baseUrl);
         getLogger().info(
-          { fileRefs: activeFileRefs, lumaImageUrls },
-          "POST /video: using public URLs for Luma AI keyframes",
+          { fileRefs: activeFileRefs, publicImageUrls, provider: routedProvider },
+          "POST /video: using public URLs for image keyframes",
         );
       } else if (activeFileRefs.length) {
         // Non-Luma providers: resolve the first file ref to a content block.
         // Additional refs are included in the messages content array below.
-        fileBlock = resolveFileBlock(activeFileRefs[0], effectiveProvider, body.model ?? "");
+        fileBlock = resolvedFileRefs[0]?.block;
       }
 
       // Build messages content for non-Luma providers.
       const allFileBlocks =
-        activeFileRefs.length && effectiveProvider !== "lumaai"
-          ? resolveFileBlocks(activeFileRefs, effectiveProvider, body.model ?? "")
-          : [];
+        activeFileRefs.length && !usesPublicImageUrls ? resolveFileBlocks(resolvedFileRefs) : [];
       const messages = allFileBlocks.length
         ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, ...allFileBlocks] }]
         : undefined;
@@ -903,16 +1001,21 @@ export function createRouter(opts: ServeOptions): Router {
         ...(body.duration !== undefined ? { duration: body.duration } : {}),
         ...(body.fps !== undefined ? { fps: body.fps } : {}),
         ...(body.quality !== undefined ? { quality: body.quality } : {}),
-        // For Luma AI: pass public image URLs as the images array so the provider
-        // maps frame0 / frame1 correctly (supports up to 2 keyframes).
-        ...(lumaImageUrls.length ? { images: lumaImageUrls } : {}),
-        // For non-Luma providers: pass fileContentBlock (single ref, legacy compat)
+        // For Venice and Luma AI: pass public image URLs as the images array so
+        // the provider can route to its image-keyframe API.
+        ...(publicImageUrls.length ? { images: publicImageUrls } : {}),
+        // For non-image-keyframe providers: pass fileContentBlock (single ref, legacy compat)
         // and the full messages array for multimodal input.
-        ...(fileBlock && !lumaImageUrls.length ? { fileContentBlock: fileBlock } : {}),
+        ...(fileBlock && !publicImageUrls.length ? { fileContentBlock: fileBlock } : {}),
         ...(messages ? { messages } : {}),
       };
       try {
-        const client = await getAiClient("serve-video", overrides as never);
+        const client = await getAiClient("serve-video", {
+          ...overrides,
+          ...(routingDecision && routingDecision.provider !== effectiveProvider
+            ? { provider: routingDecision.provider }
+            : {}),
+        } as never);
         const result = await client.generateVideo(
           prompt,
           Object.keys(callOpts).length ? callOpts : undefined,
@@ -973,11 +1076,6 @@ export function createRouter(opts: ServeOptions): Router {
           (itemOverrides as { provider?: string }).provider ??
           opts.configOverrides?.provider ??
           "openai";
-        const itemFileBlock = resolveFileBlock(itemFileRef, itemProvider, item.model ?? "");
-        const itemMessages = itemFileBlock
-          ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, itemFileBlock] }]
-          : undefined;
-
         // Smart I2V routing: resolve best provider for item.images before creating client.
         // item.images takes precedence over fileRef when both are present (design D4).
         let effectiveOverrides: ReturnType<typeof buildOverrides> = itemOverrides;
@@ -988,6 +1086,28 @@ export function createRouter(opts: ServeOptions): Router {
           info?: string;
           alternativeProviders?: string[];
         } = {};
+        const itemHasImages = Boolean(item.images && item.images.length > 0);
+        const itemFileResolution = itemHasImages
+          ? undefined
+          : resolveFileRef(itemFileRef, itemProvider, item.model ?? "");
+        if (isAttachmentValidationError(itemFileResolution)) {
+          res.write(
+            JSON.stringify({
+              index: i,
+              name: item.name,
+              modality: item.modality,
+              prompt,
+              status: "error",
+              error: itemFileResolution.error,
+              ...routingMeta,
+            }) + "\n",
+          );
+          continue;
+        }
+        const itemFileBlock = itemFileResolution?.block;
+        const itemMessages = itemFileBlock
+          ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, itemFileBlock] }]
+          : undefined;
 
         if (item.modality === "video" && item.images && item.images.length > 0) {
           const liveVideoProviders = opts.mock

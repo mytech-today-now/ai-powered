@@ -372,7 +372,7 @@ describe("V1-15: POST /batch — all five controls forwarded; batchVideoOpts tru
 });
 
 describe("V1-16: POST /batch — item with no controls calls generateVideo with undefined", () => {
-  it("generateVideo receives undefined (batchVideoOpts falsy) when no controls are set", async () => {
+  it("generateVideo receives an empty options object when no controls are set", async () => {
     const spy = vi.spyOn(MockProvider.prototype, "generateVideo");
     const { status, body } = await postBatchVideo(port, {
       prompt: "plain video clip",
@@ -380,8 +380,8 @@ describe("V1-16: POST /batch — item with no controls calls generateVideo with 
     expect(status).toBe(200);
     const line = parseFirstNdjsonLine(body);
     expect(line["status"]).toBe("ok");
-    // No controls present → batchVideoOpts is empty → second arg must be undefined
-    expect(spy).toHaveBeenCalledWith("plain video clip", undefined);
+    // No controls present → batchVideoOpts is empty → current call path passes {}
+    expect(spy).toHaveBeenCalledWith("plain video clip", {});
   });
 });
 

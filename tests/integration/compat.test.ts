@@ -22,7 +22,9 @@ import * as http from "node:http";
 import { vi } from "vitest";
 import { createServer } from "../../src/ai-powered/server/index.js";
 import { AiClient } from "../../src/ai-powered/client.js";
+import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { ProviderCapabilityError } from "../../src/ai-powered/types.js";
+import type { VideoResult } from "../../src/ai-powered/types.js";
 
 // ---------------------------------------------------------------------------
 // Shared server (mock mode — no API keys required)
@@ -98,12 +100,21 @@ function readBinary(res: http.IncomingMessage): Promise<Buffer> {
 
 /** POST a JSON body and return the raw IncomingMessage. */
 function postJson(path: string, body: unknown): Promise<http.IncomingMessage> {
+  return postJsonTo(port, path, body);
+}
+
+/** POST a JSON body to an explicit port and return the raw IncomingMessage. */
+function postJsonTo(
+  targetPort: number,
+  path: string,
+  body: unknown,
+): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const req = http.request(
       {
         hostname: "127.0.0.1",
-        port,
+        port: targetPort,
         path,
         method: "POST",
         headers: {
@@ -340,6 +351,92 @@ describe("POST /v1/video/generations (bd-q8cl)", () => {
   it("T-VID-04: empty string prompt returns 400", async () => {
     const res = await postJson("/v1/video/generations", { prompt: "" });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-VID-05 — Venice /v1/video/generations dispatches image URLs to Venice
+// ---------------------------------------------------------------------------
+
+describe("POST /v1/video/generations — Venice image-keyframe dispatch", () => {
+  let veniceServer: http.Server;
+  let venicePort: number;
+  let originalVeniceApiKey: string | undefined;
+  let originalAiMock: string | undefined;
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        originalVeniceApiKey = process.env["VENICE_API_KEY"];
+        originalAiMock = process.env["AI_MOCK"];
+        process.env["VENICE_API_KEY"] = "venice-test-key";
+        process.env["AI_MOCK"] = "false";
+
+        const app = createServer({
+          mock: false,
+          configOverrides: {
+            provider: "venice",
+            apiKey: "venice-test-key",
+          },
+        });
+        veniceServer = app.listen(0, "127.0.0.1", () => {
+          venicePort = (veniceServer.address() as { port: number }).port;
+          resolve();
+        });
+      }),
+    15_000,
+  );
+
+  afterAll(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        if (originalVeniceApiKey === undefined) {
+          delete process.env["VENICE_API_KEY"];
+        } else {
+          process.env["VENICE_API_KEY"] = originalVeniceApiKey;
+        }
+        if (originalAiMock === undefined) {
+          delete process.env["AI_MOCK"];
+        } else {
+          process.env["AI_MOCK"] = originalAiMock;
+        }
+        veniceServer.close((err) => (err ? reject(err) : resolve()));
+      }),
+  );
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("forwards image URLs into VeniceProvider.generateVideoFromImage", async () => {
+    const imageUrl = "https://example.com/frame.jpg";
+    const spy = vi.spyOn(VeniceProvider.prototype, "generateVideoFromImage").mockResolvedValue({
+      modality: "video",
+      provider: "venice",
+      model: "wan-2.5-preview-image-to-video",
+      data: "data:video/mp4;base64,AAAAAA==",
+      mimeType: "video/mp4",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      cost: { totalUsd: 0, isEstimate: false },
+      latencyMs: 1,
+    } as VideoResult);
+
+    const res = await postJsonTo(venicePort, "/v1/video/generations", {
+      provider: "venice",
+      prompt: "a Venice motion study",
+      images: [imageUrl],
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = (await readBody(res)) as { provider?: string; modality?: string };
+    expect(body.provider).toBe("venice");
+    expect(body.modality).toBe("video");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith(
+      imageUrl,
+      "a Venice motion study",
+      expect.objectContaining({
+        images: [imageUrl],
+      }),
+    );
   });
 });
 

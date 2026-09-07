@@ -76,11 +76,14 @@ export function mountCompatRoutes(router: Router, opts: ServeOptions): void {
 
       const overrides = {
         ...opts.configOverrides,
-        ...(effectiveMock  ? { mock: true }          : {}),
-        ...(opts.profile   ? { profile: opts.profile } : {}),
+        ...(effectiveMock ? { mock: true } : {}),
+        ...(opts.profile ? { profile: opts.profile } : {}),
         ...(body["provider"] ? { provider: body["provider"] as never } : {}),
-        ...(body["model"]    ? { model: String(body["model"]) }        : {}),
+        ...(body["model"] ? { model: String(body["model"]) } : {}),
       };
+      const images = Array.isArray(body["images"])
+        ? body["images"].filter((image): image is string => typeof image === "string")
+        : [];
 
       const prompt = typeof body["prompt"] === "string" ? body["prompt"] : "";
       if (!prompt) {
@@ -90,7 +93,10 @@ export function mountCompatRoutes(router: Router, opts: ServeOptions): void {
 
       try {
         const client = await getAiClient("compat-video", overrides as never);
-        const result = await client.generateVideo(prompt);
+        const result = await client.generateVideo(
+          prompt,
+          images.length > 0 ? { images } : undefined,
+        );
         res.json(result);
       } catch (err) {
         if (err instanceof BudgetExceededError) {
@@ -106,4 +112,3 @@ export function mountCompatRoutes(router: Router, opts: ServeOptions): void {
     },
   );
 }
-

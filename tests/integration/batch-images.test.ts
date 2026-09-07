@@ -9,7 +9,10 @@
  */
 
 import * as http from "node:http";
+import { vi, afterEach } from "vitest";
 import { createServer } from "../../src/ai-powered/server/index.js";
+import { MockProvider } from "../../src/ai-powered/providers/mock.js";
+import { _clearFileRefStore, storeFileRef } from "../../src/ai-powered/server/file-handler.js";
 
 // ---------------------------------------------------------------------------
 // Shared server (mock mode)
@@ -36,6 +39,11 @@ afterAll(
       server.close((err) => (err ? reject(err) : resolve()));
     }),
 );
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  _clearFileRefStore();
+});
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -158,11 +166,39 @@ describe("B-REF-03: text item without images", () => {
 });
 
 // ---------------------------------------------------------------------------
+// B-ATT-01 — missing fileRef on a batch item → status:error line
+// ---------------------------------------------------------------------------
+
+describe("B-ATT-01: batch item with missing fileRef returns error line", () => {
+  it("returns a clear fileRef error and does not call the provider", async () => {
+    const spy = vi.spyOn(MockProvider.prototype, "generateVideo");
+    const res = await postJson("/batch", {
+      items: [
+        {
+          modality: "video",
+          prompt: "Missing attachment",
+          fileRef: "00000000-0000-4000-8000-000000000001",
+        },
+      ],
+    });
+
+    expect(res.statusCode).toBe(200);
+    const lines = await readNdjson(res);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!["status"]).toBe("error");
+    expect(lines[0]!["prompt"]).toBe("Missing attachment");
+    expect(String(lines[0]!["error"])).toMatch(/fileRef/i);
+    expect(String(lines[0]!["error"])).toMatch(/not found|expired/i);
+    expect(spy).not.toHaveBeenCalled();
+  }, 20_000);
+});
+
+// ---------------------------------------------------------------------------
 // B-REF-04 — fileRef + images present → images take precedence
 // ---------------------------------------------------------------------------
 
 describe("B-REF-04: fileRef + images coexist — images win", () => {
-  it("returns status:ok (images field is used; invalid fileRef is silently ignored)", async () => {
+  it("returns status:ok (images field is used; invalid fileRef is ignored because images take precedence)", async () => {
     const res = await postJson("/batch", {
       items: [
         {
@@ -176,6 +212,36 @@ describe("B-REF-04: fileRef + images coexist — images win", () => {
     expect(res.statusCode).toBe(200);
     const lines = await readNdjson(res);
     expect(lines[0]!["status"]).toBe("ok");
+  }, 20_000);
+});
+
+// ---------------------------------------------------------------------------
+// B-ATT-02 — unsupported MIME on a batch item → status:error line
+// ---------------------------------------------------------------------------
+
+describe("B-ATT-02: batch item with unsupported MIME returns error line", () => {
+  it("returns a clear MIME error and does not call the provider", async () => {
+    const fileRef = storeFileRef({
+      filename: "doc.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 12,
+      base64Content: Buffer.from("%PDF-1.4 tiny stub").toString("base64"),
+      provider: "openai",
+    });
+    const spy = vi.spyOn(MockProvider.prototype, "generateVideo");
+    const res = await postJson("/batch", {
+      provider: "venice",
+      items: [{ modality: "video", prompt: "PDF attachment", fileRef }],
+    });
+
+    expect(res.statusCode).toBe(200);
+    const lines = await readNdjson(res);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!["status"]).toBe("error");
+    expect(lines[0]!["prompt"]).toBe("PDF attachment");
+    expect(String(lines[0]!["error"])).toMatch(/does not support/i);
+    expect(String(lines[0]!["error"])).toMatch(/application\/pdf/i);
+    expect(spy).not.toHaveBeenCalled();
   }, 20_000);
 });
 

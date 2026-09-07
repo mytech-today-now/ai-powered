@@ -30,6 +30,7 @@
  * ## Retry schedule (REQ-WH-04, REQ-WH-06)
  *
  * Initial attempt → 30 s → 5 min → 30 min (4 total attempts).
+ * Each attempt is capped at 10 s; timeout/abort counts as a retryable failure.
  * Stops immediately on the first 2xx response (REQ-WH-06).
  * After all attempts fail: full payload written to stderr as single-line JSON
  * with `"delivery_failed": true` (REQ-WH-05).
@@ -49,6 +50,9 @@ const RETRY_DELAYS_MS = [30_000, 300_000, 1_800_000] as const;
 
 /** Total delivery attempts = 1 initial + 3 retries. */
 const MAX_ATTEMPTS = 1 + RETRY_DELAYS_MS.length;
+
+/** Per-attempt deadline in milliseconds before aborting a stalled callback. */
+const WEBHOOK_ATTEMPT_TIMEOUT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Payload types (spec §Payload Schemas)
@@ -100,6 +104,22 @@ function resolveSigningKey(agentApiKey: string | undefined): string | undefined 
   return envSecret; // undefined if neither is set
 }
 
+async function fetchWebhookAttempt(callbackUrl: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, WEBHOOK_ATTEMPT_TIMEOUT_MS);
+
+  try {
+    return await fetch(callbackUrl, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // deliverWebhook (REQ-WH-01, REQ-WH-08)
 // ---------------------------------------------------------------------------
@@ -147,14 +167,14 @@ export function deliverWebhook(
       }
 
       try {
-        const res = await fetch(callbackUrl, {
+        const res = await fetchWebhookAttempt(callbackUrl, {
           method: "POST",
           headers: buildHeaders(), // signature recomputed on each retry (spec)
           body,
         });
         if (res.ok) return; // 2xx → success; stop retrying (REQ-WH-06)
       } catch {
-        // Network error — proceed to next retry attempt.
+        // Network error, timeout, or abort — proceed to next retry attempt.
       }
     }
 
