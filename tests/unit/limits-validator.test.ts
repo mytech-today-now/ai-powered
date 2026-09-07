@@ -77,10 +77,32 @@ const LUMAAI_CFG: ProviderConfig = {
   ],
 };
 
+const RUNWAY_CFG: ProviderConfig = {
+  provider: "runway",
+  updatedAt: "2026-01-01",
+  models: [
+    {
+      id: "gen4.5",
+      modalities: ["video"],
+      aspectRatios: ["1280:720", "720:1280"],
+      resolutions: [
+        { label: "landscape-720p", width: 1280, height: 720 },
+        { label: "portrait-720p", width: 720, height: 1280 },
+      ],
+      maxWidth: 1280,
+      maxHeight: 1280,
+      maxDurationSecs: 10,
+      fpsOptions: [24],
+      qualityOptions: ["standard"],
+    },
+  ],
+};
+
 const STUB_CFGS: ConfigMap = {
   openai: OPENAI_CFG,
   venice: VENICE_CFG,
   lumaai: LUMAAI_CFG,
+  runway: RUNWAY_CFG,
   anthropic: { provider: "anthropic", updatedAt: "2026-01-01", models: [] },
   xai: { provider: "xai", updatedAt: "2026-01-01", models: [] },
 };
@@ -196,6 +218,51 @@ describe("LimitsValidator.validateVideo", () => {
       const msg = (err as ProviderError).message;
       expect(msg).toMatch(/999/);
       expect(msg).toMatch(/max/i);
+    }
+  });
+});
+
+describe("LimitsValidator.validateVideo — runway gen4.5", () => {
+  it("accepts the supported aspect ratio and duration for gen4.5", () => {
+    expect(() =>
+      LimitsValidator.validateVideo("runway", "gen4.5", {
+        aspectRatio: "720:1280",
+        duration: 10,
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects unsupported aspect ratios for gen4.5 with a stable ProviderError", () => {
+    expect(() =>
+      LimitsValidator.validateVideo("runway", "gen4.5", {
+        aspectRatio: "21:9",
+      }),
+    ).toThrow(ProviderError);
+    try {
+      LimitsValidator.validateVideo("runway", "gen4.5", {
+        aspectRatio: "21:9",
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).message).toMatch(/not supported/i);
+      expect((err as ProviderError).message).toMatch(/720:1280|1280:720/);
+    }
+  });
+
+  it("rejects durations over the gen4.5 max with a stable ProviderError", () => {
+    expect(() =>
+      LimitsValidator.validateVideo("runway", "gen4.5", {
+        duration: 11,
+      }),
+    ).toThrow(ProviderError);
+    try {
+      LimitsValidator.validateVideo("runway", "gen4.5", {
+        duration: 11,
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderError);
+      expect((err as ProviderError).message).toMatch(/11/);
+      expect((err as ProviderError).message).toMatch(/max/i);
     }
   });
 });

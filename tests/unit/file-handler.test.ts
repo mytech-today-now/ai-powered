@@ -11,12 +11,16 @@
 
 import {
   buildFileContentBlock,
+  FILE_REF_TTL_MS,
+  _clearFileRefStore,
+  _getFileRefStoreSize,
   validateMimeType,
   validateFileSize,
   storeFileRef,
   lookupFileRef,
 } from "../../src/ai-powered/server/file-handler.js";
 import { ProviderCapabilityError } from "../../src/ai-powered/types.js";
+import { vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -352,5 +356,94 @@ describe("storeFileRef / lookupFileRef", () => {
 
   it("U-FR-3: lookupFileRef returns undefined for an unknown token", () => {
     expect(lookupFileRef("00000000-0000-4000-8000-000000000000")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// storeFileRef / lookupFileRef TTL behaviour
+// ---------------------------------------------------------------------------
+
+describe("storeFileRef / lookupFileRef TTL behaviour", () => {
+  beforeEach(() => {
+    _clearFileRefStore();
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    _clearFileRefStore();
+  });
+
+  it("U-FR-4: lookupFileRef returns the stored entry before the TTL expires", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const entry = {
+      filename: "preview.png",
+      mimeType: "image/png",
+      sizeBytes: 4096,
+      base64Content: B64,
+      provider: "openai",
+    };
+    const token = storeFileRef(entry);
+
+    vi.advanceTimersByTime(FILE_REF_TTL_MS - 1);
+
+    const firstLookup = lookupFileRef(token);
+    const secondLookup = lookupFileRef(token);
+
+    expect(firstLookup).toEqual(entry);
+    expect(secondLookup).toEqual(entry);
+    expect(_getFileRefStoreSize()).toBe(1);
+  });
+
+  it("U-FR-5: lookupFileRef removes expired entries and returns undefined after the TTL", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const entry = {
+      filename: "expired.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 8192,
+      base64Content: B64,
+      provider: "anthropic",
+    };
+    const token = storeFileRef(entry);
+
+    expect(_getFileRefStoreSize()).toBe(1);
+
+    vi.advanceTimersByTime(FILE_REF_TTL_MS + 1);
+
+    expect(lookupFileRef(token)).toBeUndefined();
+    expect(_getFileRefStoreSize()).toBe(0);
+  });
+
+  it("U-FR-6: storing a new ref prunes expired entries before the next upload", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const expiredEntry = {
+      filename: "stale.png",
+      mimeType: "image/png",
+      sizeBytes: 1024,
+      base64Content: B64,
+      provider: "openai",
+    };
+    const freshEntry = {
+      filename: "fresh.png",
+      mimeType: "image/png",
+      sizeBytes: 1024,
+      base64Content: B64,
+      provider: "openai",
+    };
+
+    const staleToken = storeFileRef(expiredEntry);
+    vi.advanceTimersByTime(FILE_REF_TTL_MS + 1);
+
+    const freshToken = storeFileRef(freshEntry);
+
+    expect(_getFileRefStoreSize()).toBe(1);
+    expect(lookupFileRef(staleToken)).toBeUndefined();
+    expect(lookupFileRef(freshToken)).toEqual(freshEntry);
   });
 });

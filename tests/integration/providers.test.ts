@@ -889,6 +889,32 @@ function postUpload(
   });
 }
 
+/**
+ * POST JSON to POST /text on the running test server and return the raw
+ * IncomingMessage so tests can inspect the response body.
+ */
+function postText(port: number, body: unknown): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/text",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+        },
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 // Small synthetic file buffers — real content is irrelevant since multer
 // reads the MIME from the multipart Content-Type header, not from file magic bytes.
 const TINY_PNG = Buffer.from(
@@ -929,6 +955,7 @@ describe("POST /upload — server route", () => {
     );
     expect(res.statusCode).toBe(201);
     const body = (await readBody(res)) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(["fileRef"]);
     expect(typeof body["fileRef"]).toBe("string");
     expect(body["fileRef"] as string).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -1110,5 +1137,95 @@ describe("POST /upload — server route", () => {
     expect(textRes.statusCode).toBe(200);
     const body = (await readBody(textRes)) as Record<string, unknown>;
     expect(body).toHaveProperty("content");
+  });
+
+  // I-UP-11: The same uploaded fileRef can be reused multiple times before expiry.
+  it("I-UP-11: uploaded fileRef can be reused twice before expiry", async () => {
+    const upRes = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      { fieldname: "file", filename: "reuse.png", contentType: "image/png", data: TINY_PNG },
+    );
+    expect(upRes.statusCode).toBe(201);
+    const upBody = (await readBody(upRes)) as Record<string, unknown>;
+    const fileRef = upBody["fileRef"] as string;
+
+    const firstRes = await postText(uploadPort, {
+      prompt: "Describe this image",
+      fileRef,
+      provider: "openai",
+      mock: true,
+    });
+    const secondRes = await postText(uploadPort, {
+      prompt: "Describe this image again",
+      fileRef,
+      provider: "openai",
+      mock: true,
+    });
+
+    expect(firstRes.statusCode).toBe(200);
+    expect(secondRes.statusCode).toBe(200);
+
+    const firstBody = (await readBody(firstRes)) as Record<string, unknown>;
+    const secondBody = (await readBody(secondRes)) as Record<string, unknown>;
+    expect(firstBody).toHaveProperty("content");
+    expect(secondBody).toHaveProperty("content");
+  });
+
+  // I-UP-12: GET /files/:uuid returns the original bytes with a private cache policy.
+  it("I-UP-12: uploaded fileRef serves the same PNG bytes with private cache control", async () => {
+    const upRes = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      { fieldname: "file", filename: "cache.png", contentType: "image/png", data: TINY_PNG },
+    );
+    expect(upRes.statusCode).toBe(201);
+    const upBody = (await readBody(upRes)) as Record<string, unknown>;
+    const fileRef = upBody["fileRef"] as string;
+
+    const fileRes = await fetch(`http://127.0.0.1:${uploadPort}/files/${fileRef}`);
+    expect(fileRes.status).toBe(200);
+    expect(fileRes.headers.get("content-type")).toBe("image/png");
+    expect(fileRes.headers.get("content-length")).toBe(String(TINY_PNG.length));
+    expect(fileRes.headers.get("cache-control")).toBe("private, no-store");
+
+    const body = Buffer.from(await fileRes.arrayBuffer());
+    expect(body.equals(TINY_PNG)).toBe(true);
+  });
+
+  // I-UP-13: Missing UUID still returns the safe not-found response.
+  it("I-UP-13: missing fileRef returns 404 not found", async () => {
+    const res = await fetch(
+      `http://127.0.0.1:${uploadPort}/files/00000000-0000-4000-8000-000000000001`,
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ error: "File not found or expired" });
+  });
+
+  // I-UP-14: Repeated GET /files/:uuid requests return the same payload.
+  it("I-UP-14: repeated fetches of the same fileRef return the same bytes", async () => {
+    const upRes = await postUpload(
+      uploadPort,
+      { provider: "openai" },
+      { fieldname: "file", filename: "repeat.png", contentType: "image/png", data: TINY_PNG },
+    );
+    expect(upRes.statusCode).toBe(201);
+    const upBody = (await readBody(upRes)) as Record<string, unknown>;
+    const fileRef = upBody["fileRef"] as string;
+
+    const firstRes = await fetch(`http://127.0.0.1:${uploadPort}/files/${fileRef}`);
+    const secondRes = await fetch(`http://127.0.0.1:${uploadPort}/files/${fileRef}`);
+    expect(firstRes.status).toBe(200);
+    expect(secondRes.status).toBe(200);
+    expect(firstRes.headers.get("content-type")).toBe("image/png");
+    expect(secondRes.headers.get("content-type")).toBe("image/png");
+    expect(firstRes.headers.get("cache-control")).toBe("private, no-store");
+    expect(secondRes.headers.get("cache-control")).toBe("private, no-store");
+
+    const firstBody = Buffer.from(await firstRes.arrayBuffer());
+    const secondBody = Buffer.from(await secondRes.arrayBuffer());
+    expect(firstBody.equals(secondBody)).toBe(true);
+    expect(firstBody.equals(TINY_PNG)).toBe(true);
   });
 });

@@ -128,7 +128,7 @@ export class VeniceProvider extends BaseProvider {
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this._requireKey();
     this.assertCapability("text");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const start = Date.now();
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
@@ -177,7 +177,7 @@ export class VeniceProvider extends BaseProvider {
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this._requireKey();
     this.assertCapability("text");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
@@ -217,7 +217,7 @@ export class VeniceProvider extends BaseProvider {
   ): Promise<ImageResult> {
     this._requireKey();
     this.assertCapability("image");
-    const model = this.config.model ?? DEFAULT_IMAGE_MODEL;
+    const model = this.resolveModel(DEFAULT_IMAGE_MODEL, options);
     const start = Date.now();
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
@@ -343,7 +343,7 @@ export class VeniceProvider extends BaseProvider {
       throw new ProviderCapabilityError("venice", "video");
     }
 
-    const model = this.config.model ?? DEFAULT_VIDEO_MODEL;
+    const model = this.resolveModel(DEFAULT_VIDEO_MODEL, options);
     const start = Date.now();
     const logger = getLogger();
     const signal = options?.signal;
@@ -506,7 +506,7 @@ export class VeniceProvider extends BaseProvider {
   ): Promise<StructuredResult<T>> {
     this._requireKey();
     this.assertCapability("structured");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;

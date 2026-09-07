@@ -26,6 +26,8 @@ import { resolveCredential } from "./auth.js";
 import { checkIdempotency, storeIdempotency } from "./idempotency.js";
 import { deliverWebhook } from "./webhook.js";
 import { fundAgentAccount } from "./payments.js";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 export type { AgentErrorCode };
 export { AiPoweredError };
@@ -109,7 +111,7 @@ export interface SingleShotResult {
 }
 
 // ---------------------------------------------------------------------------
-// Internal job store (in-process; replaced by Redis in Story 6)
+// Internal job ledger (append-only JSONL; durable across restarts)
 // ---------------------------------------------------------------------------
 
 type JobEntry =
@@ -117,8 +119,181 @@ type JobEntry =
   | { status: "complete"; result: SingleShotResult }
   | { status: "failed"; error: AiPoweredError };
 
-/** Module-level job store for submitted (async) shots. */
-const _jobStore = new Map<string, JobEntry>();
+interface SerializedAiPoweredError {
+  code: AgentErrorCode;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+}
+
+type JobLedgerRecord =
+  | { jobId: string; status: "pending" }
+  | { jobId: string; status: "complete"; result: SingleShotResult }
+  | { jobId: string; status: "failed"; error: SerializedAiPoweredError };
+
+const DEFAULT_JOB_LEDGER_PATH = path.join(
+  process.cwd(),
+  "logs",
+  "ai-powered-single-shot-jobs.jsonl",
+);
+
+function resolveJobLedgerPath(): string {
+  const configured = process.env["AIPOWERED_SINGLE_SHOT_JOB_STORE"];
+  const rawPath =
+    configured !== undefined && configured.length > 0 ? configured : DEFAULT_JOB_LEDGER_PATH;
+  return path.resolve(rawPath);
+}
+
+function serializeAiPoweredError(error: AiPoweredError): SerializedAiPoweredError {
+  return {
+    code: error.code,
+    message: error.message,
+    retryable: error.retryable,
+    ...(error.retryAfterMs !== undefined ? { retryAfterMs: error.retryAfterMs } : {}),
+  };
+}
+
+function deserializeAiPoweredError(payload: SerializedAiPoweredError): AiPoweredError {
+  return new AiPoweredError(payload.code, payload.message, payload.retryable, payload.retryAfterMs);
+}
+
+function encodeJobRecord(jobId: string, entry: JobEntry): JobLedgerRecord {
+  if (entry.status === "pending") {
+    return { jobId, status: "pending" };
+  }
+
+  if (entry.status === "complete") {
+    return { jobId, status: "complete", result: entry.result };
+  }
+
+  return { jobId, status: "failed", error: serializeAiPoweredError(entry.error) };
+}
+
+function decodeJobRecord(raw: unknown): { jobId: string; entry: JobEntry } | null {
+  if (raw === null || typeof raw !== "object") return null;
+
+  const record = raw as Record<string, unknown>;
+  const jobId = record["jobId"];
+  const status = record["status"];
+  if (typeof jobId !== "string" || typeof status !== "string") {
+    return null;
+  }
+
+  if (status === "pending") {
+    return { jobId, entry: { status: "pending" } };
+  }
+
+  if (
+    status === "complete" &&
+    record["result"] !== undefined &&
+    record["result"] !== null &&
+    typeof record["result"] === "object"
+  ) {
+    const result = record["result"] as Partial<SingleShotResult>;
+    if (
+      typeof result["jobId"] === "string" &&
+      (result["status"] === "complete" ||
+        result["status"] === "failed" ||
+        result["status"] === "pending")
+    ) {
+      return {
+        jobId,
+        entry: { status: "complete", result: result as SingleShotResult },
+      };
+    }
+  }
+
+  if (
+    status === "failed" &&
+    record["error"] !== undefined &&
+    record["error"] !== null &&
+    typeof record["error"] === "object"
+  ) {
+    const error = record["error"] as Partial<SerializedAiPoweredError>;
+    if (
+      typeof error["code"] === "string" &&
+      typeof error["message"] === "string" &&
+      typeof error["retryable"] === "boolean"
+    ) {
+      return {
+        jobId,
+        entry: {
+          status: "failed",
+          error: deserializeAiPoweredError(error as SerializedAiPoweredError),
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+function isMissingFileError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    typeof (err as NodeJS.ErrnoException).code === "string" &&
+    (err as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function jobLedgerUnavailableError(
+  action: "read" | "write",
+  ledgerPath: string,
+  cause: unknown,
+): AiPoweredError {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return new AiPoweredError(
+    "PROVIDER_ERROR",
+    `Single-shot job ledger at ${ledgerPath} is unavailable while attempting to ${action}. ` +
+      `Async polling is disabled until durable storage is writable. (${detail})`,
+    false,
+  );
+}
+
+function logJobLedgerFailure(phase: "complete" | "failed", jobId: string, cause: unknown): void {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  process.stderr.write(
+    `[ai-powered] single-shot: job ledger write failed for ${phase} job ${jobId}: ${detail}\n`,
+  );
+}
+
+async function appendJobRecord(jobId: string, entry: JobEntry): Promise<void> {
+  const ledgerPath = resolveJobLedgerPath();
+  try {
+    await fs.mkdir(path.dirname(ledgerPath), { recursive: true });
+    await fs.appendFile(ledgerPath, `${JSON.stringify(encodeJobRecord(jobId, entry))}\n`, "utf8");
+  } catch (err) {
+    throw jobLedgerUnavailableError("write", ledgerPath, err);
+  }
+}
+
+async function readJobRecord(jobId: string): Promise<JobEntry | undefined> {
+  const ledgerPath = resolveJobLedgerPath();
+  let raw: string;
+
+  try {
+    raw = await fs.readFile(ledgerPath, "utf8");
+  } catch (err) {
+    if (isMissingFileError(err)) return undefined;
+    throw jobLedgerUnavailableError("read", ledgerPath, err);
+  }
+
+  let latest: JobEntry | undefined;
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.trim().length === 0) continue;
+    try {
+      const decoded = decodeJobRecord(JSON.parse(line) as unknown);
+      if (decoded !== null && decoded.jobId === jobId) {
+        latest = decoded.entry;
+      }
+    } catch {
+      // Ignore malformed trailing lines so a partial append never hides older
+      // durable job records.
+    }
+  }
+
+  return latest;
+}
 
 /** Generates a unique job ID. */
 function _newJobId(): string {
@@ -356,7 +531,6 @@ export async function generateSingleShot(opts: SingleShotOptions): Promise<Singl
 
     // Write video data to outputPath.
     // VideoResult.data is either a base64 data URI or a plain URL.
-    const fs = await import("node:fs/promises");
     if (videoResult.data.startsWith("data:")) {
       const base64 = videoResult.data.replace(/^data:[^;]+;base64,/, "");
       await fs.writeFile(opts.outputPath, Buffer.from(base64, "base64"));
@@ -466,7 +640,7 @@ export async function submitSingleShot(opts: SingleShotOptions): Promise<{ jobId
   resolveProviderName(opts.provider);
 
   const jobId = _newJobId();
-  _jobStore.set(jobId, { status: "pending" });
+  await appendJobRecord(jobId, { status: "pending" });
 
   // Fire-and-forget — do not await; errors are captured in the job store.
   // generateSingleShot already handles webhook delivery for shot:complete (bd-xqmn).
@@ -474,11 +648,22 @@ export async function submitSingleShot(opts: SingleShotOptions): Promise<{ jobId
   void (async () => {
     try {
       const result = await generateSingleShot(opts);
-      _jobStore.set(jobId, { status: "complete", result: { ...result, jobId } });
+      try {
+        await appendJobRecord(jobId, {
+          status: "complete",
+          result: { ...result, jobId },
+        });
+      } catch (err) {
+        logJobLedgerFailure("complete", jobId, err);
+      }
       // shot:complete webhook is delivered inside generateSingleShot itself (REQ-WH-08).
     } catch (err) {
       const agentErr = mapProviderErrorToAgentError(err);
-      _jobStore.set(jobId, { status: "failed", error: agentErr });
+      try {
+        await appendJobRecord(jobId, { status: "failed", error: agentErr });
+      } catch (storeErr) {
+        logJobLedgerFailure("failed", jobId, storeErr);
+      }
 
       // (4) shot:failed webhook delivery (REQ-WH-07, REQ-WH-08).
       if (opts.callbackUrl !== undefined) {
@@ -516,12 +701,12 @@ export async function submitSingleShot(opts: SingleShotOptions): Promise<{ jobId
  *   inspect `err.code` and `err.retryable` without checking a status field.
  *
  * @throws {AiPoweredError} code `NOT_FOUND` — `jobId` was never submitted or has
- *   been evicted from the in-process store.
+ *   no durable record in the job ledger.
  * @throws {AiPoweredError} (any code) — the error captured during generation when
  *   `status === "failed"`.
  */
 export async function pollShotJob(jobId: string): Promise<SingleShotResult> {
-  const entry = _jobStore.get(jobId);
+  const entry = await readJobRecord(jobId);
 
   if (entry === undefined) {
     throw new AiPoweredError(

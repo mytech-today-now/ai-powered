@@ -100,7 +100,7 @@ export class AnthropicProvider extends BaseProvider {
 
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.assertCapability("text");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const system = options?.systemPrompt ?? this.config.systemPrompt;
@@ -153,7 +153,7 @@ export class AnthropicProvider extends BaseProvider {
 
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const system = options?.systemPrompt ?? this.config.systemPrompt;
 
@@ -192,7 +192,7 @@ export class AnthropicProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const system = options?.systemPrompt ?? this.config.systemPrompt;

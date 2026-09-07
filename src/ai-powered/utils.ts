@@ -235,10 +235,8 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   "dream-machine": { perVideoUsd: 0.14 },
   // --- Runway video (2026-04-02: docs.dev.runwayml.com/guides/pricing) ------
   // 1 credit = $0.01; per-video cost based on 5-second default clip.
-  // gen4.5: 12 credits/sec → $0.60/5s; gen4_turbo/gen3a_turbo: 5 → $0.25/5s
+  // gen4.5: 12 credits/sec → $0.60/5s.
   "gen4.5": { perVideoUsd: 0.6 },
-  gen4_turbo: { perVideoUsd: 0.25 },
-  gen3a_turbo: { perVideoUsd: 0.25 },
   // --- Mock models (plausible fixture values matching real-world scale) --
   "mock-text-v1": { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
   "mock-image-v1": { perImage: true, perImageUsd: 0.04 },

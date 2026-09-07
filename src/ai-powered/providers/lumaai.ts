@@ -159,7 +159,7 @@ export class LumaAIProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<VideoResult> {
     this.assertCapability("video");
-    const model = this._resolveModel();
+    const model = this._resolveModel(options);
     const start = Date.now();
 
     const aspectRatio = options?.aspectRatio ?? "16:9";
@@ -255,7 +255,7 @@ export class LumaAIProvider extends BaseProvider {
     options?: LumaCallOptions,
   ): Promise<VideoResult> {
     this.assertCapability("video");
-    const model = this._resolveModel();
+    const model = this._resolveModel(options);
     const start = Date.now();
 
     const aspectRatio = options?.aspectRatio ?? "16:9";
@@ -354,8 +354,8 @@ export class LumaAIProvider extends BaseProvider {
    * Recognised model IDs are passed through as-is.  Any other value
    * (including undefined) falls back to the default ("ray-2").
    */
-  private _resolveModel(): string {
-    const m = this.config.model;
+  private _resolveModel(options?: ProviderCallOptions): string {
+    const m = options?.model ?? this.config.model;
     if (m === "ray-2" || m === "ray-2-720p" || m === "ray-flash-2" || m === "ray-flash-2-720p") {
       return m;
     }

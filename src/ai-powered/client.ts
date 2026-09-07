@@ -92,6 +92,15 @@ export class ConversationSession {
 /** Options accepted by per-call overrides on AiClient methods. */
 export type CallOptions = ProviderCallOptions;
 
+const VALID_MODALITIES = new Set<Modality>(["text", "image", "audio", "video", "structured"]);
+const VALID_MESSAGE_ROLES = new Set(["system", "user", "assistant"] as const);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 /**
  * Unified AI client for all modalities.
  * Returned by `getAiClient()` — do not construct directly.
@@ -286,6 +295,7 @@ export class AiClient {
   private async _executeWithFallback<T>(
     fn: (provider: BaseProvider) => Promise<T>,
     signal?: AbortSignal,
+    model?: string,
   ): Promise<T> {
     const log = getLogger();
     const fallbackEnabled = this._config.fallback !== false;
@@ -318,7 +328,7 @@ export class AiClient {
       log.debug(
         {
           provider: name,
-          model: this._config.model ?? "(default)",
+          model: model ?? this._config.model ?? "(default)",
           attempt: i + 1,
           total: chain.length,
         },
@@ -401,6 +411,13 @@ export class AiClient {
         } catch {
           /* ignore secondary errors */
         }
+        continue;
+      }
+      current = this._validateRequestContext(current, plugin.name);
+      if (current.modality !== sandboxedCtx.modality) {
+        throw new Error(
+          `Plugin "${plugin.name}" returned a RequestContext with a different modality.`,
+        );
       }
     }
     return current;
@@ -450,6 +467,16 @@ export class AiClient {
         } catch {
           /* ignore secondary errors */
         }
+        continue;
+      }
+      current = this._validateResponseContext(current, plugin.name);
+      if (
+        current.modality !== sandboxedCtx.modality ||
+        current.modality !== current.result.modality
+      ) {
+        throw new Error(
+          `Plugin "${plugin.name}" returned a ResponseContext with a different modality.`,
+        );
       }
     }
     return current;
@@ -486,6 +513,176 @@ export class AiClient {
     return undefined;
   }
 
+  /** Returns the first system prompt in the request message list, if any. */
+  private _extractSystemPrompt(ctx: RequestContext): string | undefined {
+    for (let i = 0; i < ctx.messages.length; i++) {
+      if (ctx.messages[i]!.role === "system") return ctx.messages[i]!.content;
+    }
+    return undefined;
+  }
+
+  /** Returns true when two message lists are structurally identical. */
+  private _messagesEqual(
+    left: RequestContext["messages"],
+    right: RequestContext["messages"],
+  ): boolean {
+    if (left.length !== right.length) return false;
+    for (let i = 0; i < left.length; i++) {
+      const leftMessage = left[i]!;
+      const rightMessage = right[i]!;
+      if (leftMessage.role !== rightMessage.role || leftMessage.content !== rightMessage.content) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Validates that a plugin returned a usable request context. */
+  private _validateRequestContext(value: unknown, pluginName: string): RequestContext {
+    if (!isPlainObject(value)) {
+      throw new Error(`Plugin "${pluginName}" returned an invalid RequestContext object.`);
+    }
+    const request = value as Record<string, unknown>;
+    if (!isPlainObject(request["config"])) {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with an invalid config.`);
+    }
+    if (!VALID_MODALITIES.has(request["modality"] as Modality)) {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with an invalid modality.`);
+    }
+    if (!Array.isArray(request["messages"])) {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid messages.`);
+    }
+    const messages = request["messages"] as unknown[];
+    for (const message of messages) {
+      if (
+        !isPlainObject(message) ||
+        !VALID_MESSAGE_ROLES.has(
+          (message as Record<string, unknown>)["role"] as "system" | "user" | "assistant",
+        ) ||
+        typeof (message as Record<string, unknown>)["content"] !== "string"
+      ) {
+        throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid messages.`);
+      }
+    }
+    if (!isPlainObject(request["options"])) {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    const options = request["options"] as Record<string, unknown>;
+    if (options["model"] !== undefined && typeof options["model"] !== "string") {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    if (options["temperature"] !== undefined && typeof options["temperature"] !== "number") {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    if (options["maxTokens"] !== undefined && typeof options["maxTokens"] !== "number") {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    if (options["systemPrompt"] !== undefined && typeof options["systemPrompt"] !== "string") {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    if (options["stream"] !== undefined && typeof options["stream"] !== "boolean") {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    if (options["messages"] !== undefined && !Array.isArray(options["messages"])) {
+      throw new Error(`Plugin "${pluginName}" returned a RequestContext with invalid options.`);
+    }
+    return value as unknown as RequestContext;
+  }
+
+  /** Validates that a plugin returned a usable response context. */
+  private _validateResponseContext(value: unknown, pluginName: string): ResponseContext {
+    if (!isPlainObject(value)) {
+      throw new Error(`Plugin "${pluginName}" returned an invalid ResponseContext object.`);
+    }
+    const response = value as Record<string, unknown>;
+    if (!isPlainObject(response["config"])) {
+      throw new Error(`Plugin "${pluginName}" returned a ResponseContext with an invalid config.`);
+    }
+    if (!VALID_MODALITIES.has(response["modality"] as Modality)) {
+      throw new Error(
+        `Plugin "${pluginName}" returned a ResponseContext with an invalid modality.`,
+      );
+    }
+    if (!isPlainObject(response["result"])) {
+      throw new Error(`Plugin "${pluginName}" returned a ResponseContext with an invalid result.`);
+    }
+    const result = response["result"] as Record<string, unknown>;
+    const cost = result["cost"] as Record<string, unknown>;
+    if (
+      typeof result["modality"] !== "string" ||
+      typeof result["provider"] !== "string" ||
+      typeof result["model"] !== "string" ||
+      !isPlainObject(cost) ||
+      typeof cost["totalUsd"] !== "number" ||
+      typeof cost["isEstimate"] !== "boolean" ||
+      typeof result["latencyMs"] !== "number"
+    ) {
+      throw new Error(`Plugin "${pluginName}" returned a ResponseContext with an invalid result.`);
+    }
+    switch (result["modality"] as Modality) {
+      case "text":
+      case "structured": {
+        const usage = result["usage"] as Record<string, unknown>;
+        if (
+          !isPlainObject(usage) ||
+          typeof usage["promptTokens"] !== "number" ||
+          typeof usage["completionTokens"] !== "number" ||
+          typeof usage["totalTokens"] !== "number"
+        ) {
+          throw new Error(
+            `Plugin "${pluginName}" returned a ResponseContext with an invalid result.`,
+          );
+        }
+        if (result["modality"] === "text") {
+          if (typeof result["content"] !== "string" || typeof result["finishReason"] !== "string") {
+            throw new Error(
+              `Plugin "${pluginName}" returned a ResponseContext with an invalid result.`,
+            );
+          }
+        }
+        break;
+      }
+      case "image":
+      case "video":
+        if (typeof result["data"] !== "string" || typeof result["mimeType"] !== "string") {
+          throw new Error(
+            `Plugin "${pluginName}" returned a ResponseContext with an invalid result.`,
+          );
+        }
+        break;
+      case "audio":
+        if (
+          typeof result["text"] !== "string" &&
+          !(typeof result["audio"] === "object" && result["audio"] !== null)
+        ) {
+          throw new Error(
+            `Plugin "${pluginName}" returned a ResponseContext with an invalid result.`,
+          );
+        }
+        break;
+    }
+    return value as unknown as ResponseContext;
+  }
+
+  /** Merges request-hook mutations into the provider call options. */
+  private _buildCallOptions(
+    baseOptions: CallOptions | undefined,
+    requestCtx: RequestContext,
+    initialMessages: RequestContext["messages"],
+  ): ProviderCallOptions {
+    const callOptions = {
+      ...(baseOptions ?? {}),
+      ...(requestCtx.options as Record<string, unknown>),
+    } as ProviderCallOptions;
+    if (
+      !this._messagesEqual(initialMessages, requestCtx.messages) &&
+      requestCtx.options["messages"] === undefined
+    ) {
+      callOptions.messages = requestCtx.messages;
+    }
+    return callOptions;
+  }
+
   // ---------------------------------------------------------------------------
   // Public methods
   // ---------------------------------------------------------------------------
@@ -500,30 +697,25 @@ export class AiClient {
       options: (options ?? {}) as Record<string, unknown>,
     };
     // Run onRequest pipeline — plugins may modify messages or options.
-    const ctx = await this.runOnRequest(initialCtx);
+    const requestCtx = await this.runOnRequest(initialCtx);
     // Use the effective prompt from the (possibly modified) context.
-    const effectivePrompt = this._extractUserMessage(ctx) ?? prompt;
+    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
+    callOptions.temperature ??= this._config.temperature;
+    if (callOptions.maxTokens === undefined && this._config.maxTokens !== undefined) {
+      callOptions.maxTokens = this._config.maxTokens;
+    }
+    if (callOptions.systemPrompt === undefined && this._config.systemPrompt !== undefined) {
+      callOptions.systemPrompt = this._config.systemPrompt;
+    }
     // Pre-call budget guard: estimate cost and abort before spending money.
-    this.preCheckBudget(this._config.model ?? "", effectivePrompt);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
     let result: TextResult;
     try {
-      const callOptions: ProviderCallOptions = {
-        ...options,
-        temperature: options?.temperature ?? this._config.temperature,
-        ...(options?.maxTokens !== undefined
-          ? { maxTokens: options.maxTokens }
-          : this._config.maxTokens !== undefined
-            ? { maxTokens: this._config.maxTokens }
-            : {}),
-        ...(options?.systemPrompt !== undefined
-          ? { systemPrompt: options.systemPrompt }
-          : this._config.systemPrompt !== undefined
-            ? { systemPrompt: this._config.systemPrompt }
-            : {}),
-      };
       result = await this._executeWithFallback(
         (provider) => provider.generateText(effectivePrompt, callOptions),
-        options?.signal,
+        callOptions.signal,
+        callOptions.model,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -533,8 +725,8 @@ export class AiClient {
     // Post-call guard validates actual reported cost (estimate may differ).
     this.checkBudget(result.cost.totalUsd);
     this.accumulateCost(result);
-    await this.runOnResponse({ config: this._config, modality, result });
-    return result;
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as TextResult;
   }
 
   /** Generate an image. */
@@ -546,15 +738,17 @@ export class AiClient {
       messages: [{ role: "user", content: prompt }],
       options: (options ?? {}) as Record<string, unknown>,
     };
-    const ctx = await this.runOnRequest(initialCtx);
-    const effectivePrompt = this._extractUserMessage(ctx) ?? prompt;
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
     // Image models have a fixed cost per call; preCheckBudget uses that fixed value.
-    this.preCheckBudget(this._config.model ?? "", effectivePrompt);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
     let result: ImageResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateImage(effectivePrompt, options),
-        options?.signal,
+        (provider) => provider.generateImage(effectivePrompt, callOptions),
+        callOptions.signal,
+        callOptions.model,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -563,8 +757,8 @@ export class AiClient {
     }
     this.checkBudget(result.cost.totalUsd);
     this.accumulateCost(result);
-    await this.runOnResponse({ config: this._config, modality, result });
-    return result;
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as ImageResult;
   }
 
   /** Transcribe audio from a buffer. */
@@ -576,17 +770,19 @@ export class AiClient {
       messages: [],
       options: (options ?? {}) as Record<string, unknown>,
     };
-    await this.runOnRequest(initialCtx);
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
     // Audio transcription is priced per-minute; duration is unknown pre-call.
     // Use buffer byte length as a conservative text proxy so per-token models
     // still get a meaningful estimate. Per-minute models (e.g. whisper-1) will
     // estimate $0; the post-call guard enforces the actual cost.
-    this.preCheckBudget(this._config.model ?? "", String(buffer.length));
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", String(buffer.length));
     let result: TranscriptionResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.transcribeAudio(buffer, options),
-        options?.signal,
+        (provider) => provider.transcribeAudio(buffer, callOptions),
+        callOptions.signal,
+        callOptions.model,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -595,8 +791,8 @@ export class AiClient {
     }
     this.checkBudget(result.cost.totalUsd);
     this.accumulateCost(result);
-    await this.runOnResponse({ config: this._config, modality, result });
-    return result;
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as TranscriptionResult;
   }
 
   /** Synthesize speech from text. */
@@ -608,16 +804,18 @@ export class AiClient {
       messages: [{ role: "user", content: text }],
       options: (options ?? {}) as Record<string, unknown>,
     };
-    const ctx = await this.runOnRequest(initialCtx);
-    const effectiveText = this._extractUserMessage(ctx) ?? text;
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const effectiveText = this._extractUserMessage(requestCtx) ?? text;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
     // TTS pricing is character-based (mapped to prompt tokens in the pricing
     // table); estimateCost() on the input text provides a meaningful estimate.
-    this.preCheckBudget(this._config.model ?? "", effectiveText);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectiveText);
     let result: AudioResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.synthesizeSpeech(effectiveText, options),
-        options?.signal,
+        (provider) => provider.synthesizeSpeech(effectiveText, callOptions),
+        callOptions.signal,
+        callOptions.model,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -626,8 +824,8 @@ export class AiClient {
     }
     this.checkBudget(result.cost.totalUsd);
     this.accumulateCost(result);
-    await this.runOnResponse({ config: this._config, modality, result });
-    return result;
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as AudioResult;
   }
 
   /** Generate video. */
@@ -639,14 +837,16 @@ export class AiClient {
       messages: [{ role: "user", content: prompt }],
       options: (options ?? {}) as Record<string, unknown>,
     };
-    const ctx = await this.runOnRequest(initialCtx);
-    const effectivePrompt = this._extractUserMessage(ctx) ?? prompt;
-    this.preCheckBudget(this._config.model ?? "", effectivePrompt);
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
     let result: VideoResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateVideo(effectivePrompt, options),
-        options?.signal,
+        (provider) => provider.generateVideo(effectivePrompt, callOptions),
+        callOptions.signal,
+        callOptions.model,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -655,8 +855,8 @@ export class AiClient {
     }
     this.checkBudget(result.cost.totalUsd);
     this.accumulateCost(result);
-    await this.runOnResponse({ config: this._config, modality, result });
-    return result;
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as VideoResult;
   }
 
   /** Stream text deltas as an AsyncIterable<string>. */
@@ -668,10 +868,12 @@ export class AiClient {
       messages: [{ role: "user", content: prompt }],
       options: { ...options, stream: true } as Record<string, unknown>,
     };
-    const ctx = await this.runOnRequest(initialCtx);
-    const effectivePrompt = this._extractUserMessage(ctx) ?? prompt;
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
+    callOptions.stream = true;
     // Pre-call guard prevents starting a stream that would exceed the budget.
-    this.preCheckBudget(this._config.model ?? "", effectivePrompt);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
     // Circuit breaker check before starting the stream (fast-fail if open).
     const cb = this._getCircuitBreaker(this._config.provider);
     if (cb.state === "OPEN") {
@@ -679,10 +881,7 @@ export class AiClient {
       await cb.call(() => Promise.resolve());
     }
     try {
-      for await (const chunk of this._provider.streamText(effectivePrompt, {
-        ...options,
-        stream: true,
-      })) {
+      for await (const chunk of this._provider.streamText(effectivePrompt, callOptions)) {
         yield chunk;
       }
       // Successful stream — reset consecutive failure counter.
@@ -707,14 +906,16 @@ export class AiClient {
       messages: [{ role: "user", content: prompt }],
       options: (options ?? {}) as Record<string, unknown>,
     };
-    const ctx = await this.runOnRequest(initialCtx);
-    const effectivePrompt = this._extractUserMessage(ctx) ?? prompt;
-    this.preCheckBudget(this._config.model ?? "", effectivePrompt);
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
     let result: StructuredResult<T>;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateStructured(effectivePrompt, schema, options),
-        options?.signal,
+        (provider) => provider.generateStructured(effectivePrompt, schema, callOptions),
+        callOptions.signal,
+        callOptions.model,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -723,8 +924,8 @@ export class AiClient {
     }
     this.checkBudget(result.cost.totalUsd);
     this.accumulateCost(result);
-    await this.runOnResponse({ config: this._config, modality, result });
-    return result;
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as StructuredResult<T>;
   }
 
   /** List models supported by the active provider, optionally filtered by modality and/or input capability. */

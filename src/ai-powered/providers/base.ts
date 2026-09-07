@@ -36,6 +36,8 @@ import { ProviderCapabilityError } from "../types.js";
 export interface ProviderCallOptions {
   /** AbortSignal for request cancellation. */
   signal?: AbortSignal;
+  /** Per-call model override supplied by the client or a plugin hook. */
+  model?: string;
   /** Sampling temperature (0–2). Overrides config default for this call. */
   temperature?: number;
   /** Maximum tokens in the response. Overrides config default for this call. */
@@ -168,6 +170,11 @@ export abstract class BaseProvider {
     if (!this.supportedModalities.includes(modality)) {
       throw new ProviderCapabilityError(this.name, modality);
     }
+  }
+
+  /** Resolves a model override when a per-call option is provided. */
+  protected resolveModel(defaultModel: string, options?: ProviderCallOptions): string {
+    return options?.model ?? this.config.model ?? defaultModel;
   }
 
   generateText(_prompt: string, _options?: ProviderCallOptions): Promise<TextResult> {

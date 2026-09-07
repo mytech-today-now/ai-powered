@@ -661,7 +661,9 @@ export function createRouter(opts: ServeOptions): Router {
     const buffer = Buffer.from(entry.base64Content, "base64");
     res.setHeader("Content-Type", entry.mimeType);
     res.setHeader("Content-Length", buffer.length);
-    res.setHeader("Cache-Control", "public, max-age=3600");
+    // Uploaded user files must remain private; the public URL flow does not
+    // require shared or browser cache retention.
+    res.setHeader("Cache-Control", "private, no-store");
     res.end(buffer);
   });
 

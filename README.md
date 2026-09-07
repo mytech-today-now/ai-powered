@@ -1419,20 +1419,28 @@ This package uses `"type": "module"` and ships only ES Modules. This decision wa
 
 ## MCP Server
 
-`ai-powered` ships a built-in **Model Context Protocol (MCP)** server (`src/ai-powered/mcp-server.ts`) that exposes all five modalities as MCP tools. Any MCP-capable agent or orchestrator can connect and call them without writing custom integration code.
+`ai-powered` ships a built-in **Model Context Protocol (MCP)** server (`src/ai-powered/mcp-server.ts`) that exposes its MCP tools for agents and orchestrators without requiring custom integration code.
 
 ### Starting the MCP server
 
 ```bash
-# Via CLI (stdio transport — the MCP default)
-ai-powered serve --mcp
+# Via CLI (stdio transport — the MCP default and safest mode)
+ai-powered mcp-server --transport stdio
 
-# Or programmatically
-import { createMcpServer } from "ai-powered";
+# HTTP transport binds to 127.0.0.1 by default for local-only use
+ai-powered mcp-server --transport http --port 3743
 
-const server = createMcpServer({ provider: "openai" });
-await server.listen(); // stdio transport
+# To expose HTTP on all interfaces, opt in explicitly and require auth
+ai-powered mcp-server --transport http --port 3743 --auth-token <secret> --unsafe-expose-network
 ```
+
+```typescript
+import { startMcpServer } from "ai-powered";
+
+await startMcpServer({ transport: "stdio" });
+```
+
+When `unsafeExposeNetwork` is set, the HTTP transport binds to `0.0.0.0` and requires `authToken`. Without that flag, the server stays on `127.0.0.1` and remains local-only.
 
 ### Exposed MCP tools
 

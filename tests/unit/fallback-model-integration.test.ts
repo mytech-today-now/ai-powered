@@ -329,3 +329,34 @@ describe("T-PM-12: provider re-change discards stale model override", () => {
     expect(modelSel.value).toBe("sd-core");
   });
 });
+
+// ── T-PM-13: Audio dropdowns continue to populate ───────────────────────────
+
+describe("T-PM-13: audio dropdowns continue to populate", () => {
+  it("fills both audio model selects with the shared audio model list", () => {
+    const audioModels: ModelEntry[] = [
+      { id: "whisper-1", costPerUnit: 0.006 },
+      { id: "tts-1", costPerUnit: 0.015 },
+      { id: "tts-1-hd", costPerUnit: 0.03 },
+    ];
+
+    const ttsModelSel = makeSelect();
+    const transcribeModelSel = makeSelect();
+
+    populateModelSelect(ttsModelSel, audioModels);
+    populateModelSelect(transcribeModelSel, audioModels);
+
+    expect([...ttsModelSel.options].map((opt) => opt.value)).toEqual([
+      "whisper-1",
+      "tts-1",
+      "tts-1-hd",
+    ]);
+    expect([...transcribeModelSel.options].map((opt) => opt.value)).toEqual([
+      "whisper-1",
+      "tts-1",
+      "tts-1-hd",
+    ]);
+    expect(ttsModelSel.value).toBe("whisper-1");
+    expect(transcribeModelSel.value).toBe("whisper-1");
+  });
+});

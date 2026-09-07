@@ -1,17 +1,18 @@
 /**
  * @file src/ai-powered/providers/runway.ts
  *
- * Runway AI provider — text-to-video and image-to-video generation.
+ * Runway AI provider — text-to-video generation.
  *
  * Supported models:
- *   gen4.5        — text-to-video or image-to-video (12 credits/sec)
- *   gen4_turbo    — image-to-video only             ( 5 credits/sec)
- *   gen3a_turbo   — image-to-video only             ( 5 credits/sec)
+ *   gen4.5        — text-to-video (12 credits/sec)
  *
- * Async polling: textToVideo.create() / imageToVideo.create() submits a job
- * returning a task id; this provider polls tasks.retrieve(id) at
- * POLL_INTERVAL_MS intervals until status is SUCCEEDED or FAILED, until
- * POLL_TIMEOUT_MS elapses, or until options.signal fires.
+ * Turbo variants are intentionally omitted from the public model list until
+ * a real keyframe-backed image-to-video path exists in this provider.
+ *
+ * Async polling: textToVideo.create() submits a job returning a task id; this
+ * provider polls tasks.retrieve(id) at POLL_INTERVAL_MS intervals until status
+ * is SUCCEEDED or FAILED, until POLL_TIMEOUT_MS elapses, or until options.signal
+ * fires.
  *
  * Transport: the completed video URL is fetched server-side and returned as a
  * data:video/mp4;base64,… data URI consistent with the framework convention.
@@ -20,8 +21,6 @@
  * Keys are always masked via maskApiKey() in all log output.
  * Pricing (1 credit = $0.01):
  *   gen4.5      — 12 credits/sec → $0.12/sec (5s = $0.60, 10s = $1.20)
- *   gen4_turbo  —  5 credits/sec → $0.05/sec (5s = $0.25, 10s = $0.50)
- *   gen3a_turbo —  5 credits/sec → $0.05/sec (5s = $0.25, 10s = $0.50)
  */
 
 import RunwayML from "@runwayml/sdk";
@@ -59,26 +58,6 @@ const RUNWAY_MODELS: ModelDescriptor[] = [
     fpsOptions: [24],
     qualityOptions: ["standard"],
   },
-  {
-    id: "gen4_turbo",
-    name: "Runway Gen-4 Turbo",
-    capabilities: ["video"],
-    aspectRatios: ["16:9", "9:16"],
-    resolutions: ["720p"],
-    durationRange: { min: 5, max: 10 },
-    fpsOptions: [24],
-    qualityOptions: ["standard"],
-  },
-  {
-    id: "gen3a_turbo",
-    name: "Runway Gen-3 Alpha Turbo",
-    capabilities: ["video"],
-    aspectRatios: ["16:9", "9:16"],
-    resolutions: ["720p"],
-    durationRange: { min: 5, max: 10 },
-    fpsOptions: [24],
-    qualityOptions: ["standard"],
-  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -86,12 +65,12 @@ const RUNWAY_MODELS: ModelDescriptor[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Runway AI provider — text-to-video and image-to-video generation.
+ * Runway AI provider — text-to-video generation.
  *
  * Configure via:
  *   provider: "runway"
  *   apiKey:   <RUNWAYML_API_SECRET>  (or set RUNWAYML_API_SECRET env var)
- *   model:    "gen4.5" | "gen4_turbo" | "gen3a_turbo"  (default: "gen4.5")
+ *   model:    "gen4.5"  (default: "gen4.5")
  */
 export class RunwayProvider extends BaseProvider {
   readonly name = "runway" as const;
@@ -112,15 +91,25 @@ export class RunwayProvider extends BaseProvider {
   /**
    * Generate a video from a text prompt using Runway gen4.5.
    *
-   * For models that require a keyframe image (gen4_turbo, gen3a_turbo),
-   * this falls back to a blank/placeholder approach or throws a clear error.
+   * Unsupported model IDs are rejected with a stable ProviderError so the
+   * public model list and the runtime stay in sync.
    */
   override async generateVideo(
     prompt: string,
     options?: ProviderCallOptions,
   ): Promise<VideoResult> {
     this.assertCapability("video");
-    const model = this._resolveModel();
+    const requestedModel = options?.model ?? this.config.model;
+    if (requestedModel !== undefined && requestedModel !== "gen4.5") {
+      throw new ProviderError(
+        "runway",
+        `Model "${requestedModel}" is not currently exposed by RunwayProvider. ` +
+          `Use "gen4.5" for supported text-to-video generation.`,
+        422,
+        false,
+      );
+    }
+    const model = DEFAULT_VIDEO_MODEL;
     const start = Date.now();
 
     // Runway ratio format: "1280:720" (width:height) — model-specific
@@ -136,17 +125,6 @@ export class RunwayProvider extends BaseProvider {
       { provider: "runway", model, ratio, duration },
       "RunwayProvider: submitting text-to-video job",
     );
-
-    // Only gen4.5 supports text-to-video; turbo models require an image keyframe.
-    if (model !== "gen4.5") {
-      throw new ProviderError(
-        "runway",
-        `Model "${model}" requires an image keyframe (image-to-video). ` +
-          `Use generateVideoFromImage(), or switch to "gen4.5" for text-to-video.`,
-        422,
-        false,
-      );
-    }
 
     let taskId: string;
     try {
@@ -196,27 +174,22 @@ export class RunwayProvider extends BaseProvider {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private _resolveModel(): string {
-    const m = this.config.model;
-    if (m === "gen4.5" || m === "gen4_turbo" || m === "gen3a_turbo") return m;
-    return DEFAULT_VIDEO_MODEL;
-  }
-
   /**
    * Maps a colon-separated aspect ratio (e.g. "16:9") to Runway's WIDTHxHEIGHT
-   * ratio string for the given model:
+   * ratio string for the supported public model:
    *   gen4.5        → landscape "1280:720" / portrait "720:1280"
-   *   gen4_turbo /
-   *   gen3a_turbo   → landscape "1280:768" / portrait "768:1280"
    *
-   * Any recognisable landscape input (16:9, 1280:720, 1280:768) is mapped to
-   * the model-correct landscape string; portrait inputs map similarly.
-   * Falls back to the model's landscape default for unknown values.
+   * The fallback branch remains only as a defensive compatibility path.
+   *
+   * Any recognisable landscape input (16:9, 1280:720) is mapped to the
+   * landscape default; portrait inputs map similarly.
+   * Falls back to the landscape default for unknown values.
    */
-  private _resolveRatio(model: string, aspectRatio?: string): string {
-    // Per-model canonical strings.
-    const landscape = model === "gen4.5" ? "1280:720" : "1280:768";
-    const portrait = model === "gen4.5" ? "720:1280" : "768:1280";
+  private _resolveRatio(_model: string, aspectRatio?: string): string {
+    // Gen4.5 canonical strings. The provider rejects other model IDs before
+    // reaching this helper.
+    const landscape = "1280:720";
+    const portrait = "720:1280";
 
     const AR_MAP: Record<string, string> = {
       // friendly names → model-correct string
@@ -227,8 +200,6 @@ export class RunwayProvider extends BaseProvider {
       // all possible exact pass-throughs → snap to this model's value
       "1280:720": landscape,
       "720:1280": portrait,
-      "1280:768": landscape,
-      "768:1280": portrait,
     };
 
     if (!aspectRatio || aspectRatio === "auto") return landscape;

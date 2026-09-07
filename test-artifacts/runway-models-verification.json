@@ -1,0 +1,34 @@
+{
+  "task": "Hide unsupported Runway turbo models from the public list and keep runtime validation aligned",
+  "status": "passed",
+  "date": "2026-09-07",
+  "repository": "C:\\GitHub\\ai-powered",
+  "changedFiles": [
+    "src/ai-powered/providers/runway.ts",
+    "src/ai-powered/providers/configs/runway.json",
+    "src/ai-powered/utils.ts",
+    "tests/integration/compat.test.ts",
+    "tests/unit/limits-validator.test.ts",
+    "tests/unit/runway.test.ts"
+  ],
+  "verification": {
+    "build": {
+      "command": "npm run build",
+      "status": "passed"
+    },
+    "tests": {
+      "command": "npm test -- tests/unit/runway.test.ts tests/unit/limits-validator.test.ts tests/unit/config.test.ts tests/integration/compat.test.ts",
+      "status": "passed"
+    }
+  },
+  "acceptanceCriteria": [
+    "No dead Runway model choices remain.",
+    "gen4.5 behavior stays intact.",
+    "Tests prove the advertised list matches runtime capability."
+  ],
+  "notes": [
+    "Unsupported turbo IDs are removed from the public Runway model list and pricing data.",
+    "generateVideo now rejects unsupported model IDs with a stable ProviderError before SDK calls.",
+    "Regression tests cover hidden turbo pricing, stable rejection, and unchanged gen4.5 validation."
+  ]
+}

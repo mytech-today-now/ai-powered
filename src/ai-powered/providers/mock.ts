@@ -143,15 +143,15 @@ export class MockProvider extends BaseProvider {
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.assertCapability("text");
     void prompt;
-    void options;
+    const model = options?.model ?? "mock-text-v1";
     const usage = { ...MOCK_TEXT_USAGE };
     return {
       modality: "text",
       provider: "mock",
-      model: "mock-text-v1",
+      model,
       content: "[mock response]",
       usage,
-      cost: calculateCost("mock-text-v1", usage),
+      cost: calculateCost(model, usage),
       latencyMs: 1,
       finishReason: "stop",
     };
@@ -163,18 +163,19 @@ export class MockProvider extends BaseProvider {
   ): Promise<ImageResult> {
     this.assertCapability("image");
     void prompt;
+    const model = options?.model ?? "mock-image-v1";
     const width = options?.width ?? 1024;
     const height = options?.height ?? 1024;
     return {
       modality: "image",
       provider: "mock",
-      model: "mock-image-v1",
+      model,
       data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII=",
       mimeType: "image/png",
       width,
       height,
       usage: MOCK_ZERO_USAGE,
-      cost: calculateCost("mock-image-v1", MOCK_ZERO_USAGE),
+      cost: calculateCost(model, MOCK_ZERO_USAGE),
       latencyMs: 1,
     };
   }
@@ -185,16 +186,16 @@ export class MockProvider extends BaseProvider {
   ): Promise<TranscriptionResult> {
     this.assertCapability("audio");
     void buffer;
-    void options;
+    const model = options?.model ?? "mock-whisper-v1";
     return {
       modality: "audio",
       provider: "mock",
-      model: "mock-whisper-v1",
+      model,
       text: "[mock transcription]",
       language: "en",
       durationSeconds: MOCK_AUDIO_DURATION_SECONDS,
       usage: MOCK_ZERO_USAGE,
-      cost: calculateCost("mock-whisper-v1", MOCK_ZERO_USAGE, MOCK_AUDIO_DURATION_SECONDS),
+      cost: calculateCost(model, MOCK_ZERO_USAGE, MOCK_AUDIO_DURATION_SECONDS),
       latencyMs: 1,
     };
   }
@@ -204,7 +205,7 @@ export class MockProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<AudioResult> {
     this.assertCapability("audio");
-    void options;
+    const model = options?.model ?? "mock-tts-v1";
     const charCount = text.length || MOCK_TTS_CHARS;
     const ttsUsage: TokenUsage = {
       promptTokens: Math.ceil(charCount / 4),
@@ -214,11 +215,11 @@ export class MockProvider extends BaseProvider {
     return {
       modality: "audio",
       provider: "mock",
-      model: "mock-tts-v1",
+      model,
       audio: Buffer.alloc(0),
       mimeType: "audio/mpeg",
       usage: ttsUsage,
-      cost: calculateCost("mock-tts-v1", ttsUsage),
+      cost: calculateCost(model, ttsUsage),
       latencyMs: 1,
     };
   }
@@ -229,6 +230,7 @@ export class MockProvider extends BaseProvider {
   ): Promise<VideoResult> {
     this.assertCapability("video");
     void prompt;
+    const model = options?.model ?? "mock-video-v1";
     const aspectRatio = options?.aspectRatio ?? "1:1";
     const t0 = Date.now();
     if (MOCK_VIDEO_DELAY_MS > 0) {
@@ -237,13 +239,13 @@ export class MockProvider extends BaseProvider {
     return {
       modality: "video",
       provider: "mock",
-      model: "mock-video-v1",
+      model,
       // 4-byte stub — the web client replaces this with a Canvas-generated preview
       data: "data:video/mp4;base64,AAAAAA==",
       mimeType: "video/mp4",
       aspectRatio,
       usage: MOCK_ZERO_USAGE,
-      cost: calculateCost("mock-video-v1", MOCK_ZERO_USAGE),
+      cost: calculateCost(model, MOCK_ZERO_USAGE),
       latencyMs: Date.now() - t0,
     };
   }
@@ -264,17 +266,17 @@ export class MockProvider extends BaseProvider {
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
     void prompt;
-    void options;
+    const model = options?.model ?? "mock-structured-v1";
     // Generate a schema-aware fixture so required fields are always satisfied.
     const data = generateMockValue(schema);
     const usage = { ...MOCK_TEXT_USAGE };
     return {
       modality: "structured",
       provider: "mock",
-      model: "mock-structured-v1",
+      model,
       data,
       usage,
-      cost: calculateCost("mock-structured-v1", usage),
+      cost: calculateCost(model, usage),
       latencyMs: 1,
     };
   }

@@ -6,6 +6,7 @@
  * Exposes all ai-powered functions as Model Context Protocol (MCP) tools via a
  * standalone server conforming to MCP specification 2025-11-25.  Supports both
  * `stdio` and HTTP (`StreamableHTTP`) transports (D5 — separate entry point).
+ * HTTP binds to loopback by default; remote exposure is an explicit opt-in.
  *
  * Tool manifest (6 tools):
  *   generate_single_shot  submit_single_shot  poll_shot_job
@@ -96,6 +97,9 @@ export function createBearerAuthMiddleware(
     next();
   };
 }
+
+const HTTP_LOOPBACK_HOST = "127.0.0.1";
+const HTTP_REMOTE_HOST = "0.0.0.0";
 
 // ---------------------------------------------------------------------------
 // Tool registration (bd-kv45 / REQ-MCP-01, REQ-MCP-02)
@@ -443,14 +447,17 @@ export function registerResources(server: McpServer): void {
  * Starts the MCP server with the specified transport.
  *
  * **stdio**: Reads JSON-RPC from stdin, writes to stdout.
- * **http**: Starts an Express server on `port` (default 3743). When `authToken`
- *   is set, every request must carry `Authorization: Bearer <authToken>` or
- *   receive HTTP 401 (REQ-MCP-06).
+ * **http**: Starts an Express server on `port` (default 3743). By default the
+ *   server binds to `127.0.0.1` so HTTP exposure stays local. When
+ *   `unsafeExposeNetwork` is set, the server binds to `0.0.0.0` instead and
+ *   requires `authToken`; every request must then carry
+ *   `Authorization: Bearer <authToken>` or receive HTTP 401 (REQ-MCP-06).
  */
 export async function startMcpServer(opts: {
   transport: "stdio" | "http";
   port?: number;
   authToken?: string;
+  unsafeExposeNetwork?: boolean;
 }): Promise<void> {
   const server = new McpServer({ name: "ai-powered", version: "1.0.0" });
   registerTools(server);
@@ -462,9 +469,16 @@ export async function startMcpServer(opts: {
   }
 
   // ── HTTP transport ───────────────────────────────────────────────────────
+  const hasAuthToken = typeof opts.authToken === "string" && opts.authToken.trim().length > 0;
+  if (opts.unsafeExposeNetwork && !hasAuthToken) {
+    throw new Error(
+      "HTTP MCP remote exposure requires an authToken when unsafeExposeNetwork is enabled.",
+    );
+  }
+
   const app = express();
   app.use(express.json());
-  if (opts.authToken) app.use(createBearerAuthMiddleware(opts.authToken));
+  if (hasAuthToken && opts.authToken) app.use(createBearerAuthMiddleware(opts.authToken));
 
   // Stateless mode: omit sessionIdGenerator entirely (don't pass `undefined`
   // explicitly — exactOptionalPropertyTypes rejects that assignment).
@@ -487,8 +501,9 @@ export async function startMcpServer(opts: {
   await server.connect(transport as any);
 
   const port = opts.port ?? 3743;
+  const listenHost = opts.unsafeExposeNetwork ? HTTP_REMOTE_HOST : HTTP_LOOPBACK_HOST;
   await new Promise<void>((resolve, reject) => {
-    const httpServer = app.listen(port, "0.0.0.0");
+    const httpServer = app.listen(port, listenHost);
     httpServer.once("listening", () => resolve());
     httpServer.once("error", reject);
   });

@@ -1244,7 +1244,7 @@ const initCmd = new Command("init")
 // Usage:
 //   npx ai-powered mcp-server --transport stdio
 //   npx ai-powered mcp-server --transport http --port 3743
-//   npx ai-powered mcp-server --transport http --auth-token <secret>
+//   npx ai-powered mcp-server --transport http --auth-token <secret> --unsafe-expose-network
 //
 // The MCP server is a SEPARATE entry point (REQ-MCP-09 / D5): importing
 // 'ai-powered' for library use does NOT load any MCP or Express code.
@@ -1277,6 +1277,13 @@ const mcpServerCmd = new Command("mcp-server")
         "When set, every request must include 'Authorization: Bearer <token>' or receive HTTP 401 (REQ-MCP-06).",
     ),
   )
+  .addOption(
+    new Option(
+      "--unsafe-expose-network",
+      "Bind HTTP transport to 0.0.0.0 instead of 127.0.0.1. " +
+        "Requires --auth-token and should only be used when remote access is intended.",
+    ),
+  )
   .action(async (opts: Record<string, unknown>) => {
     try {
       // Dynamic import keeps MCP/Express code out of the module graph for
@@ -1288,6 +1295,7 @@ const mcpServerCmd = new Command("mcp-server")
         ...(opts["authToken"] !== undefined && {
           authToken: opts["authToken"] as string,
         }),
+        unsafeExposeNetwork: Boolean(opts["unsafeExposeNetwork"]),
       });
     } catch (err) {
       process.stderr.write(

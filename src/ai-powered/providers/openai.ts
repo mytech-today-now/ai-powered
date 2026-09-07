@@ -96,11 +96,22 @@ const DEFAULT_TRANSCRIPTION_MODEL = "whisper-1";
 const DEFAULT_TTS_MODEL = "tts-1";
 
 const IMAGE_MODEL_IDS = new Set(IMAGE_MODELS.map((m) => m.id));
+const TRANSCRIPTION_MODEL_IDS = new Set([DEFAULT_TRANSCRIPTION_MODEL]);
+const TTS_MODEL_IDS = new Set([DEFAULT_TTS_MODEL, "tts-1-hd"]);
 
 /** Return the configured model only if it is image-capable; else the image default. */
 function resolveImageModel(configModel: string | undefined): string {
   if (configModel && IMAGE_MODEL_IDS.has(configModel)) return configModel;
   return DEFAULT_IMAGE_MODEL;
+}
+
+/** Return the configured audio model only when the endpoint supports it. */
+function resolveAudioModel(
+  defaultModel: string,
+  candidate: string,
+  allowedModels: Set<string>,
+): string {
+  return allowedModels.has(candidate) ? candidate : defaultModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +251,7 @@ export class OpenAiProvider extends BaseProvider {
 
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.assertCapability("text");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const start = Date.now();
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     // When a pre-built messages array is provided (e.g. multimodal content blocks
@@ -289,7 +300,7 @@ export class OpenAiProvider extends BaseProvider {
 
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     // When a pre-built messages array is provided (e.g. multimodal content blocks
     // from POST /upload), use it directly.  Otherwise construct a plain user message.
@@ -327,7 +338,7 @@ export class OpenAiProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<ImageResult> {
     this.assertCapability("image");
-    const model = resolveImageModel(this.config.model);
+    const model = resolveImageModel(options?.model ?? this.config.model);
     const start = Date.now();
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
@@ -420,7 +431,11 @@ export class OpenAiProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<TranscriptionResult> {
     this.assertCapability("audio");
-    const model = DEFAULT_TRANSCRIPTION_MODEL;
+    const model = resolveAudioModel(
+      DEFAULT_TRANSCRIPTION_MODEL,
+      this.resolveModel(DEFAULT_TRANSCRIPTION_MODEL, options),
+      TRANSCRIPTION_MODEL_IDS,
+    );
     const start = Date.now();
     const zeroUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
@@ -474,8 +489,11 @@ export class OpenAiProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<AudioResult> {
     this.assertCapability("audio");
-    void options;
-    const model = DEFAULT_TTS_MODEL;
+    const model = resolveAudioModel(
+      DEFAULT_TTS_MODEL,
+      this.resolveModel(DEFAULT_TTS_MODEL, options),
+      TTS_MODEL_IDS,
+    );
     getLogger().debug(
       { model, textLength: text.length, maxChars: 4096 },
       "OpenAiProvider: synthesizeSpeech called",
@@ -523,7 +541,7 @@ export class OpenAiProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
-    const model = this.config.model ?? DEFAULT_TEXT_MODEL;
+    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const start = Date.now();
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];

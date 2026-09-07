@@ -11,14 +11,19 @@
  *              (REQ-MCP-04)
  *   T-FB-14 — HTTP StreamableHTTP transport: missing / wrong Bearer token → HTTP 401
  *              (REQ-MCP-06, bd-sqnu)
+ *   T-FB-15 — HTTP transport defaults to loopback bind and rejects unsafe remote
+ *              exposure without an auth token
+ *   T-FB-16 — HTTP transport with auth + unsafe exposure still handles /mcp
  *
  * Tools T-FB-11 … T-FB-13 use the MCP SDK's InMemoryTransport + Client pair so
  * no real network or stdio is involved.  T-FB-14 spins up a minimal Express
  * server using the exported `createBearerAuthMiddleware` and makes a real HTTP
- * request via the built-in `fetch`.
+ * request via the built-in `fetch`.  T-FB-15 … T-FB-16 start the exported
+ * `startMcpServer`, assert the actual listen host, and make an authenticated
+ * `/mcp` initialize request via `fetch`.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as http from "node:http";
@@ -31,7 +36,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 // Subject under test
-import { registerTools, createBearerAuthMiddleware } from "../../src/ai-powered/mcp-server.js";
+import {
+  registerTools,
+  createBearerAuthMiddleware,
+  startMcpServer,
+} from "../../src/ai-powered/mcp-server.js";
 
 // ---------------------------------------------------------------------------
 // Shared in-process MCP server/client pair
@@ -39,6 +48,47 @@ import { registerTools, createBearerAuthMiddleware } from "../../src/ai-powered/
 
 let client: Client;
 let savedApiKey: string | undefined;
+
+type CapturedListen = {
+  server: http.Server;
+  port: number | string | undefined;
+  host: string | undefined;
+};
+
+async function closeServer(server: http.Server): Promise<void> {
+  await new Promise<void>((resolve, reject) =>
+    server.close((err) => (err ? reject(err) : resolve())),
+  );
+}
+
+async function startHttpMcpServer(
+  options: Parameters<typeof startMcpServer>[0],
+): Promise<CapturedListen> {
+  let captured: CapturedListen | undefined;
+  const originalListen = http.Server.prototype.listen;
+  const listenSpy = vi.spyOn(http.Server.prototype, "listen").mockImplementation(function (
+    this: http.Server,
+    ...args: unknown[]
+  ) {
+    captured = {
+      server: this,
+      port: args[0] as number | string | undefined,
+      host: typeof args[1] === "string" ? (args[1] as string) : undefined,
+    };
+    // Delegate to the real implementation so the test exercises an actual socket bind.
+    return originalListen.apply(this, args as never);
+  });
+
+  try {
+    await startMcpServer(options);
+    if (!captured) {
+      throw new Error("Expected startMcpServer() to call listen()");
+    }
+    return captured;
+  } finally {
+    listenSpy.mockRestore();
+  }
+}
 
 beforeAll(async () => {
   // generateSingleShot now calls resolveCredential() when a credential source
@@ -295,5 +345,88 @@ describe("T-FB-14: HTTP bearer auth middleware (REQ-MCP-06, bd-sqnu)", () => {
       body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 5 }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-FB-15 / T-FB-16 — HTTP startup policy and authenticated StreamableHTTP
+// ---------------------------------------------------------------------------
+
+describe("T-FB-15/T-FB-16: HTTP transport startup policy", () => {
+  it("binds HTTP transport to 127.0.0.1 by default", async () => {
+    const { server, host } = await startHttpMcpServer({
+      transport: "http",
+      port: 0,
+    });
+
+    try {
+      expect(host).toBe("127.0.0.1");
+      const address = server.address();
+      expect(address).not.toBeNull();
+      expect(typeof address).not.toBe("string");
+      if (address && typeof address !== "string") {
+        expect((address as AddressInfo).address).toBe("127.0.0.1");
+      }
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it("rejects unsafe remote exposure when no auth token is provided", async () => {
+    await expect(
+      startMcpServer({
+        transport: "http",
+        port: 0,
+        unsafeExposeNetwork: true,
+      }),
+    ).rejects.toThrow(
+      "HTTP MCP remote exposure requires an authToken when unsafeExposeNetwork is enabled.",
+    );
+  });
+
+  it("binds to 0.0.0.0 only when unsafe exposure is requested with auth and still handles /mcp", async () => {
+    const token = "test-secret-token";
+    const { server, host } = await startHttpMcpServer({
+      transport: "http",
+      port: 0,
+      authToken: token,
+      unsafeExposeNetwork: true,
+    });
+
+    try {
+      expect(host).toBe("0.0.0.0");
+      const address = server.address();
+      expect(address).not.toBeNull();
+      expect(typeof address).not.toBe("string");
+      if (address && typeof address !== "string") {
+        expect((address as AddressInfo).address).toBe("0.0.0.0");
+        const res = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2025-11-25",
+              clientInfo: { name: "http-client", version: "0.0.0" },
+              capabilities: {},
+            },
+          }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get("content-type")).toContain("text/event-stream");
+        const body = await res.text();
+        expect(body).toContain('"jsonrpc":"2.0"');
+        expect(body).toContain('"serverInfo"');
+      }
+    } finally {
+      await closeServer(server);
+    }
   });
 });

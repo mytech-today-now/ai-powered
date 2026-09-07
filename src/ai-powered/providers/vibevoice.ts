@@ -77,9 +77,9 @@ export class VibevoiceProvider extends BaseProvider {
 
   override async transcribeAudio(
     audio: Blob | Buffer,
-    _options?: ProviderCallOptions,
+    options?: ProviderCallOptions,
   ): Promise<TranscriptionResult> {
-    const model = this.config.model ?? DEFAULT_ASR_MODEL;
+    const model = this.resolveModel(DEFAULT_ASR_MODEL, options);
 
     // Accept both Blob (browser MediaRecorder output) and Buffer (Node.js).
     const audioBase64 =
@@ -127,9 +127,9 @@ export class VibevoiceProvider extends BaseProvider {
 
   override async synthesizeSpeech(
     text: string,
-    _options?: ProviderCallOptions,
+    options?: ProviderCallOptions,
   ): Promise<AudioResult> {
-    const model = this.config.model ?? DEFAULT_TTS_MODEL;
+    const model = this.resolveModel(DEFAULT_TTS_MODEL, options);
     const start = Date.now();
 
     const res = await fetch(`${this._baseUrl}/synthesize`, {

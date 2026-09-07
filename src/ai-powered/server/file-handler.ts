@@ -5,6 +5,7 @@
  *
  * Exports:
  *   MIME_ALLOWLIST            – Set of accepted MIME types
+ *   FILE_REF_TTL_MS           – In-memory retention window for uploaded refs
  *   FileRefEntry              – Interface for stored file reference data
  *   storeFileRef()            – Store a file ref in the in-memory map; return UUID token
  *   lookupFileRef()           – Retrieve a file ref by UUID token
@@ -44,6 +45,9 @@ const MAX_FILE_BYTES = 52_428_800;
 // File reference store (in-memory; v2 will swap to persistent storage)
 // ---------------------------------------------------------------------------
 
+/** File refs are retained for 1 hour, then pruned on lookup or the next write. */
+export const FILE_REF_TTL_MS = 60 * 60 * 1000;
+
 export interface FileRefEntry {
   filename: string;
   mimeType: string;
@@ -55,15 +59,33 @@ export interface FileRefEntry {
   fileId?: string;
 }
 
-const fileRefStore = new Map<string, FileRefEntry>();
+interface StoredFileRefEntry {
+  entry: FileRefEntry;
+  expiresAt: number;
+}
+
+const fileRefStore = new Map<string, StoredFileRefEntry>();
+
+/** Remove expired entries so the in-memory store stays bounded. */
+function pruneExpiredFileRefs(now = Date.now()): void {
+  for (const [token, stored] of fileRefStore) {
+    if (now >= stored.expiresAt) {
+      fileRefStore.delete(token);
+    }
+  }
+}
 
 /**
  * Persist a file reference in the in-memory store.
  * @returns A UUID token that can be passed back to callers as `fileRef`.
  */
 export function storeFileRef(entry: FileRefEntry): string {
+  pruneExpiredFileRefs();
   const token = randomUUID();
-  fileRefStore.set(token, entry);
+  fileRefStore.set(token, {
+    entry,
+    expiresAt: Date.now() + FILE_REF_TTL_MS,
+  });
   return token;
 }
 
@@ -72,7 +94,26 @@ export function storeFileRef(entry: FileRefEntry): string {
  * Returns `undefined` if the token is not found.
  */
 export function lookupFileRef(token: string): FileRefEntry | undefined {
-  return fileRefStore.get(token);
+  pruneExpiredFileRefs();
+  return fileRefStore.get(token)?.entry;
+}
+
+/**
+ * Clear the file ref store. For use in unit tests only.
+ * @internal
+ */
+export function _clearFileRefStore(): void {
+  fileRefStore.clear();
+}
+
+/**
+ * Returns the current number of live file refs in the in-memory store.
+ * For use in unit tests only.
+ * @internal
+ */
+export function _getFileRefStoreSize(): number {
+  pruneExpiredFileRefs();
+  return fileRefStore.size;
 }
 
 // ---------------------------------------------------------------------------

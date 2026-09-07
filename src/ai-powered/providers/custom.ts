@@ -124,7 +124,7 @@ export class CustomProvider extends BaseProvider {
 
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.assertCapability("text");
-    const model = this.config.model ?? "default";
+    const model = this.resolveModel("default", options);
     const start = Date.now();
 
     if (this._type === "other") {
@@ -219,7 +219,7 @@ export class CustomProvider extends BaseProvider {
 
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
-    const model = this.config.model ?? "default";
+    const model = this.resolveModel("default", options);
     const client = this._client!;
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
@@ -253,7 +253,7 @@ export class CustomProvider extends BaseProvider {
     options?: ProviderCallOptions,
   ): Promise<StructuredResult<T>> {
     this.assertCapability("structured");
-    const model = this.config.model ?? "default";
+    const model = this.resolveModel("default", options);
     const start = Date.now();
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
     const client = this._client!;
@@ -359,7 +359,7 @@ export class CustomProvider extends BaseProvider {
         filtered = filtered.filter((d) => d.inputCapabilities?.includes(accepts) ?? false);
       return filtered;
     } catch {
-      const model = this.config.model ?? "llama3";
+      const model = this.resolveModel("llama3", undefined);
       return [{ id: model, name: model, capabilities: ["text", "structured"] }];
     }
   }

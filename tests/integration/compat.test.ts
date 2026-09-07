@@ -59,9 +59,15 @@ function readBody(res: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let buf = "";
     res.setEncoding("utf-8");
-    res.on("data", (c: string) => { buf += c; });
+    res.on("data", (c: string) => {
+      buf += c;
+    });
     res.on("end", () => {
-      try { resolve(JSON.parse(buf)); } catch (e) { reject(e); }
+      try {
+        resolve(JSON.parse(buf));
+      } catch (e) {
+        reject(e);
+      }
     });
     res.on("error", reject);
   });
@@ -72,7 +78,9 @@ function readText(res: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let buf = "";
     res.setEncoding("utf-8");
-    res.on("data", (c: string) => { buf += c; });
+    res.on("data", (c: string) => {
+      buf += c;
+    });
     res.on("end", () => resolve(buf));
     res.on("error", reject);
   });
@@ -99,7 +107,7 @@ function postJson(path: string, body: unknown): Promise<http.IncomingMessage> {
         path,
         method: "POST",
         headers: {
-          "Content-Type":   "application/json",
+          "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload),
         },
       },
@@ -114,10 +122,7 @@ function postJson(path: string, body: unknown): Promise<http.IncomingMessage> {
 /** GET a path and return the raw IncomingMessage. */
 function getReq(path: string): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
-    const req = http.request(
-      { hostname: "127.0.0.1", port, path, method: "GET" },
-      resolve,
-    );
+    const req = http.request({ hostname: "127.0.0.1", port, path, method: "GET" }, resolve);
     req.on("error", reject);
     req.end();
   });
@@ -131,22 +136,30 @@ function buildMultipart(
 ): Buffer {
   const parts: Buffer[] = [];
   for (const [name, value] of Object.entries(fields)) {
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
-    ));
+    parts.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+      ),
+    );
   }
-  parts.push(Buffer.from(
-    `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.filename}"\r\n` +
-    `Content-Type: ${file.mimeType}\r\n\r\n`,
-  ));
+  parts.push(
+    Buffer.from(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.filename}"\r\n` +
+        `Content-Type: ${file.mimeType}\r\n\r\n`,
+    ),
+  );
   parts.push(file.buffer);
   parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
   return Buffer.concat(parts);
 }
 
 /** POST a multipart/form-data body and return the raw IncomingMessage. */
-function postMultipart(path: string, body: Buffer, boundary: string): Promise<http.IncomingMessage> {
+function postMultipart(
+  path: string,
+  body: Buffer,
+  boundary: string,
+): Promise<http.IncomingMessage> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -155,7 +168,7 @@ function postMultipart(path: string, body: Buffer, boundary: string): Promise<ht
         path,
         method: "POST",
         headers: {
-          "Content-Type":   `multipart/form-data; boundary=${boundary}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
           "Content-Length": body.byteLength,
         },
       },
@@ -199,7 +212,7 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
   it("T-CHAT-01: happy path returns 200 with choices[0].message.content non-empty", async () => {
     const res = await postJson("/v1/chat/completions", MINIMAL_BODY);
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(Array.isArray(body["choices"])).toBe(true);
     const choices = body["choices"] as Record<string, unknown>[];
     expect(choices.length).toBeGreaterThan(0);
@@ -228,7 +241,7 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
       response_format: { type: "json_object" },
     });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     const choices = body["choices"] as Record<string, unknown>[];
     const content = (choices[0]!["message"] as Record<string, unknown>)["content"] as string;
     // MockProvider.generateStructured returns JSON.stringify(data) — must be valid JSON
@@ -238,7 +251,7 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
   it("T-CHAT-04: missing messages returns 400 with error.type present", async () => {
     const res = await postJson("/v1/chat/completions", { model: "gpt-4o" });
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as { error: Record<string, unknown> };
+    const body = (await readBody(res)) as { error: Record<string, unknown> };
     expect(body.error).toBeDefined();
     expect(typeof body.error["type"]).toBe("string");
     expect(body.error["type"]).toBe("invalid_request_error");
@@ -250,7 +263,7 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
       response_format: { type: "unsupported_format" },
     });
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as { error: Record<string, unknown> };
+    const body = (await readBody(res)) as { error: Record<string, unknown> };
     expect(body.error["type"]).toBe("invalid_request_error");
   });
 });
@@ -263,20 +276,20 @@ describe("GET /v1/models (bd-q8cl)", () => {
   it('T-MOD-01: returns 200 with object:"list"', async () => {
     const res = await getReq("/v1/models");
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body.object).toBe("list");
   });
 
   it("T-MOD-02: data is a non-empty array", async () => {
     const res = await getReq("/v1/models");
-    const body = await readBody(res) as { data: unknown[] };
+    const body = (await readBody(res)) as { data: unknown[] };
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.data.length).toBeGreaterThan(0);
   });
 
   it('T-MOD-03: each entry has id, object:"model", owned_by (string), created (number)', async () => {
     const res = await getReq("/v1/models");
-    const body = await readBody(res) as { data: Record<string, unknown>[] };
+    const body = (await readBody(res)) as { data: Record<string, unknown>[] };
     for (const entry of body.data) {
       expect(typeof entry["id"]).toBe("string");
       expect(entry["object"]).toBe("model");
@@ -287,7 +300,7 @@ describe("GET /v1/models (bd-q8cl)", () => {
 
   it("T-MOD-04: well-known models are present (gpt-4o, claude-3-5-sonnet-20241022)", async () => {
     const res = await getReq("/v1/models");
-    const body = await readBody(res) as { data: { id: string }[] };
+    const body = (await readBody(res)) as { data: { id: string }[] };
     const ids = body.data.map((m) => m.id);
     expect(ids).toContain("gpt-4o");
     expect(ids).toContain("claude-3-5-sonnet-20241022");
@@ -302,7 +315,7 @@ describe("POST /v1/video/generations (bd-q8cl)", () => {
   it("T-VID-01: happy path returns 200 with VideoResult shape", async () => {
     const res = await postJson("/v1/video/generations", { prompt: "a rocket launch" });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["modality"]).toBe("video");
     expect(body["provider"]).toBe("mock");
     expect(body["model"]).toBe("mock-video-v1");
@@ -315,7 +328,7 @@ describe("POST /v1/video/generations (bd-q8cl)", () => {
 
   it("T-VID-02: data starts with 'data:video/'", async () => {
     const res = await postJson("/v1/video/generations", { prompt: "a timelapse" });
-    const body = await readBody(res) as { data: string };
+    const body = (await readBody(res)) as { data: string };
     expect(body.data.startsWith("data:video/")).toBe(true);
   });
 
@@ -338,7 +351,7 @@ describe("POST /v1/images/generations (bd-plui)", () => {
   it("T-IMG-01: happy path returns 200 with OpenAI image envelope shape", async () => {
     const res = await postJson("/v1/images/generations", { prompt: "a sunset over mountains" });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(typeof body["created"]).toBe("number");
     expect(Array.isArray(body["data"])).toBe(true);
     expect((body["data"] as unknown[]).length).toBe(1);
@@ -346,7 +359,7 @@ describe("POST /v1/images/generations (bd-plui)", () => {
 
   it("T-IMG-02: data[0] contains an image field (b64_json or url)", async () => {
     const res = await postJson("/v1/images/generations", { prompt: "a sunset" });
-    const body = await readBody(res) as { data: Record<string, string>[] };
+    const body = (await readBody(res)) as { data: Record<string, string>[] };
     const entry = body.data[0]!;
     // MockProvider returns a base64 data URI; toOpenAiImageResponse sets b64_json
     // (url was requested but actual format is b64_json → warning header is set, b64_json used)
@@ -358,7 +371,7 @@ describe("POST /v1/images/generations (bd-plui)", () => {
   it("T-IMG-03: missing prompt returns 400 with OpenAI error envelope", async () => {
     const res = await postJson("/v1/images/generations", {});
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as { error: Record<string, unknown> };
+    const body = (await readBody(res)) as { error: Record<string, unknown> };
     expect(body.error).toBeDefined();
     expect(typeof body.error["message"]).toBe("string");
     expect(body.error["type"]).toBe("invalid_request_error");
@@ -367,20 +380,22 @@ describe("POST /v1/images/generations (bd-plui)", () => {
   it("T-IMG-04: n:2 returns 400 (schema enforces n <= 1)", async () => {
     const res = await postJson("/v1/images/generations", { prompt: "a cat", n: 2 });
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as { error: Record<string, unknown> };
+    const body = (await readBody(res)) as { error: Record<string, unknown> };
     expect(body.error["type"]).toBe("invalid_request_error");
   });
 
   it("T-IMG-05: ProviderCapabilityError is mapped to 422 with OpenAI error envelope", async () => {
     // Spy on AiClient.generateImage to throw ProviderCapabilityError, simulating a
     // provider (e.g. anthropic) that does not support the image modality.
-    const spy = vi.spyOn(AiClient.prototype, "generateImage").mockRejectedValueOnce(
-      new ProviderCapabilityError("anthropic", "image", ["openai", "venice", "mock"]),
-    );
+    const spy = vi
+      .spyOn(AiClient.prototype, "generateImage")
+      .mockRejectedValueOnce(
+        new ProviderCapabilityError("anthropic", "image", ["openai", "venice", "mock"]),
+      );
     try {
       const res = await postJson("/v1/images/generations", { prompt: "a sunset" });
       expect(res.statusCode).toBe(422);
-      const body = await readBody(res) as { error: Record<string, unknown> };
+      const body = (await readBody(res)) as { error: Record<string, unknown> };
       expect(body.error["type"]).toBe("invalid_request_error");
       expect(typeof body.error["message"]).toBe("string");
     } finally {
@@ -400,11 +415,14 @@ describe("POST /v1/audio/transcriptions (bd-1f19)", () => {
 
   it("T-TRN-01: happy path JSON returns 200 with text field", async () => {
     const formBody = buildMultipart(BOUNDARY, BASE_FIELDS, {
-      fieldName: "file", filename: "audio.mp3", mimeType: "audio/mpeg", buffer: AUDIO_BUF,
+      fieldName: "file",
+      filename: "audio.mp3",
+      mimeType: "audio/mpeg",
+      buffer: AUDIO_BUF,
     });
     const res = await postMultipart("/v1/audio/transcriptions", formBody, BOUNDARY);
     expect(res.statusCode).toBe(200);
-    const json = await readBody(res) as { text: string };
+    const json = (await readBody(res)) as { text: string };
     expect(typeof json.text).toBe("string");
     expect(json.text.length).toBeGreaterThan(0);
   });
@@ -412,7 +430,10 @@ describe("POST /v1/audio/transcriptions (bd-1f19)", () => {
   it("T-TRN-02: response_format=text returns 200 plain text with text/plain content-type", async () => {
     const fields = { ...BASE_FIELDS, response_format: "text" };
     const formBody = buildMultipart(BOUNDARY, fields, {
-      fieldName: "file", filename: "audio.mp3", mimeType: "audio/mpeg", buffer: AUDIO_BUF,
+      fieldName: "file",
+      filename: "audio.mp3",
+      mimeType: "audio/mpeg",
+      buffer: AUDIO_BUF,
     });
     const res = await postMultipart("/v1/audio/transcriptions", formBody, BOUNDARY);
     expect(res.statusCode).toBe(200);
@@ -424,11 +445,14 @@ describe("POST /v1/audio/transcriptions (bd-1f19)", () => {
   it("T-TRN-03: response_format=verbose_json returns text, language, duration, segments[]", async () => {
     const fields = { ...BASE_FIELDS, response_format: "verbose_json" };
     const formBody = buildMultipart(BOUNDARY, fields, {
-      fieldName: "file", filename: "audio.mp3", mimeType: "audio/mpeg", buffer: AUDIO_BUF,
+      fieldName: "file",
+      filename: "audio.mp3",
+      mimeType: "audio/mpeg",
+      buffer: AUDIO_BUF,
     });
     const res = await postMultipart("/v1/audio/transcriptions", formBody, BOUNDARY);
     expect(res.statusCode).toBe(200);
-    const json = await readBody(res) as Record<string, unknown>;
+    const json = (await readBody(res)) as Record<string, unknown>;
     expect(typeof json["text"]).toBe("string");
     expect(json).toHaveProperty("language");
     expect(json).toHaveProperty("duration");
@@ -438,7 +462,10 @@ describe("POST /v1/audio/transcriptions (bd-1f19)", () => {
   it("T-TRN-04: response_format=srt returns 501 (timestamps unavailable)", async () => {
     const fields = { ...BASE_FIELDS, response_format: "srt" };
     const formBody = buildMultipart(BOUNDARY, fields, {
-      fieldName: "file", filename: "audio.mp3", mimeType: "audio/mpeg", buffer: AUDIO_BUF,
+      fieldName: "file",
+      filename: "audio.mp3",
+      mimeType: "audio/mpeg",
+      buffer: AUDIO_BUF,
     });
     const res = await postMultipart("/v1/audio/transcriptions", formBody, BOUNDARY);
     expect(res.statusCode).toBe(501);
@@ -485,7 +512,7 @@ describe("POST /v1/audio/speech (bd-1f19)", () => {
   it("T-TTS-03: missing input returns 400 with OpenAI error envelope", async () => {
     const res = await postJson("/v1/audio/speech", { model: "tts-1", voice: "alloy" });
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as { error: Record<string, unknown> };
+    const body = (await readBody(res)) as { error: Record<string, unknown> };
     expect(body.error["type"]).toBe("invalid_request_error");
     expect(typeof body.error["message"]).toBe("string");
   });
@@ -505,7 +532,7 @@ describe("POST /v1/messages (bd-0lw2)", () => {
   it("T-MSG-01: happy path returns 200 with content[0].text non-empty and stop_reason set", async () => {
     const res = await postJson("/v1/messages", MINIMAL_BODY);
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["type"]).toBe("message");
     expect(body["role"]).toBe("assistant");
     expect(Array.isArray(body["content"])).toBe(true);
@@ -555,7 +582,7 @@ describe("POST /v1/messages (bd-0lw2)", () => {
       max_tokens: 1024,
     });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["type"]).toBe("message");
     const content = body["content"] as Record<string, unknown>[];
     expect(content.length).toBeGreaterThan(0);
@@ -570,7 +597,7 @@ describe("POST /v1/messages (bd-0lw2)", () => {
       // max_tokens intentionally omitted — Anthropic schema requires it
     });
     expect(res.statusCode).toBe(400);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     // Anthropic error envelope: { type: "error", error: { type, message } }
     expect(body["type"]).toBe("error");
     const error = body["error"] as Record<string, unknown>;
@@ -603,7 +630,7 @@ describe("POST /v1/messages — capability mismatch (bd-m9qo)", () => {
     });
 
     expect(res.statusCode).toBe(422);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
 
     // Must be Anthropic error envelope
     expect(body["type"]).toBe("error");
@@ -628,7 +655,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-01: GET /health returns 200 with { status: 'ok', timestamp }", async () => {
     const res = await getReq("/health");
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["status"]).toBe("ok");
     expect(typeof body["timestamp"]).toBe("string");
   });
@@ -637,7 +664,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-02: GET /config returns 200 with a configuration object", async () => {
     const res = await getReq("/config");
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body !== null && typeof body === "object").toBe(true);
   });
 
@@ -645,7 +672,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-03: GET /models returns 200 with an array of model descriptors", async () => {
     const res = await getReq("/models");
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as unknown[];
+    const body = (await readBody(res)) as unknown[];
     expect(Array.isArray(body)).toBe(true);
     if (body.length > 0) {
       const first = body[0] as Record<string, unknown>;
@@ -658,16 +685,30 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-04: GET /pricing returns 200 with a non-empty array", async () => {
     const res = await getReq("/pricing");
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as unknown[];
+    const body = (await readBody(res)) as unknown[];
     expect(Array.isArray(body)).toBe(true);
     expect(body.length).toBeGreaterThan(0);
+  });
+
+  it("T-REG-04b: GET /pricing hides unsupported Runway turbo models", async () => {
+    for (const model of ["gen4_turbo", "gen3a_turbo"]) {
+      const res = await getReq(`/pricing?model=${model}`);
+      expect(res.statusCode).toBe(200);
+      const body = (await readBody(res)) as unknown[];
+      expect(body).toHaveLength(0);
+    }
+
+    const runway = await getReq("/pricing?model=gen4.5");
+    expect(runway.statusCode).toBe(200);
+    const runwayBody = (await readBody(runway)) as Record<string, unknown>[];
+    expect(runwayBody.map((entry) => entry["model"])).toContain("gen4.5");
   });
 
   // T-REG-05
   it("T-REG-05: GET /providers returns 200 with an array of provider objects", async () => {
     const res = await getReq("/providers");
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>[];
+    const body = (await readBody(res)) as Record<string, unknown>[];
     expect(Array.isArray(body)).toBe(true);
     expect(body.length).toBeGreaterThan(0);
     const first = body[0]!;
@@ -681,7 +722,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-06: POST /text returns 200 with a TextResult shape", async () => {
     const res = await postJson("/text", { prompt: "Regression check." });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["modality"]).toBe("text");
     expect(typeof body["content"]).toBe("string");
     expect((body["content"] as string).length).toBeGreaterThan(0);
@@ -702,7 +743,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-08: POST /image returns 200 with an ImageResult shape", async () => {
     const res = await postJson("/image", { prompt: "Regression image check." });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["modality"]).toBe("image");
     expect(typeof body["data"]).toBe("string");
     expect(body["provider"]).toBe("mock");
@@ -714,7 +755,7 @@ describe("Native route regression (bd-m9qo)", () => {
       audioBase64: Buffer.from("fake-audio").toString("base64"),
     });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["modality"]).toBe("audio");
     expect(typeof body["text"]).toBe("string");
     expect(body["provider"]).toBe("mock");
@@ -724,7 +765,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-10: POST /audio/speak returns 200 with an AudioResult shape (audio as base64 string)", async () => {
     const res = await postJson("/audio/speak", { text: "Regression TTS check." });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["modality"]).toBe("audio");
     // The server encodes binary audio to base64 before responding
     expect(typeof body["audio"]).toBe("string");
@@ -735,7 +776,7 @@ describe("Native route regression (bd-m9qo)", () => {
   it("T-REG-11: POST /video returns 200 with a VideoResult shape", async () => {
     const res = await postJson("/video", { prompt: "Regression video check." });
     expect(res.statusCode).toBe(200);
-    const body = await readBody(res) as Record<string, unknown>;
+    const body = (await readBody(res)) as Record<string, unknown>;
     expect(body["modality"]).toBe("video");
     expect(typeof body["data"]).toBe("string");
     expect(body["provider"]).toBe("mock");
@@ -756,4 +797,3 @@ describe("Native route regression (bd-m9qo)", () => {
     expect(first["index"]).toBe(0);
   });
 });
-
