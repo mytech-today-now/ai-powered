@@ -1,0 +1,107 @@
+- generic [active] [ref=f1e1]:
+    - banner [ref=f1e2]:
+        - generic [ref=f1e3]:
+            - heading "ai-powered · web demo" [level=1] [ref=f1e4]
+            - generic [ref=f1e5]: v0.1.0
+        - generic [ref=f1e6]:
+            - generic [ref=f1e7]:
+                - generic [ref=f1e8]: "Mode:"
+                - combobox "Mode:" [ref=f1e9]:
+                    - option "Proxy (recommended)" [selected]
+                    - option "Direct (dev only)"
+            - generic [ref=f1e10]:
+                - generic [ref=f1e11]: "Proxy URL:"
+                - textbox "Proxy URL:" [ref=f1e12]:
+                    - /placeholder: http://localhost:3001
+                    - text: http://localhost:3001
+                - generic [ref=f1e13]: "Provider:"
+                - combobox "Provider:" [ref=f1e14]:
+                    - option "Default" [selected]
+                    - option "undefined ★"
+                - generic [ref=f1e15]:
+                    - text: Run
+                    - code [ref=f1e16]: npm run serve
+                    - text: to start the proxy server.
+    - tablist "Modality" [ref=f1e17]:
+        - tab "Text" [ref=f1e18] [cursor=pointer]
+        - tab "Image" [ref=f1e19] [cursor=pointer]
+        - tab "Audio" [ref=f1e20] [cursor=pointer]
+        - tab "Video" [selected] [ref=f1e21] [cursor=pointer]
+        - tab "Structured" [ref=f1e22] [cursor=pointer]
+    - main [ref=f1e23]:
+        - text: No history yet — send a message to start. Output will appear here… Output will appear here… Output will appear here… Output will appear here…
+        - tabpanel [ref=f1e68]:
+            - generic [ref=f1e69]: ℹ Video generation requires proxy mode (server-side rendering).
+            - generic [ref=f1e70]:
+                - generic [ref=f1e71]: "Provider:"
+                - combobox "Provider:" [ref=f1e72]:
+                    - option "Default"
+                    - option "undefined ★" [selected]
+                - generic [ref=f1e73]: "Model:"
+                - combobox "Model:" [ref=f1e74]:
+                    - option "Grok Imagine Video" [selected]
+            - tablist "Video mode" [ref=f1e75]:
+                - tab "Batch" [selected] [ref=f1e76] [cursor=pointer]
+                - tab "Single Video" [ref=f1e77] [cursor=pointer]
+            - generic [ref=f1e78]:
+                - region "Batch file drop zone" [ref=f1e79]:
+                    - generic [aria-hidden] [ref=f1e80]: 📂
+                    - generic [ref=f1e81]:
+                        - text: Drop a
+                        - strong [ref=f1e82]: .json
+                        - text: ","
+                        - strong [ref=f1e83]: .jsonl
+                        - text: ", or"
+                        - strong [ref=f1e84]: .md
+                        - text: shot-list here
+                    - generic [ref=f1e85]: — or —
+                    - generic [ref=f1e86] [cursor=pointer]: Choose file
+                    - generic [ref=f1e87]: No file selected
+                - generic [ref=f1e88]:
+                    - generic [ref=f1e89]: "Default constraints (applied to all shots):"
+                    - generic [ref=f1e90]:
+                        - generic [ref=f1e91]: "Aspect Ratio:"
+                        - combobox "Aspect Ratio:" [ref=f1e92]:
+                            - option "Default" [selected]
+                            - option "1:1 (Square)"
+                            - option "16:9 (Landscape)"
+                            - option "9:16 (Portrait/Story)"
+                            - option "4:3"
+                            - option "3:4"
+                        - generic [ref=f1e93]: "Resolution:"
+                        - combobox "Resolution:" [ref=f1e94]:
+                            - option "Default" [selected]
+                            - option "480p"
+                            - option "720p"
+                        - generic [ref=f1e95]: "Quality:"
+                        - combobox "Quality:" [ref=f1e96]:
+                            - option "Default" [selected]
+                            - option "Draft"
+                            - option "Standard"
+                            - option "High"
+                    - generic [ref=f1e97]:
+                        - generic [ref=f1e98]: "Duration (s):"
+                        - spinbutton "Duration (s):" [ref=f1e99]
+                        - status
+                        - generic [ref=f1e100]: "FPS:"
+                        - combobox "FPS:" [ref=f1e101]:
+                            - option "Default" [selected]
+                            - option "24"
+                            - option "30"
+                            - option "60"
+            - text: Output will appear here…
+        - text: Output will appear here…
+    - contentinfo [ref=f1e55]:
+        - generic [ref=f1e56]:
+            - generic [ref=f1e57]: "Session cost:"
+            - strong [ref=f1e58]: $0.000000
+            - generic [ref=f1e59]: ·
+            - generic [ref=f1e60]: "Tokens:"
+            - strong [ref=f1e61]: "0"
+            - generic [ref=f1e62]: ·
+            - generic [ref=f1e63]: "Calls:"
+            - strong [ref=f1e64]: "0"
+        - generic [ref=f1e66]:
+            - text: Loads
+            - code [ref=f1e67]: dist-web/ai-powered.umd.js
+            - text: · No build step required

@@ -11,7 +11,9 @@
  *
  *   "ollama"             Ollama's built-in OpenAI-compatible /v1 layer.
  *                        Default base URL: http://localhost:11434/v1.
- *                        Model discovery uses GET /api/tags.
+ *                        Model discovery uses GET /api/tags and surfaces
+ *                        structured ProviderError failures instead of
+ *                        fabricating fallback models when discovery fails.
  *                        Supports text, structured output, and streaming.
  *
  *   "other"              Generic HTTP endpoint.  Only generateText is
@@ -59,8 +61,9 @@ const MAX_TOKENS_DEFAULT = 4096;
 function resolveBaseUrl(config: AiConfig): string {
   const type = config.customProviderType ?? "openai-compatible";
   if (type === "ollama") {
-    const root = config.baseUrl ?? OLLAMA_DEFAULT_BASE;
-    return root.endsWith("/v1") ? root : `${root.replace(/\/$/, "")}${OLLAMA_OPENAI_SUFFIX}`;
+    const root = (config.baseUrl ?? OLLAMA_DEFAULT_BASE).replace(/\/+$/, "");
+    const normalizedRoot = root.replace(/(?:\/v1)+$/, "");
+    return `${normalizedRoot}${OLLAMA_OPENAI_SUFFIX}`;
   }
   const url = config.baseUrl;
   if (!url) throw new Error("config.baseUrl is required for the 'custom' provider.");
@@ -296,7 +299,9 @@ export class CustomProvider extends BaseProvider {
   }
 
   // -------------------------------------------------------------------------
-  // listModels — Ollama uses /api/tags; others return a minimal stub
+  // listModels — Ollama uses /api/tags; openai-compatible failures are surfaced
+  // as ProviderError. The generic "other" type still returns a minimal stub
+  // because it has no live discovery endpoint.
   // -------------------------------------------------------------------------
 
   override async listModels(
@@ -321,8 +326,10 @@ export class CustomProvider extends BaseProvider {
         if (accepts)
           filtered = filtered.filter((d) => d.inputCapabilities?.includes(accepts) ?? false);
         return filtered;
-      } catch {
-        // Fall through to single-model stub.
+      } catch (err) {
+        if (err instanceof ProviderError) throw err;
+        const detail = err instanceof Error ? err.message : String(err);
+        throw this._modelDiscoveryError("openai-compatible", detail, this._statusFromError(err));
       }
     }
     const model = this.config.model ?? "custom-model";
@@ -344,7 +351,9 @@ export class CustomProvider extends BaseProvider {
       const resp = await fetch(tagsUrl, {
         headers: { ...authHeader(this.config.apiKey), ...this._extraHeaders },
       });
-      if (!resp.ok) return [];
+      if (!resp.ok) {
+        throw this._modelDiscoveryError("ollama", `HTTP ${resp.status}`, resp.status);
+      }
       const body = (await resp.json()) as { models?: Array<{ name: string }> };
       const items = body.models ?? [];
       const descriptors: ModelDescriptor[] = items.map((m) => ({
@@ -358,15 +367,38 @@ export class CustomProvider extends BaseProvider {
       if (accepts)
         filtered = filtered.filter((d) => d.inputCapabilities?.includes(accepts) ?? false);
       return filtered;
-    } catch {
-      const model = this.resolveModel("llama3", undefined);
-      return [{ id: model, name: model, capabilities: ["text", "structured"] }];
+    } catch (err) {
+      if (err instanceof ProviderError) throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      throw this._modelDiscoveryError("ollama", detail, this._statusFromError(err));
     }
   }
 
   // -------------------------------------------------------------------------
   // Error wrapping
   // -------------------------------------------------------------------------
+
+  private _statusFromError(err: unknown): number | undefined {
+    if (typeof err !== "object" || err === null) return undefined;
+    const status = (err as { status?: unknown }).status;
+    return typeof status === "number" ? status : undefined;
+  }
+
+  private _modelDiscoveryError(
+    source: "openai-compatible" | "ollama",
+    detail: string,
+    statusCode?: number,
+  ): ProviderError {
+    const label = source === "ollama" ? "Ollama" : "OpenAI-compatible";
+    const retryable =
+      statusCode === undefined || statusCode === 429 || (statusCode >= 500 && statusCode < 600);
+    return new ProviderError(
+      "custom",
+      `${label} model discovery failed: ${detail}`,
+      statusCode,
+      retryable,
+    );
+  }
 
   private _wrapError(err: unknown): ProviderError {
     if (err instanceof OpenAI.APIError) {

@@ -4,8 +4,8 @@
  * Unit/integration tests for provider-aware audio routes and /config redaction.
  *
  * Tests run against a real Express server started in mock mode.
- * All 12 tests exercise provider-routing behaviour for /audio/* endpoints and
- * the browser-safe /config regression.
+ * The suite exercises provider-routing behaviour for /audio/* endpoints,
+ * /models diagnostics, and the browser-safe /config regression.
  *
  * Tests:
  *   R1  – POST /audio/transcribe without provider defaults to mock provider in mock mode
@@ -23,9 +23,10 @@
  */
 
 import * as http from "node:http";
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import * as aiPowered from "../../src/ai-powered/index.js";
 import { createServer } from "../../src/ai-powered/server/index.js";
+import { ProviderError } from "../../src/ai-powered/types.js";
 
 // ---------------------------------------------------------------------------
 // Shared server (mock mode)
@@ -60,6 +61,10 @@ afterAll(
       server.close((err) => (err ? reject(err) : resolve()));
     }),
 );
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -111,6 +116,16 @@ function getJson(path: string): Promise<http.IncomingMessage> {
     req.on("error", reject);
     req.end();
   });
+}
+
+function stubModelsClient(
+  impl: (modality?: string, accepts?: string) => Promise<unknown[]> = async () => [],
+) {
+  const listModels = vi.fn(impl);
+  const getAiClientSpy = vi.spyOn(aiPowered, "getAiClient").mockResolvedValueOnce({
+    listModels,
+  } as never);
+  return { getAiClientSpy, listModels };
 }
 
 const SILENCE_B64 = Buffer.alloc(128).toString("base64");
@@ -287,5 +302,135 @@ describe("R11/R12 – GET /config redaction regression", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R13-R17 – GET /models diagnostics and regression coverage
+// ---------------------------------------------------------------------------
+describe("R13-R17 – GET /models diagnostics and regression coverage", () => {
+  it("returns the model list unchanged on the happy path", async () => {
+    const models = [
+      { id: "mock-text-v1", name: "Mock Text v1", capabilities: ["text"] },
+      { id: "mock-image-v1", name: "Mock Image v1", capabilities: ["image"] },
+    ];
+    const { getAiClientSpy, listModels } = stubModelsClient(async () => models);
+
+    const res = await getJson("/models");
+    const body = (await readJson(res)) as unknown[];
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toEqual(models);
+    expect(getAiClientSpy).toHaveBeenCalledWith(
+      "serve-models",
+      expect.objectContaining({ mock: true }),
+    );
+    expect(listModels).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it("forwards modality and accepts filters to listModels", async () => {
+    const models = [{ id: "filtered-model", name: "Filtered Model", capabilities: ["video"] }];
+    const { getAiClientSpy, listModels } = stubModelsClient(async (modality, accepts) => {
+      expect(modality).toBe("video");
+      expect(accepts).toBe("image");
+      return models;
+    });
+
+    const res = await getJson("/models?modality=video&accepts=image");
+    const body = (await readJson(res)) as unknown[];
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toEqual(models);
+    expect(getAiClientSpy).toHaveBeenCalledWith(
+      "serve-models",
+      expect.objectContaining({ mock: true }),
+    );
+    expect(listModels).toHaveBeenCalledWith("video", "image");
+  });
+
+  it("preserves provider override behavior and disables mock mode", async () => {
+    const models = [{ id: "venice-text", name: "Venice Text", capabilities: ["text"] }];
+    const { getAiClientSpy, listModels } = stubModelsClient(async () => models);
+
+    const res = await getJson("/models?provider=venice&modality=text");
+    const body = (await readJson(res)) as unknown[];
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toEqual(models);
+    expect(getAiClientSpy).toHaveBeenCalledWith(
+      "serve-models",
+      expect.objectContaining({ provider: "venice", mock: false }),
+    );
+    expect(listModels).toHaveBeenCalledWith("text", undefined);
+  });
+
+  it("returns an empty array when the provider client has no models", async () => {
+    const { listModels } = stubModelsClient(async () => []);
+
+    const res = await getJson("/models");
+    const body = (await readJson(res)) as unknown[];
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toEqual([]);
+    expect(listModels).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it("returns a structured error when getAiClient rejects", async () => {
+    vi.spyOn(aiPowered, "getAiClient").mockRejectedValueOnce(
+      new Error("OpenAI API key sk-test-server missing"),
+    );
+
+    const res = await getJson("/models?provider=openai");
+    const body = (await readJson(res)) as Record<string, unknown>;
+
+    expect(res.statusCode).toBe(503);
+    expect(body).toEqual({
+      error: "Provider could not be constructed.",
+      code: "PROVIDER_SETUP_ERROR",
+    });
+    expect(JSON.stringify(body)).not.toContain("sk-test-server");
+  });
+
+  it("returns a structured error when listModels rejects", async () => {
+    const { getAiClientSpy } = stubModelsClient(async () => {
+      throw new Error("model discovery exploded");
+    });
+
+    const res = await getJson("/models?modality=text");
+    const body = (await readJson(res)) as Record<string, unknown>;
+
+    expect(res.statusCode).toBe(500);
+    expect(body).toEqual({
+      error: "Model listing failed.",
+      code: "MODEL_LIST_ERROR",
+    });
+    expect(getAiClientSpy).toHaveBeenCalledWith(
+      "serve-models",
+      expect.objectContaining({ mock: true }),
+    );
+  });
+
+  it("preserves provider discovery details when listModels rejects with ProviderError", async () => {
+    const { getAiClientSpy } = stubModelsClient(async () => {
+      throw new ProviderError(
+        "custom",
+        "OpenAI-compatible model discovery failed: Unauthorized",
+        401,
+        false,
+      );
+    });
+
+    const res = await getJson("/models?provider=custom");
+    const body = (await readJson(res)) as Record<string, unknown>;
+
+    expect(res.statusCode).toBe(500);
+    expect(body).toEqual({
+      error: "OpenAI-compatible model discovery failed: Unauthorized",
+      code: "MODEL_LIST_ERROR",
+    });
+    expect(getAiClientSpy).toHaveBeenCalledWith(
+      "serve-models",
+      expect.objectContaining({ provider: "custom", mock: false }),
+    );
   });
 });

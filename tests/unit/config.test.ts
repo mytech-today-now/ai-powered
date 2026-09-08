@@ -7,7 +7,15 @@
  * (set by vitest.config.ts) — no API credentials required.
  */
 
-import { AiConfigSchema, ConfigError, loadConfig } from "../../src/ai-powered/core.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import {
+  AiConfigSchema,
+  ConfigError,
+  CURRENT_VERSION,
+  GLOBAL_CONFIG_PATH,
+  loadConfig,
+} from "../../src/ai-powered/core.js";
 import {
   maskApiKey,
   serializePublicConfig,
@@ -18,6 +26,10 @@ import {
 } from "../../src/ai-powered/utils.js";
 import { renderTemplate, getBuiltInTemplate } from "../../src/ai-powered/templates/builtins.js";
 import { ConversationSession } from "../../src/ai-powered/client.js";
+
+afterEach(() => {
+  fs.rmSync(path.dirname(GLOBAL_CONFIG_PATH), { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // maskApiKey
@@ -159,6 +171,55 @@ describe("loadConfig with flags", () => {
 
   it("throws ConfigError when flags produce an invalid config", () => {
     expect(() => loadConfig({ flags: { temperature: 99 } })).toThrow(ConfigError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadConfig — isolated home regression coverage
+// ---------------------------------------------------------------------------
+
+describe("loadConfig home isolation", () => {
+  const isolatedHome = process.env["HOME"] ?? "";
+  const configDir = path.dirname(GLOBAL_CONFIG_PATH);
+  const markerFile = path.join(configDir, "marker.txt");
+
+  it("binds the global config path to the throwaway home directory", () => {
+    expect(isolatedHome).not.toBe("");
+    expect(GLOBAL_CONFIG_PATH).toBe(path.join(isolatedHome, ".ai-powered", "config.json"));
+  });
+
+  it("migrates a stale 0.1.0 config in the isolated home and backs it up there", () => {
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      GLOBAL_CONFIG_PATH,
+      JSON.stringify({ version: "0.1.0", provider: "mock", modality: "text" }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const cfg = loadConfig({ flags: { mock: true } });
+
+    expect(cfg.version).toBe(CURRENT_VERSION);
+    expect(cfg.mock).toBe(true);
+
+    const backupNames = fs
+      .readdirSync(configDir)
+      .filter((name) => name.startsWith("config.json.bak."));
+    expect(backupNames).toHaveLength(1);
+
+    const backupPath = path.join(configDir, backupNames[0]!);
+    const backupContents = JSON.parse(fs.readFileSync(backupPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+
+    expect(backupContents.version).toBe("0.1.0");
+    expect(backupContents.provider).toBe("mock");
+    expect(backupContents.modality).toBe("text");
+    expect(backupPath.startsWith(isolatedHome)).toBe(true);
+  });
+
+  it("starts the next test without a leftover home marker", () => {
+    expect(fs.existsSync(markerFile)).toBe(false);
   });
 });
 

@@ -9,7 +9,12 @@
 import { AiClient } from "../../src/ai-powered/client.js";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { AiConfigSchema } from "../../src/ai-powered/core.js";
-import { BudgetExceededError, ProviderError, AiPoweredError } from "../../src/ai-powered/types.js";
+import {
+  BudgetExceededError,
+  ProviderError,
+  PluginError,
+  AiPoweredError,
+} from "../../src/ai-powered/types.js";
 import type {
   AiPlugin,
   RequestContext,
@@ -405,23 +410,103 @@ describe("AiClient plugin pipeline", () => {
     expect(result.content).toContain("prompt=two + plugin");
   });
 
-  it("calls onError with an AiPoweredError when the provider throws", async () => {
-    let caughtError: AiPoweredError | null = null;
+  it("skips onError on successful calls", async () => {
+    let errorCalls = 0;
+    const watcher: AiPlugin = {
+      name: "success-watcher",
+      version: "1.0.0",
+      onError: async () => {
+        errorCalls += 1;
+      },
+    };
+    const client = makeClient({}, [watcher]);
+
+    const result = await client.generateText("hello");
+
+    expect(result.content).toBe("[mock response]");
+    expect(errorCalls).toBe(0);
+  });
+
+  it("calls onError with the original AiPoweredError when the provider throws one", async () => {
+    let observedError: AiPoweredError | null = null;
     const errorPlugin: AiPlugin = {
       name: "err-watcher",
       version: "1.0.0",
       onError: async (err: AiPoweredError) => {
-        caughtError = err;
+        observedError = err;
       },
     };
     const config = AiConfigSchema.parse({ mock: true, provider: "mock", fallback: false });
     const provider = new MockProvider(config);
-    vi.spyOn(provider, "generateText").mockRejectedValue(
-      new ProviderError("mock", "simulated failure", 500, false),
-    );
+    const providerError = new ProviderError("mock", "simulated failure", 500, false);
+    vi.spyOn(provider, "generateText").mockRejectedValue(providerError);
     const client = new AiClient(config, provider, [errorPlugin]);
+
     await expect(client.generateText("fail")).rejects.toThrow();
-    expect(caughtError).toBeInstanceOf(AiPoweredError);
+    expect(observedError).toBe(providerError);
+    expect(observedError).toBeInstanceOf(AiPoweredError);
+    expect(observedError).toBeInstanceOf(ProviderError);
+  });
+
+  it("normalizes plain runtime errors for onError and preserves the original cause", async () => {
+    let observedError: AiPoweredError | null = null;
+    let observedEnvelope: {
+      code: string;
+      message: string;
+      causeName: string | undefined;
+      causeMessage: string | undefined;
+    } | null = null;
+    const errorPlugin: AiPlugin = {
+      name: "plain-error-watcher",
+      version: "1.0.0",
+      onError: async (err: AiPoweredError) => {
+        observedError = err;
+        observedEnvelope = {
+          code: err.code,
+          message: err.message,
+          causeName: err.cause instanceof Error ? err.cause.name : undefined,
+          causeMessage: err.cause instanceof Error ? err.cause.message : undefined,
+        };
+      },
+    };
+    const config = AiConfigSchema.parse({ mock: true, provider: "mock", fallback: false });
+    const provider = new MockProvider(config);
+    const plainFailure = new Error("plain runtime failure");
+    vi.spyOn(provider, "generateText").mockRejectedValue(plainFailure);
+    const client = new AiClient(config, provider, [errorPlugin]);
+
+    await expect(client.generateText("fail")).rejects.toThrow("plain runtime failure");
+    expect(observedError).toBeInstanceOf(AiPoweredError);
+    expect(observedError?.code).toBe("PROVIDER_ERROR");
+    expect(observedError?.message).toBe("plain runtime failure");
+    expect(observedError?.cause).toBe(plainFailure);
+    expect(observedEnvelope).toEqual({
+      code: "PROVIDER_ERROR",
+      message: "plain runtime failure",
+      causeName: "Error",
+      causeMessage: "plain runtime failure",
+    });
+  });
+
+  it("preserves the PluginError abort path without routing through onError", async () => {
+    let errorCalls = 0;
+    const abortingPlugin: AiPlugin = {
+      name: "aborter",
+      version: "1.0.0",
+      onRequest: async () => {
+        throw new PluginError("aborter", new Error("stop now"));
+      },
+      onError: async () => {
+        errorCalls += 1;
+      },
+    };
+    const config = AiConfigSchema.parse({ mock: true, provider: "mock", fallback: false });
+    const provider = new MockProvider(config);
+    const client = new AiClient(config, provider, [abortingPlugin]);
+
+    await expect(client.generateText("fail")).rejects.toBeInstanceOf(PluginError);
+    expect(errorCalls).toBe(0);
+    expect(provider.lastGenerateTextCall).toBeUndefined();
   });
 });
 

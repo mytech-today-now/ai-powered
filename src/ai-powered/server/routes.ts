@@ -43,6 +43,7 @@ import {
   BudgetExceededError,
   AllProvidersExhaustedError,
   ProviderCapabilityError,
+  ProviderError,
 } from "../types.js";
 import { getLogger, serializePublicConfig } from "../utils.js";
 import type { ProviderCallOptions } from "../providers/index.js";
@@ -340,6 +341,22 @@ function mapError(err: unknown, res: Response): boolean {
   return false;
 }
 
+function respondModelsError(
+  res: Response,
+  status: number,
+  code: "PROVIDER_SETUP_ERROR" | "MODEL_LIST_ERROR",
+  error: string,
+): void {
+  res.status(status).json({ error, code });
+}
+
+function modelListErrorMessage(err: unknown): string {
+  if (err instanceof ProviderError) {
+    return err.message.replace(/^\[[^\]]+\]\s*/, "");
+  }
+  return "Model listing failed.";
+}
+
 /**
  * Resolve a `fileRef` UUID token into a provider-native content block.
  *
@@ -613,8 +630,9 @@ export function createRouter(opts: ServeOptions): Router {
   //                                 unknown values return [] not a 4xx error
   // When ?provider= is specified, that provider's model list is returned
   // regardless of whether the server is in mock mode — all real providers
-  // use static lists so no live API calls are made.  Falls back to an
-  // empty array if the provider cannot be instantiated (e.g. missing key).
+  // use static lists so no live API calls are made.  Provider construction
+  // failures return a structured 5xx error; the empty array response is
+  // reserved for providers that genuinely return no models.
   // When no provider is specified and mock mode is on, the mock list is used.
   router.get(
     "/models",
@@ -635,11 +653,32 @@ export function createRouter(opts: ServeOptions): Router {
 
       try {
         const client = await getAiClient("serve-models", overrides as never);
-        const models = await client.listModels(modality as never, accepts as never);
-        res.json(models);
-      } catch {
-        // Provider construction failed (e.g. missing API key) — return empty list
-        res.json([]);
+        try {
+          const models = await client.listModels(modality as never, accepts as never);
+          res.json(models);
+        } catch (err) {
+          getLogger().warn(
+            {
+              provider: providerOverride,
+              modality,
+              accepts,
+              errorName: err instanceof Error ? err.name : typeof err,
+            },
+            "GET /models: model listing failed",
+          );
+          respondModelsError(res, 500, "MODEL_LIST_ERROR", modelListErrorMessage(err));
+        }
+      } catch (err) {
+        getLogger().warn(
+          {
+            provider: providerOverride,
+            modality,
+            accepts,
+            errorName: err instanceof Error ? err.name : typeof err,
+          },
+          "GET /models: provider could not be constructed",
+        );
+        respondModelsError(res, 503, "PROVIDER_SETUP_ERROR", "Provider could not be constructed.");
       }
     }),
   );

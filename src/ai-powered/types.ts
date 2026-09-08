@@ -172,8 +172,11 @@ export interface ResponseContext {
  *   hook and MUST return the context (modified or as-is).
  * - `onResponse` hooks execute in REVERSE registration order AFTER the call.
  *   Each hook receives and returns the accumulated `ResponseContext`.
- * - `onError` is called for every plugin when an `AiPoweredError` is thrown;
- *   plugins MUST NOT re-throw from `onError`.
+ * - `onError` is called for every plugin when a failure reaches the client
+ *   boundary. Plain runtime errors are normalized to `AiPoweredError`
+ *   (`PROVIDER_ERROR`) before dispatch, and the original thrown value is
+ *   preserved on `cause` for telemetry hooks. Plugins MUST NOT re-throw from
+ *   `onError`.
  *
  * Plugins MUST NOT mutate `ctx.config` directly — it is frozen by the client.
  */

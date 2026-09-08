@@ -27,12 +27,12 @@
   /* ── DOM references ─────────────────────────────────────── */
   const $ = (id) => document.getElementById(id);
 
-  const libVersionEl       = $("lib-version");
-  const modeSelect         = $("mode-select");
-  const proxyConfig        = $("proxy-config");
-  const directConfig       = $("direct-config");
-  const directBudgetInput  = $("direct-budget");
-  const proxyUrlInput         = $("proxy-url");
+  const libVersionEl = $("lib-version");
+  const modeSelect = $("mode-select");
+  const proxyConfig = $("proxy-config");
+  const directConfig = $("direct-config");
+  const directBudgetInput = $("direct-budget");
+  const proxyUrlInput = $("proxy-url");
   // Pre-fill the proxy URL when served via a public tunnel (e.g. ngrok) so
   // remote visitors don't have to type the API URL manually.
   //
@@ -49,93 +49,93 @@
     const _detected = window.__AI_PROXY_URL__ || (_isLocal ? null : window.location.origin);
     if (_detected) proxyUrlInput.value = _detected;
   }
-  const proxyProviderSelect   = $("proxy-provider-select");
-  const providerSelect        = $("provider-select");
-  const apiKeyInput           = $("api-key-input");
+  const proxyProviderSelect = $("proxy-provider-select");
+  const providerSelect = $("provider-select");
+  const apiKeyInput = $("api-key-input");
 
-  const tabBtns            = document.querySelectorAll(".tab-btn");
-  const tabPanels          = document.querySelectorAll(".tab-panel");
+  const tabBtns = document.querySelectorAll(".tab-btn");
+  const tabPanels = document.querySelectorAll(".tab-panel");
 
-  const textPromptEl       = $("text-prompt");
-  const btnTextGenerate    = $("btn-text-generate");
-  const btnTextStream      = $("btn-text-stream");
-  const textOutput         = $("text-output");
-  const textUsage          = $("text-usage");
-  const sessionHistory     = $("session-history");
-  const btnSessionClear    = $("btn-session-clear");
+  const textPromptEl = $("text-prompt");
+  const btnTextGenerate = $("btn-text-generate");
+  const btnTextStream = $("btn-text-stream");
+  const textOutput = $("text-output");
+  const textUsage = $("text-usage");
+  const sessionHistory = $("session-history");
+  const btnSessionClear = $("btn-session-clear");
 
-  const imagePromptEl      = $("image-prompt");
-  const btnImageGenerate   = $("btn-image-generate");
-  const imageOutput        = $("image-output");
-  const imageUsage         = $("image-usage");
+  const imagePromptEl = $("image-prompt");
+  const btnImageGenerate = $("btn-image-generate");
+  const imageOutput = $("image-output");
+  const imageUsage = $("image-usage");
 
-  const ttsTextEl          = $("tts-text");
-  const btnTtsSpeak        = $("btn-tts-speak");
-  const ttsOutput          = $("tts-output");
-  const audioFileInput     = $("audio-file-input");
-  const audioFilename      = $("audio-filename");
-  const btnTranscribe      = $("btn-transcribe");
-  const transcribeOutput   = $("transcribe-output");
-  const audioUsage         = $("audio-usage");
+  const ttsTextEl = $("tts-text");
+  const btnTtsSpeak = $("btn-tts-speak");
+  const ttsOutput = $("tts-output");
+  const audioFileInput = $("audio-file-input");
+  const audioFilename = $("audio-filename");
+  const btnTranscribe = $("btn-transcribe");
+  const transcribeOutput = $("transcribe-output");
+  const audioUsage = $("audio-usage");
 
-  const videoPromptEl      = $("video-prompt");
-  const btnVideoGenerate   = $("btn-video-generate");
-  const videoOutput        = $("video-output");
-  const videoUsage         = $("video-usage");
+  const videoPromptEl = $("video-prompt");
+  const btnVideoGenerate = $("btn-video-generate");
+  const videoOutput = $("video-output");
+  const videoUsage = $("video-usage");
 
   // Global error toast
   const globalErrorToast = $("global-error-toast");
-  const globalErrorMsg   = $("global-error-msg");
+  const globalErrorMsg = $("global-error-msg");
   const globalErrorClose = $("global-error-close");
 
   // Batch UI elements
-  const batchDropZone      = $("batch-drop-zone");
-  const batchFileInput     = $("batch-file-input");
-  const batchFilename      = $("batch-filename");
-  const batchPreflight     = $("batch-preflight");
-  const batchSummary       = $("batch-summary");
-  const btnBatchClear      = $("btn-batch-clear");
-  const btnBatchRun        = $("btn-batch-run");
-  const batchProgress      = $("batch-progress");
+  const batchDropZone = $("batch-drop-zone");
+  const batchFileInput = $("batch-file-input");
+  const batchFilename = $("batch-filename");
+  const batchPreflight = $("batch-preflight");
+  const batchSummary = $("batch-summary");
+  const btnBatchClear = $("btn-batch-clear");
+  const btnBatchRun = $("btn-batch-run");
+  const batchProgress = $("batch-progress");
   const batchProgressLabel = $("batch-progress-label");
-  const batchProgressCtr   = $("batch-progress-counter");
-  const batchProgressBar   = $("batch-progress-bar");
-  const batchResults       = $("batch-results");
-  const batchCostTally     = $("batch-cost-tally");
-  const batchShots         = $("batch-shots");
+  const batchProgressCtr = $("batch-progress-counter");
+  const batchProgressBar = $("batch-progress-bar");
+  const batchResults = $("batch-results");
+  const batchCostTally = $("batch-cost-tally");
+  const batchShots = $("batch-shots");
   const btnDownloadResults = $("btn-download-results");
-  const btnDownloadZip     = $("btn-download-zip");
-  const zipStatusEl        = $("zip-status");
-  const btnDownloadCombined  = $("btn-download-combined");
+  const btnDownloadZip = $("btn-download-zip");
+  const zipStatusEl = $("zip-status");
+  const btnDownloadCombined = $("btn-download-combined");
   const combinedVideoSection = $("combined-video-section");
-  const combinedVideoStatus  = $("combined-video-status");
-  const combinedVideoPlayer  = $("combined-video-player");
+  const combinedVideoStatus = $("combined-video-status");
+  const combinedVideoPlayer = $("combined-video-player");
 
   // Batch constraint controls (default values applied to all shots)
   const batchAspectRatioEl = $("batch-aspect-ratio");
-  const batchResolutionEl  = $("batch-resolution");
-  const batchQualityEl     = $("batch-quality");
-  const batchDurationEl    = $("batch-duration");
-  const batchFpsEl         = $("batch-fps");
+  const batchResolutionEl = $("batch-resolution");
+  const batchQualityEl = $("batch-quality");
+  const batchDurationEl = $("batch-duration");
+  const batchFpsEl = $("batch-fps");
 
-  const structuredPromptEl    = $("structured-prompt");
+  const structuredPromptEl = $("structured-prompt");
   const btnStructuredGenerate = $("btn-structured-generate");
-  const structuredOutput      = $("structured-output");
-  const structuredUsage       = $("structured-usage");
+  const structuredOutput = $("structured-output");
+  const structuredUsage = $("structured-usage");
 
   // Per-tab model selects (proxy mode)
-  const textModelSelect       = $("text-model-select");
-  const imageModelSelect      = $("image-model-select");
-  const ttsModelSelect        = $("tts-model-select");
+  const textModelSelect = $("text-model-select");
+  const imageModelSelect = $("image-model-select");
+  const ttsModelSelect = $("tts-model-select");
   const transcribeModelSelect = $("transcribe-model-select");
-  const videoModelSelect      = $("video-model-select");
-  const videoProviderSelect   = $("video-provider-select"); // video-tab-specific provider picker
+  const videoModelSelect = $("video-model-select");
+  const videoProviderSelect = $("video-provider-select"); // video-tab-specific provider picker
   const structuredModelSelect = $("structured-model-select");
 
   // Per-tab provider selects (added for fallback-model — one per modality tab)
-  const textProviderSelect       = $("text-provider-select");
-  const imageProviderSelect      = $("image-provider-select");
-  const audioProviderSelect      = $("audio-provider-select");
+  const textProviderSelect = $("text-provider-select");
+  const imageProviderSelect = $("image-provider-select");
+  const audioProviderSelect = $("audio-provider-select");
   const structuredProviderSelect = $("structured-provider-select");
 
   /**
@@ -144,10 +144,10 @@
    * page-load restore (initTabSelections).
    */
   const PROVIDER_SELECTS = {
-    text:       textProviderSelect,
-    image:      imageProviderSelect,
-    audio:      audioProviderSelect,
-    video:      videoProviderSelect,
+    text: textProviderSelect,
+    image: imageProviderSelect,
+    audio: audioProviderSelect,
+    video: videoProviderSelect,
     structured: structuredProviderSelect,
   };
 
@@ -159,44 +159,44 @@
    * select (ttsModelSelect) remains independently populated.
    */
   const MODEL_SELECTS = {
-    text:       textModelSelect,
-    image:      imageModelSelect,
-    audio:      transcribeModelSelect,
-    video:      videoModelSelect,
+    text: textModelSelect,
+    image: imageModelSelect,
+    audio: transcribeModelSelect,
+    video: videoModelSelect,
     structured: structuredModelSelect,
   };
 
   // Image size controls (added for img-cntrl)
-  const imageRatioCategory  = $("image-ratio-category");
-  const imageAspectRatio    = $("image-aspect-ratio");
-  const imageQuality        = $("image-quality");
-  const imageCustomDims     = $("image-custom-dims");
-  const imageWidthInput     = $("image-width");
-  const imageHeightInput    = $("image-height");
-  const imageDimsHint       = $("image-dims-hint");
+  const imageRatioCategory = $("image-ratio-category");
+  const imageAspectRatio = $("image-aspect-ratio");
+  const imageQuality = $("image-quality");
+  const imageCustomDims = $("image-custom-dims");
+  const imageWidthInput = $("image-width");
+  const imageHeightInput = $("image-height");
+  const imageDimsHint = $("image-dims-hint");
 
   // Video size / duration controls (added for img-cntrl)
-  const videoAspectRatio    = $("video-aspect-ratio");
-  const videoResolution     = $("video-resolution");
-  const videoQuality        = $("video-quality");
-  const videoDuration       = $("video-duration");
-  const videoFps            = $("video-fps");
+  const videoAspectRatio = $("video-aspect-ratio");
+  const videoResolution = $("video-resolution");
+  const videoQuality = $("video-quality");
+  const videoDuration = $("video-duration");
+  const videoFps = $("video-fps");
 
   // File upload controls (Text, Image, Video tabs)
-  const fileUploadInput        = $("file-upload-input");
-  const fileUploadStatus       = $("file-upload-status");
-  const imageFileUploadInput   = $("image-file-upload-input");
-  const imageFileUploadStatus  = $("image-file-upload-status");
-  const imageFileThumbsEl      = $("image-file-thumbs");
-  const videoFileUploadInput   = $("video-file-upload-input");
-  const videoFileUploadStatus  = $("video-file-upload-status");
-  const videoFileThumbsEl      = $("video-file-thumbs");
+  const fileUploadInput = $("file-upload-input");
+  const fileUploadStatus = $("file-upload-status");
+  const imageFileUploadInput = $("image-file-upload-input");
+  const imageFileUploadStatus = $("image-file-upload-status");
+  const imageFileThumbsEl = $("image-file-thumbs");
+  const videoFileUploadInput = $("video-file-upload-input");
+  const videoFileUploadStatus = $("video-file-upload-status");
+  const videoFileThumbsEl = $("video-file-thumbs");
 
   const attachmentNoticeEl = $("attachment-notice");
 
-  const costTotalEl        = $("cost-total");
-  const tokensTotalEl      = $("tokens-total");
-  const callsTotalEl       = $("calls-total");
+  const costTotalEl = $("cost-total");
+  const tokensTotalEl = $("tokens-total");
+  const callsTotalEl = $("calls-total");
 
   /* ── File upload state ──────────────────────────────────── */
   /** UUID token returned by POST /upload; attached to subsequent generation requests (text tab). */
@@ -224,10 +224,10 @@
 
   /** Modality that each tab represents. */
   const TAB_MODALITY = {
-    text:       "text",
-    image:      "image",
-    audio:      "audio",
-    video:      "video",
+    text: "text",
+    image: "image",
+    audio: "audio",
+    video: "video",
     structured: "structured",
   };
 
@@ -260,7 +260,7 @@
    */
   function persistSelection(modality, provider, model) {
     localStorage.setItem(`ai-powered:provider:${modality}`, provider);
-    localStorage.setItem(`ai-powered:model:${modality}`,    model);
+    localStorage.setItem(`ai-powered:model:${modality}`, model);
   }
 
   /**
@@ -275,7 +275,7 @@
    */
   function restoreSelection(modality) {
     const provider = localStorage.getItem(`ai-powered:provider:${modality}`);
-    const model    = localStorage.getItem(`ai-powered:model:${modality}`);
+    const model = localStorage.getItem(`ai-powered:model:${modality}`);
     if (!provider || !model) return null;
     return { provider, model };
   }
@@ -300,11 +300,146 @@
   function autoSelectCheapest(modelList) {
     if (!modelList || modelList.length === 0) return null;
     const sorted = [...modelList].sort((a, b) => {
-      const ca = (a.costPerUnit != null) ? a.costPerUnit : Infinity;
-      const cb = (b.costPerUnit != null) ? b.costPerUnit : Infinity;
+      const ca = a.costPerUnit != null ? a.costPerUnit : Infinity;
+      const cb = b.costPerUnit != null ? b.costPerUnit : Infinity;
       return ca - cb;
     });
     return sorted[0].id;
+  }
+
+  /**
+   * Populate a model <select> with a model list or a disabled placeholder when
+   * the list is empty.  The helper keeps the "real empty array" behavior used
+   * by the cheapest-model fallback path.
+   *
+   * @param {HTMLSelectElement} selectEl
+   * @param {Array<{id: string, name?: string}>} modelList
+   * @param {string} [placeholderText="No compatible models"]
+   */
+  function populateModelSelect(selectEl, modelList, placeholderText = "No compatible models") {
+    selectEl.innerHTML = "";
+    if (modelList.length === 0) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.textContent = placeholderText;
+      selectEl.appendChild(placeholder);
+      return;
+    }
+
+    for (const m of modelList) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name || m.id;
+      selectEl.appendChild(opt);
+    }
+  }
+
+  /**
+   * Returns the DOM anchor after which model warnings should be inserted.
+   *
+   * Accepts either a modality key or a concrete model <select> so callers can
+   * target the tab-level select or a specific audio dropdown.
+   */
+  function getModelWarningAnchor(target) {
+    const modelSel = typeof target === "string" ? MODEL_SELECTS[target] : target;
+    if (!modelSel) return null;
+    return modelSel.closest(".model-row, .video-settings-bar");
+  }
+
+  /**
+   * Show an accessible inline warning near the affected model select.
+   *
+   * The warning is placed after the select's containing row so keyboard users
+   * and screen readers encounter it in context without focus being moved.
+   */
+  function showModelWarning(target, message) {
+    const anchor = getModelWarningAnchor(target);
+    if (!anchor) return;
+    const sibling = anchor.nextElementSibling;
+    if (sibling && sibling.classList.contains("model-warning")) sibling.remove();
+
+    const p = document.createElement("p");
+    p.className = "warn-box model-warning";
+    p.setAttribute("role", "status");
+    p.setAttribute("aria-live", "polite");
+    p.textContent = message;
+    anchor.insertAdjacentElement("afterend", p);
+  }
+
+  /** Remove the inline model warning for a modality or concrete select. */
+  function clearModelWarning(target) {
+    const anchor = getModelWarningAnchor(target);
+    if (!anchor) return;
+    const sibling = anchor.nextElementSibling;
+    if (sibling && sibling.classList.contains("model-warning")) sibling.remove();
+  }
+
+  /**
+   * Normalise a /models response, preserving structured error payloads so the
+   * caller can keep the current selection untouched instead of treating them as
+   * an empty list.
+   *
+   * @param {unknown} data
+   * @returns {{ ok: true, modelList: Array<{id: string, name?: string}> } | { ok: false, error: unknown }}
+   */
+  function normalizeModelsResponse(data) {
+    if (Array.isArray(data)) {
+      return { ok: true, modelList: data };
+    }
+    if (data && typeof data === "object" && Array.isArray(data.models)) {
+      return { ok: true, modelList: data.models };
+    }
+    return { ok: false, error: data };
+  }
+
+  /**
+   * Fetch the model list for one modality/provider pair from the proxy.
+   *
+   * Structured error objects are returned as `{ ok: false }` so callers can keep
+   * the current selection visible and avoid persisting a blank model.
+   *
+   * @param {string} modality
+   * @param {string} provider
+   */
+  async function fetchModelList(modality, provider) {
+    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    let url = `${base}/models?modality=${modality}`;
+    if (provider) url += `&provider=${encodeURIComponent(provider)}`;
+
+    try {
+      const data = await fetch(url).then((r) => r.json());
+      return normalizeModelsResponse(data);
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+
+  /**
+   * Format a contextual inline warning for model load failures.
+   *
+   * @param {string} modality
+   * @param {string} provider
+   * @param {unknown} error
+   */
+  function formatModelWarning(modality, provider, error) {
+    const code =
+      error && typeof error === "object" && typeof error.code === "string"
+        ? ` (${error.code})`
+        : "";
+    const detail =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === "object"
+          ? typeof error.message === "string"
+            ? error.message
+            : typeof error.error === "string"
+              ? error.error
+              : "Model list unavailable."
+          : "Model list unavailable.";
+    const providerLabel = provider || "default provider";
+    return `Could not refresh ${modality} models for ${providerLabel}${code}: ${detail} Keeping the current selection until the server recovers.`;
   }
 
   /** Returns the data-tab value of the currently active tab button. */
@@ -323,9 +458,9 @@
    */
   function activeModelSelect() {
     const tab = activeTab();
-    if (tab === "image")      return imageModelSelect;
-    if (tab === "audio")      return ttsModelSelect;
-    if (tab === "video")      return videoModelSelect;
+    if (tab === "image") return imageModelSelect;
+    if (tab === "audio") return ttsModelSelect;
+    if (tab === "video") return videoModelSelect;
     if (tab === "structured") return structuredModelSelect;
     return textModelSelect; // "text" is the default
   }
@@ -370,6 +505,20 @@
     populateProviderSelect(videoProviderSelect, "video");
   }
 
+  /**
+   * Returns true when the active provider advertises the given input modality.
+   * The browser only asks the server for `accepts=image` when the provider
+   * already says it can handle image input, which avoids blanking the picker
+   * for providers that legitimately do not expose that capability.
+   */
+  function providerSupportsInputModality(providerId, inputModality) {
+    if (!providerId) return false;
+    const provider = allProviders.find((p) => p.id === providerId);
+    return (
+      Array.isArray(provider?.inputModalities) && provider.inputModalities.includes(inputModality)
+    );
+  }
+
   /* ── Video constraint syncing ───────────────────────────── */
 
   /**
@@ -386,7 +535,10 @@
     const allowedSet = new Set(allowed.map(String));
     let anyVisible = false;
     [...selectEl.options].forEach((opt) => {
-      if (!opt.value) { opt.hidden = false; return; } // always keep "Default"
+      if (!opt.value) {
+        opt.hidden = false;
+        return;
+      } // always keep "Default"
       opt.hidden = !allowedSet.has(opt.value);
       if (!opt.hidden) anyVisible = true;
     });
@@ -405,7 +557,9 @@
    */
   function _clearSelectFilter(selectEl) {
     if (!selectEl) return;
-    [...selectEl.options].forEach((opt) => { opt.hidden = false; });
+    [...selectEl.options].forEach((opt) => {
+      opt.hidden = false;
+    });
   }
 
   /**
@@ -419,15 +573,16 @@
    * @param {object|null} descriptor - Full ModelDescriptor from the server.
    */
   function syncVideoConstraints(descriptor) {
-    const aspectSelects  = [videoAspectRatio, batchAspectRatioEl].filter(Boolean);
+    const aspectSelects = [videoAspectRatio, batchAspectRatioEl].filter(Boolean);
     const resolutionSelects = [videoResolution, batchResolutionEl].filter(Boolean);
-    const fpsSelects     = [videoFps, batchFpsEl].filter(Boolean);
+    const fpsSelects = [videoFps, batchFpsEl].filter(Boolean);
     const qualitySelects = [videoQuality, batchQualityEl].filter(Boolean);
 
     if (!descriptor) {
       // No specific model — show all options
-      [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects]
-        .forEach(_clearSelectFilter);
+      [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects].forEach(
+        _clearSelectFilter,
+      );
       return;
     }
 
@@ -466,7 +621,8 @@
   async function loadVideoModels(providerHint) {
     try {
       const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-      const provider = providerHint !== undefined ? providerHint : (videoProviderSelect?.value ?? "");
+      const provider =
+        providerHint !== undefined ? providerHint : (videoProviderSelect?.value ?? "");
       let url = base + "/models?modality=video";
       if (provider) url += "&provider=" + provider;
       const models = await fetch(url).then((r) => r.json());
@@ -491,9 +647,9 @@
   }
 
   /* ── Cost / usage tracking ──────────────────────────────── */
-  let totalCost   = 0;
+  let totalCost = 0;
   let totalTokens = 0;
-  let totalCalls  = 0;
+  let totalCalls = 0;
 
   /**
    * Accumulate usage and cost for a completed call.
@@ -512,9 +668,9 @@
     if (cost && typeof cost.totalUsd === "number") {
       totalCost += cost.totalUsd;
     }
-    costTotalEl.textContent   = "$" + totalCost.toFixed(6);
+    costTotalEl.textContent = "$" + totalCost.toFixed(6);
     tokensTotalEl.textContent = totalTokens.toLocaleString();
-    callsTotalEl.textContent  = totalCalls.toString();
+    callsTotalEl.textContent = totalCalls.toString();
   }
 
   /* ── Client factory ─────────────────────────────────────── */
@@ -538,13 +694,15 @@
 
   /* ── UI helpers ─────────────────────────────────────────── */
   function setLoading(buttons, loading) {
-    [].concat(buttons).forEach((b) => { if (b) b.disabled = loading; });
+    [].concat(buttons).forEach((b) => {
+      if (b) b.disabled = loading;
+    });
   }
 
   function showSpinner(el, msg) {
     el.innerHTML = "";
     const s = document.createElement("span");
-    s.className   = "spinner-msg";
+    s.className = "spinner-msg";
     s.textContent = msg || "Working…";
     el.appendChild(s);
   }
@@ -553,7 +711,7 @@
     if (!el) return;
     el.innerHTML = "";
     const s = document.createElement("span");
-    s.className   = "error-msg";
+    s.className = "error-msg";
     s.textContent = "Error: " + (err instanceof Error ? err.message : String(err));
     el.appendChild(s);
   }
@@ -586,17 +744,16 @@
 
   // Catch unhandled promise rejections that escape individual try/catch blocks
   window.addEventListener("unhandledrejection", (event) => {
-    const msg = event.reason instanceof Error
-      ? event.reason.message
-      : String(event.reason ?? "Unknown error");
+    const msg =
+      event.reason instanceof Error
+        ? event.reason.message
+        : String(event.reason ?? "Unknown error");
     showGlobalError("Unexpected error: " + msg);
   });
 
   // Catch synchronous runtime exceptions (e.g., ReferenceError, TypeError)
   window.onerror = function (_msg, _src, _line, _col, error) {
-    const msg = error instanceof Error
-      ? error.message
-      : String(_msg || "Unknown runtime error");
+    const msg = error instanceof Error ? error.message : String(_msg || "Unknown runtime error");
     showGlobalError("Runtime error: " + msg);
   };
 
@@ -612,15 +769,17 @@
     const parts = [];
     if (usage) {
       parts.push(
-        "Tokens: " + usage.totalTokens +
-        " (↑" + usage.promptTokens + " ↓" + usage.completionTokens + ")",
+        "Tokens: " +
+          usage.totalTokens +
+          " (↑" +
+          usage.promptTokens +
+          " ↓" +
+          usage.completionTokens +
+          ")",
       );
     }
     if (cost && typeof cost.totalUsd === "number") {
-      parts.push(
-        "Cost: $" + cost.totalUsd.toFixed(6) +
-        (cost.isEstimate ? " (est.)" : ""),
-      );
+      parts.push("Cost: $" + cost.totalUsd.toFixed(6) + (cost.isEstimate ? " (est.)" : ""));
     }
     el.textContent = parts.join(" · ");
   }
@@ -628,24 +787,30 @@
   /* ── JSON syntax highlighter ────────────────────────────── */
   function highlightJson(json) {
     return json
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
       .replace(
         /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
         (m) => {
-          const cls =
-            /^"/.test(m)    ? (/:$/.test(m) ? "json-key" : "json-string")
-            : /true|false/.test(m) ? "json-bool"
-            : /null/.test(m)       ? "json-null"
-            : "json-number";
+          const cls = /^"/.test(m)
+            ? /:$/.test(m)
+              ? "json-key"
+              : "json-string"
+            : /true|false/.test(m)
+              ? "json-bool"
+              : /null/.test(m)
+                ? "json-null"
+                : "json-number";
           return '<span class="' + cls + '">' + m + "</span>";
-        }
+        },
       );
   }
 
   function renderJson(el, data) {
     el.innerHTML = "";
     try {
-      const pre  = document.createElement("pre");
+      const pre = document.createElement("pre");
       pre.className = "json-pre";
       const code = document.createElement("code");
       code.innerHTML = highlightJson(JSON.stringify(data, null, 2));
@@ -687,16 +852,16 @@
     const rh = parseFloat(parts[1]);
     if (!rw || !rh || rw <= 0 || rh <= 0) return null;
     if (rw >= rh) {
-      return { w: base, h: Math.floor(base * rh / rw) };
+      return { w: base, h: Math.floor((base * rh) / rw) };
     }
-    return { w: Math.floor(base * rw / rh), h: base };
+    return { w: Math.floor((base * rw) / rh), h: base };
   }
 
   /** Aspect ratio values that belong to each image category. */
   const RATIO_CATEGORIES = {
-    square:    ["1:1"],
+    square: ["1:1"],
     landscape: ["4:3", "16:9", "3:2"],
-    portrait:  ["3:4", "9:16", "2:3"],
+    portrait: ["3:4", "9:16", "2:3"],
   };
 
   /**
@@ -704,7 +869,7 @@
    * the selected category.  "Any" and "Custom" leave all options visible.
    */
   function filterRatioOptions() {
-    const cat     = imageRatioCategory.value;
+    const cat = imageRatioCategory.value;
     const allowed = RATIO_CATEGORIES[cat] || null; // null = no filter
     [...imageAspectRatio.options].forEach((opt) => {
       if (!opt.value) return; // always keep the "Default" option
@@ -726,28 +891,28 @@
    */
   function syncImageDimsPanel() {
     filterRatioOptions();
-    const cat     = imageRatioCategory.value;
-    const ratio   = imageAspectRatio.value;
+    const cat = imageRatioCategory.value;
+    const ratio = imageAspectRatio.value;
     const isCustom = cat === "custom";
 
     if (isCustom) {
       imageCustomDims.classList.remove("hidden");
-      imageWidthInput.disabled  = false;
+      imageWidthInput.disabled = false;
       imageHeightInput.disabled = false;
       const w = parseInt(imageWidthInput.value, 10);
       const h = parseInt(imageHeightInput.value, 10);
-      imageDimsHint.textContent = (w > 0 && h > 0) ? w + " × " + h + " px" : "";
+      imageDimsHint.textContent = w > 0 && h > 0 ? w + " × " + h + " px" : "";
     } else if (ratio) {
       imageCustomDims.classList.remove("hidden");
-      imageWidthInput.disabled  = true;
+      imageWidthInput.disabled = true;
       imageHeightInput.disabled = true;
-      imageWidthInput.value     = "";
-      imageHeightInput.value    = "";
+      imageWidthInput.value = "";
+      imageHeightInput.value = "";
       const dims = calcDims(ratio);
       imageDimsHint.textContent = dims ? dims.w + " × " + dims.h + " px (est.)" : "";
     } else {
       imageCustomDims.classList.add("hidden");
-      imageWidthInput.disabled  = true;
+      imageWidthInput.disabled = true;
       imageHeightInput.disabled = true;
       imageDimsHint.textContent = "";
     }
@@ -756,9 +921,9 @@
   /* ── Data URI / base64 → Blob helpers ──────────────────── */
   function dataUriToBlob(dataUri) {
     if (!dataUri) throw new Error("dataUriToBlob: empty data URI");
-    const commaIdx  = dataUri.indexOf(",");
-    const header    = commaIdx >= 0 ? dataUri.slice(0, commaIdx) : "";
-    const b64       = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
+    const commaIdx = dataUri.indexOf(",");
+    const header = commaIdx >= 0 ? dataUri.slice(0, commaIdx) : "";
+    const b64 = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
     const mimeMatch = header.match(/:(.*?);/);
     if (!mimeMatch) {
       throw new Error("dataUriToBlob: not a data URI — received: " + dataUri.slice(0, 80));
@@ -817,26 +982,34 @@
   function generatePlaceholderVideoBlob(label, durationMs) {
     durationMs = durationMs || 2000;
     return new Promise(function (resolve, reject) {
-      const W = 320, H = 180;
+      const W = 320,
+        H = 180;
       const canvas = document.createElement("canvas");
-      canvas.width = W; canvas.height = H;
+      canvas.width = W;
+      canvas.height = H;
       const ctx = canvas.getContext("2d");
 
-      const mimeType = (
-        ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
-          .find(function (t) { return MediaRecorder.isTypeSupported(t); })
-      ) || "video/webm";
+      const mimeType =
+        ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(function (t) {
+          return MediaRecorder.isTypeSupported(t);
+        }) || "video/webm";
 
       let stream, recorder;
       try {
-        stream   = canvas.captureStream(25);
+        stream = canvas.captureStream(25);
         recorder = new MediaRecorder(stream, { mimeType });
-      } catch (e) { return reject(e); }
+      } catch (e) {
+        return reject(e);
+      }
 
       const chunks = [];
-      recorder.ondataavailable = function (e) { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      recorder.ondataavailable = function (e) {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
       recorder.onstop = function () {
-        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream.getTracks().forEach(function (t) {
+          t.stop();
+        });
         resolve(new Blob(chunks, { type: mimeType }));
       };
       recorder.onerror = reject;
@@ -846,8 +1019,11 @@
       function frame() {
         const elapsed = performance.now() - start;
         _drawFrame(ctx, W, H, label, elapsed, durationMs);
-        if (elapsed < durationMs) { requestAnimationFrame(frame); }
-        else { recorder.stop(); }
+        if (elapsed < durationMs) {
+          requestAnimationFrame(frame);
+        } else {
+          recorder.stop();
+        }
       }
       requestAnimationFrame(frame);
     });
@@ -865,16 +1041,16 @@
   function appendShotVideo(container, url, blob, name, ext) {
     const vid = document.createElement("video");
     vid.className = "shot-video";
-    vid.controls  = true;
-    vid.src       = url;
+    vid.controls = true;
+    vid.src = url;
     container.appendChild(vid);
 
     const actions = document.createElement("div");
     actions.className = "shot-actions";
     const dlLink = document.createElement("a");
-    dlLink.className   = "shot-dl-link";
-    dlLink.href        = url;
-    dlLink.download    = name.replace(/[^a-z0-9_\-]/gi, "_") + "." + ext;
+    dlLink.className = "shot-dl-link";
+    dlLink.href = url;
+    dlLink.download = name.replace(/[^a-z0-9_\-]/gi, "_") + "." + ext;
     dlLink.textContent = "⬇ Download (" + Math.round(blob.size / 1024) + " KB)";
     actions.appendChild(dlLink);
     container.appendChild(actions);
@@ -909,8 +1085,7 @@
       });
     } catch (_networkErr) {
       const err = new Error(
-        "Cannot reach proxy server at " + base + ". " +
-        "Start it with: npm run serve",
+        "Cannot reach proxy server at " + base + ". " + "Start it with: npm run serve",
       );
       showGlobalError(err.message);
       throw err;
@@ -941,10 +1116,13 @@
     }
     if (!resp.ok) {
       let msg = `Server error ${resp.status}`;
-      try { const j = await resp.json(); msg = j.error ?? j.message ?? msg; } catch (_) {}
+      try {
+        const j = await resp.json();
+        msg = j.error ?? j.message ?? msg;
+      } catch (_) {}
       throw new ProxyError(resp.status, msg);
     }
-    return resp;   // caller reads resp.body
+    return resp; // caller reads resp.body
   }
 
   /**
@@ -968,14 +1146,17 @@
    */
   async function compressImageForUpload(file) {
     const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MiB threshold
-    const MAX_DIMENSION    = 2048;             // px on long edge
-    const JPEG_QUALITY     = 0.85;
+    const MAX_DIMENSION = 2048; // px on long edge
+    const JPEG_QUALITY = 0.85;
 
     const nameLower = file.name.toLowerCase();
-    const isHeic    = file.type === "image/heic" || file.type === "image/heif" ||
-                      nameLower.endsWith(".heic") || nameLower.endsWith(".heif");
-    const isImage   = file.type.startsWith("image/");
-    const isLarge   = file.size > MAX_UPLOAD_BYTES;
+    const isHeic =
+      file.type === "image/heic" ||
+      file.type === "image/heif" ||
+      nameLower.endsWith(".heic") ||
+      nameLower.endsWith(".heif");
+    const isImage = file.type.startsWith("image/");
+    const isLarge = file.size > MAX_UPLOAD_BYTES;
 
     // Non-images and small non-HEIC images pass through untouched.
     if (!isImage || (!isHeic && !isLarge)) return file;
@@ -989,7 +1170,7 @@
       if (isHeic) {
         throw new Error(
           "HEIC/HEIF photos are not supported by this browser. " +
-          "On iOS, please use Safari 15+ or convert the photo to JPEG in the Photos app first.",
+            "On iOS, please use Safari 15+ or convert the photo to JPEG in the Photos app first.",
         );
       }
       // For other large images that fail to decode, pass through and let the
@@ -998,12 +1179,12 @@
     }
 
     // Compute target dimensions preserving aspect ratio.
-    const scale  = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
-    const width  = Math.round(bitmap.width  * scale);
+    const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const width = Math.round(bitmap.width * scale);
     const height = Math.round(bitmap.height * scale);
 
     const canvas = document.createElement("canvas");
-    canvas.width  = width;
+    canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(bitmap, 0, 0, width, height);
@@ -1012,11 +1193,12 @@
     return new Promise((resolve, reject) => {
       canvas.toBlob(
         (blob) => {
-          if (!blob) { reject(new Error("Canvas image compression failed.")); return; }
+          if (!blob) {
+            reject(new Error("Canvas image compression failed."));
+            return;
+          }
           // Rename HEIC → .jpg; keep original name for other compressed images.
-          const outName = isHeic
-            ? file.name.replace(/\.[^.]+$/, ".jpg")
-            : file.name;
+          const outName = isHeic ? file.name.replace(/\.[^.]+$/, ".jpg") : file.name;
           resolve(new File([blob], outName, { type: "image/jpeg" }));
         },
         "image/jpeg",
@@ -1045,8 +1227,7 @@
       resp = await fetch(base + "/upload", { method: "POST", body: formData });
     } catch (_networkErr) {
       throw new Error(
-        "Cannot reach proxy server at " + base + ". " +
-        "Start it with: npm run serve",
+        "Cannot reach proxy server at " + base + ". " + "Start it with: npm run serve",
       );
     }
     if (!resp.ok) {
@@ -1057,7 +1238,9 @@
         const j = await resp.json();
         msg = j.error ?? msg;
       } catch (_) {
-        try { msg = await resp.text() || msg; } catch (_2) {}
+        try {
+          msg = (await resp.text()) || msg;
+        } catch (_2) {}
       }
       throw new Error(msg);
     }
@@ -1129,7 +1312,10 @@
     }
     if (!resp.ok) {
       let msg = `Server error ${resp.status}`;
-      try { const j = await resp.json(); msg = j.error ?? msg; } catch (_) {}
+      try {
+        const j = await resp.json();
+        msg = j.error ?? msg;
+      } catch (_) {}
       throw new Error(msg);
     }
     const { fileRef } = await resp.json();
@@ -1154,7 +1340,10 @@
 
     function clearThumbs() {
       refsArray.length = 0;
-      if (thumbsEl) { thumbsEl.innerHTML = ""; thumbsEl.classList.add("hidden"); }
+      if (thumbsEl) {
+        thumbsEl.innerHTML = "";
+        thumbsEl.classList.add("hidden");
+      }
     }
 
     function addThumb(file, fileRef) {
@@ -1179,9 +1368,12 @@
         wrap.remove();
         if (!thumbsEl.children.length) thumbsEl.classList.add("hidden");
         const count = refsArray.length;
-        statusEl.textContent = count === 0 ? "No files attached"
-          : count === 1 ? "1 file attached"
-          : count + " files attached";
+        statusEl.textContent =
+          count === 0
+            ? "No files attached"
+            : count === 1
+              ? "1 file attached"
+              : count + " files attached";
         hasImageAttached = refsArray.length > 0;
         if (onDone) onDone();
       });
@@ -1223,7 +1415,8 @@
         statusEl.textContent = `⚠ ${successCount} of ${files.length} uploaded`;
         hasImageAttached = true;
       } else {
-        statusEl.textContent = successCount === 1 ? "1 file attached" : successCount + " files attached";
+        statusEl.textContent =
+          successCount === 1 ? "1 file attached" : successCount + " files attached";
         hasImageAttached = true;
       }
       // Reset input so re-selecting the same files triggers a new change event.
@@ -1237,6 +1430,10 @@
    * Fetches models for the given modality from the proxy server and populates
    * the given <select> element.
    *
+   * Structured server errors keep the current dropdown contents intact and
+   * surface an inline warning near the affected select. Only a true network
+   * failure falls back to the current unreachable-proxy message.
+   *
    * @param {string}      modality        - "text" | "image" | "audio" | "video" | "structured"
    * @param {HTMLElement} selectEl        - The <select> to populate.
    * @param {string}      [providerHint]  - Explicit provider id to pass to /models?provider=.
@@ -1244,12 +1441,40 @@
    */
   async function loadModels(modality, selectEl, providerHint) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const provider = providerHint !== undefined ? providerHint : proxyProviderSelect.value;
+    const acceptsImage = hasImageAttached && providerSupportsInputModality(provider, "image");
+    let url = base + "/models?modality=" + modality;
+    if (provider) url += "&provider=" + provider;
+    if (acceptsImage) url += "&accepts=image";
+
     try {
-      const provider = providerHint !== undefined ? providerHint : proxyProviderSelect.value;
-      let url = base + "/models?modality=" + modality;
-      if (provider) url += "&provider=" + provider;
-      if (hasImageAttached) url += "&accepts=image";
-      let models = await fetch(url).then((r) => r.json());
+      let resp = await fetch(url);
+      let models;
+      try {
+        models = await resp.json();
+      } catch (_jsonErr) {
+        if (!resp.ok) {
+          showModelWarning(
+            selectEl,
+            formatModelWarning(modality, provider, {
+              error: `Server returned HTTP ${resp.status} while loading models.`,
+            }),
+          );
+        } else {
+          showModelWarning(
+            selectEl,
+            formatModelWarning(modality, provider, {
+              error: "Unexpected response while loading models.",
+            }),
+          );
+        }
+        return;
+      }
+
+      if (!resp.ok) {
+        showModelWarning(selectEl, formatModelWarning(modality, provider, models));
+        return;
+      }
 
       // T-22 fallback: Audio and Structured tabs have no image-aware models.
       // When the filtered list is empty (because &accepts=image yielded nothing),
@@ -1257,12 +1482,42 @@
       // The attachment notice ("image will be ignored") is shown separately via
       // updateAttachmentNotice(), which is called by switchTab and
       // retriggerAttachmentDropdowns after this function returns.
-      if (hasImageAttached && Array.isArray(models) && models.length === 0) {
-        const fallbackUrl = base + "/models?modality=" + modality +
-          (provider ? "&provider=" + provider : "");
-        models = await fetch(fallbackUrl).then((r) => r.json());
+      if (acceptsImage && Array.isArray(models) && models.length === 0) {
+        const fallbackUrl =
+          base + "/models?modality=" + modality + (provider ? "&provider=" + provider : "");
+        resp = await fetch(fallbackUrl);
+        try {
+          models = await resp.json();
+        } catch (_jsonErr) {
+          if (!resp.ok) {
+            showModelWarning(
+              selectEl,
+              formatModelWarning(modality, provider, {
+                error: `Server returned HTTP ${resp.status} while loading models.`,
+              }),
+            );
+          } else {
+            showModelWarning(
+              selectEl,
+              formatModelWarning(modality, provider, {
+                error: "Unexpected response while loading models.",
+              }),
+            );
+          }
+          return;
+        }
+        if (!resp.ok) {
+          showModelWarning(selectEl, formatModelWarning(modality, provider, models));
+          return;
+        }
       }
 
+      if (!Array.isArray(models)) {
+        showModelWarning(selectEl, formatModelWarning(modality, provider, models));
+        return;
+      }
+
+      clearModelWarning(selectEl);
       selectEl.innerHTML = '<option value="">Default</option>';
       models.forEach((m) => {
         const opt = document.createElement("option");
@@ -1270,27 +1525,22 @@
         opt.textContent = m.name || m.id;
         selectEl.appendChild(opt);
       });
-    } catch (err) {
+    } catch (_networkErr) {
+      clearModelWarning(selectEl);
       if (selectEl.options.length === 1) {
         selectEl.options[0].text = "Default (server unreachable)";
       }
-      if (err instanceof TypeError) {
-        showGlobalError(
-          `Cannot reach proxy at ${base} — models could not be loaded`
-        );
-      }
-      // Non-TypeError errors (SyntaxError from non-JSON 502) are silent —
-      // the provider list may still load; models failing alone is less critical.
+      showGlobalError(`Cannot reach proxy at ${base} — models could not be loaded`);
     }
   }
 
   async function loadAllModels() {
     if (modeSelect.value !== "proxy") return;
     await Promise.all([
-      loadModels("text",       textModelSelect),
-      loadModels("image",      imageModelSelect),
-      loadModels("audio",      ttsModelSelect),
-      loadModels("audio",      transcribeModelSelect),
+      loadModels("text", textModelSelect),
+      loadModels("image", imageModelSelect),
+      loadModels("audio", ttsModelSelect),
+      loadModels("audio", transcribeModelSelect),
       // Video uses its own per-tab provider dropdown + capability-aware loader.
       loadVideoModels(videoProviderSelect?.value ?? ""),
       loadModels("structured", structuredModelSelect),
@@ -1302,10 +1552,13 @@
    * model `<select>`, auto-select the cheapest option, and persist the choice.
    *
    * Design D5 — decomposed replacement for `loadAllModels()`:
-   *   - Reads the provider from `tabState.get(modality).provider`.
+   *   - Reads the provider from `tabState.get(modality).provider` unless an
+   *     explicit provider override is supplied by the caller.
    *   - Only touches `MODEL_SELECTS[modality]`; sibling tabs are never altered.
    *   - Empty model list → single disabled placeholder "No compatible models"
    *     (REQ-PM-02; see Example G in selector-examples.md).
+   *   - Structured error payloads leave the current selection untouched and
+   *     surface an inline warning instead of being collapsed into an empty list.
    *   - Calls `autoSelectCheapest` and writes the result into both `tabState`
    *     and `localStorage` via `persistSelection` (REQ-PM-03, REQ-LS-01).
    *   - Video special-case: updates `videoModelsCache` and calls
@@ -1313,26 +1566,24 @@
    *     dropdowns stay consistent with the newly selected model.
    *
    * @param {string} modality  "text" | "image" | "audio" | "video" | "structured"
+   * @param {string} [providerOverride]  Explicit provider id to fetch models for.
    */
-  async function loadTabModels(modality) {
-    if (modeSelect.value !== "proxy") return;
+  async function loadTabModels(modality, providerOverride) {
+    if (modeSelect.value !== "proxy") return false;
 
-    const base     = proxyUrlInput.value.trim() || "http://localhost:3001";
-    const state    = tabState.get(modality) ?? {};
-    const provider = state.provider || "";
+    const state = tabState.get(modality) ?? {};
+    const provider = providerOverride !== undefined ? providerOverride : state.provider || "";
     const modelSel = MODEL_SELECTS[modality];
-    if (!modelSel) return;
+    if (!modelSel) return false;
 
-    let modelList = [];
-    try {
-      let url = `${base}/models?modality=${modality}`;
-      if (provider) url += `&provider=${encodeURIComponent(provider)}`;
-      const data = await fetch(url).then((r) => r.json());
-      // Server returns a plain array; guard against wrapped { models: [] } shape.
-      modelList = Array.isArray(data) ? data : (data.models ?? []);
-    } catch (_) {
-      // Network error — modelList stays empty; placeholder rendered below.
+    const result = await fetchModelList(modality, provider);
+    if (!result.ok) {
+      showModelWarning(modality, formatModelWarning(modality, provider, result.error));
+      return false;
     }
+    clearModelWarning(modality);
+
+    const modelList = result.modelList;
 
     // Video: update the descriptor cache before repopulating the select so that
     // syncVideoConstraints can look up the newly selected model immediately.
@@ -1341,26 +1592,11 @@
     }
 
     // Repopulate model <select> (REQ-PM-02 — compatible models only)
-    modelSel.innerHTML = "";
-    if (modelList.length === 0) {
-      const placeholder = document.createElement("option");
-      placeholder.value    = "";
-      placeholder.disabled = true;
-      placeholder.selected = true;
-      placeholder.textContent = "No compatible models";
-      modelSel.appendChild(placeholder);
-    } else {
-      for (const m of modelList) {
-        const opt = document.createElement("option");
-        opt.value       = m.id;
-        opt.textContent = m.name || m.id;
-        modelSel.appendChild(opt);
-      }
-    }
+    populateModelSelect(modelSel, modelList);
 
     // Auto-select cheapest model (REQ-PM-03)
     const cheapest = autoSelectCheapest(modelList);
-    const model    = cheapest ?? "";
+    const model = cheapest ?? "";
     modelSel.value = model;
 
     // Video: sync constraint dropdowns (aspect ratio, resolution, FPS, quality)
@@ -1374,6 +1610,7 @@
     // Persist updated state (REQ-LS-01 — atomic dual write)
     tabState.set(modality, { provider, model });
     persistSelection(modality, provider, model);
+    return true;
   }
 
   /**
@@ -1390,6 +1627,9 @@
    *      autoSelectCheapest when the saved model is absent (stale-model guard).
    *   6. Populate the model <select>, set its value, update tabState, and
    *      overwrite localStorage so future page loads start clean (REQ-LS-05).
+   *   7. If /models returns a structured error, keep the previous saved pair
+   *      visible, show an inline warning, and leave localStorage untouched until
+   *      a real model array arrives.
    *
    * Video modality also updates videoModelsCache and calls syncVideoConstraints
    * so constraint dropdowns (aspect-ratio, resolution, FPS, quality) match
@@ -1398,11 +1638,9 @@
    * Tests: T-PM-09 (full restore), T-PM-10 (stale guard), S-04, S-05.
    */
   async function initTabSelections() {
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-
     for (const modality of ["text", "image", "audio", "video", "structured"]) {
       const providerSel = PROVIDER_SELECTS[modality];
-      const modelSel    = MODEL_SELECTS[modality];
+      const modelSel = MODEL_SELECTS[modality];
 
       // Step 1 — populate the per-tab provider <select> with modality-filtered options.
       if (providerSel) populateProviderSelect(providerSel, modality);
@@ -1414,7 +1652,8 @@
       // Default: first active provider that supports this modality, or "openai".
       const defaultProvider =
         allProviders.find(
-          (p) => Array.isArray(p.modalities) && p.modalities.includes(modality) && p.active !== false
+          (p) =>
+            Array.isArray(p.modalities) && p.modalities.includes(modality) && p.active !== false,
         )?.id ?? "openai";
 
       let provider = defaultProvider;
@@ -1425,7 +1664,7 @@
         } else {
           console.warn(
             `[fallback-model] Saved provider "${saved.provider}" not found for` +
-            ` modality "${modality}"; falling back to default.`
+              ` modality "${modality}"; falling back to default.`,
           );
           // provider remains defaultProvider; stale key overwritten via persistSelection below.
         }
@@ -1433,17 +1672,26 @@
 
       // Reflect resolved provider in the <select>.
       if (providerSel) providerSel.value = provider;
-      tabState.set(modality, { provider, model: "" });
 
       // Step 4 — fetch compatible model list for the resolved provider.
-      let modelList = [];
-      try {
-        const url  = `${base}/models?modality=${modality}&provider=${encodeURIComponent(provider)}`;
-        const data = await fetch(url).then((r) => r.json());
-        modelList  = Array.isArray(data) ? data : (data.models ?? []);
-      } catch (_) {
-        // Network error — modelList stays empty; placeholder rendered below.
+      const result = await fetchModelList(modality, provider);
+      if (!result.ok) {
+        showModelWarning(modality, formatModelWarning(modality, provider, result.error));
+        if (modelSel) {
+          if (saved) {
+            populateModelSelect(modelSel, [{ id: saved.model, name: saved.model }]);
+            modelSel.value = saved.model;
+          } else {
+            populateModelSelect(modelSel, []);
+          }
+        }
+
+        const fallbackModel = saved?.model ?? "";
+        tabState.set(modality, { provider, model: fallbackModel });
+        continue;
       }
+      clearModelWarning(modality);
+      const modelList = result.modelList;
 
       // Video: update descriptor cache before populating the select so that
       // syncVideoConstraints can look up the selected model immediately.
@@ -1451,22 +1699,7 @@
 
       // Populate model <select> (mirrors loadTabModels population logic).
       if (modelSel) {
-        modelSel.innerHTML = "";
-        if (modelList.length === 0) {
-          const placeholder = document.createElement("option");
-          placeholder.value       = "";
-          placeholder.disabled    = true;
-          placeholder.selected    = true;
-          placeholder.textContent = "No compatible models";
-          modelSel.appendChild(placeholder);
-        } else {
-          for (const m of modelList) {
-            const opt = document.createElement("option");
-            opt.value       = m.id;
-            opt.textContent = m.name || m.id;
-            modelSel.appendChild(opt);
-          }
-        }
+        populateModelSelect(modelSel, modelList);
       }
 
       // Step 5 — resolve model: restore saved value or auto-select cheapest.
@@ -1477,7 +1710,7 @@
         // Saved model absent from current list — stale-model guard (REQ-LS-04).
         console.warn(
           `[fallback-model] Saved model "${saved.model}" not found for provider` +
-          ` "${provider}" modality "${modality}"; falling back to cheapest.`
+            ` "${provider}" modality "${modality}"; falling back to cheapest.`,
         );
         // model is already set to cheapest above; persistSelection below overwrites it.
       }
@@ -1512,9 +1745,7 @@
       clearGlobalError();
     } catch (err) {
       if (err instanceof TypeError) {
-        showGlobalError(
-          `Cannot reach proxy at ${base} — start it with: npm run serve`
-        );
+        showGlobalError(`Cannot reach proxy at ${base} — start it with: npm run serve`);
       } else {
         showGlobalError(`Proxy error while loading providers: ${err.message}`);
       }
@@ -1551,8 +1782,8 @@
   function updateLumaTunnelWarn() {
     const warn = document.getElementById("video-luma-tunnel-warn");
     if (!warn) return;
-    const provider   = videoProviderSelect?.value || "";
-    const hasFile    = videoFileRefs.length > 0;
+    const provider = videoProviderSelect?.value || "";
+    const hasFile = videoFileRefs.length > 0;
     const needsTunnel = provider === "lumaai" && hasFile && serverLumaImageToVideoEnabled === false;
     warn.classList.toggle("hidden", !needsTunnel);
   }
@@ -1610,8 +1841,14 @@
     const deadline = Date.now() + maxMs;
     return new Promise((resolve, reject) => {
       (function poll() {
-        if (typeof window.JSZip === "function") { resolve(true); return; }
-        if (Date.now() >= deadline) { reject(new Error("JSZip did not load in time.")); return; }
+        if (typeof window.JSZip === "function") {
+          resolve(true);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error("JSZip did not load in time."));
+          return;
+        }
         setTimeout(poll, intervalMs);
       })();
     });
@@ -1643,10 +1880,12 @@
 
   // ── Per-tab provider change listeners (TASK-09) ──────────────────────────────
   // One listener per modality.  When the user picks a different provider:
-  //   1. Clear model in tabState immediately (no stale value leaks during load).
-  //   2. Fetch + repopulate only that tab's model select via loadTabModels.
-  //   3. loadTabModels auto-selects the cheapest model and persists the pair.
-  //      (REQ-PM-02, REQ-PM-03, REQ-PM-06, T-PM-07, T-PM-08, T-PM-12)
+  //   1. Fetch + repopulate only that tab's model select via loadTabModels.
+  //   2. On success, loadTabModels auto-selects the cheapest model and
+  //      persists the pair (REQ-PM-02, REQ-PM-03, REQ-PM-06, T-PM-07,
+  //      T-PM-08, T-PM-12).
+  //   3. On structured error, restore the previous provider/model pair and show
+  //      the inline warning without writing a blank model to storage.
   //
   // Supersedes the former video-only provider listener. The video modality
   // receives an additional updateLumaTunnelWarn() call because the provider
@@ -1655,10 +1894,14 @@
     if (!providerSel) continue;
     providerSel.addEventListener("change", async () => {
       const newProvider = providerSel.value;
-      // Clear model immediately so no stale value is visible while models load.
-      tabState.set(modality, { provider: newProvider, model: "" });
-      await loadTabModels(modality);
-      // tabState + localStorage are updated with the cheapest model by loadTabModels.
+      const previous = tabState.get(modality) ?? { provider: "", model: "" };
+      const loaded = await loadTabModels(modality, newProvider);
+      if (!loaded) {
+        providerSel.value = previous.provider ?? "";
+        const modelSel = MODEL_SELECTS[modality];
+        if (modelSel) modelSel.value = previous.model ?? "";
+        tabState.set(modality, previous);
+      }
       if (modality === "video") updateLumaTunnelWarn();
     });
   }
@@ -1692,9 +1935,20 @@
   // Wire file upload inputs (proxy-only feature — gracefully no-ops in direct mode).
   // The video upload passes updateLumaTunnelWarn as a callback so the warning
   // banner appears/disappears immediately after the image is attached or rejected.
-  wireFileUpload(fileUploadInput,       fileUploadStatus);
-  wireMultiFileUpload(imageFileUploadInput, imageFileUploadStatus, imageFileThumbsEl, imageFileRefs);
-  wireMultiFileUpload(videoFileUploadInput, videoFileUploadStatus, videoFileThumbsEl, videoFileRefs, updateLumaTunnelWarn);
+  wireFileUpload(fileUploadInput, fileUploadStatus);
+  wireMultiFileUpload(
+    imageFileUploadInput,
+    imageFileUploadStatus,
+    imageFileThumbsEl,
+    imageFileRefs,
+  );
+  wireMultiFileUpload(
+    videoFileUploadInput,
+    videoFileUploadStatus,
+    videoFileThumbsEl,
+    videoFileRefs,
+    updateLumaTunnelWarn,
+  );
 
   applyModeUi();
 
@@ -1736,9 +1990,9 @@
     });
   }
 
-  document.querySelectorAll(".video-tab-btn").forEach((b) =>
-    b.addEventListener("click", () => switchVideoTab(b.dataset.vtab))
-  );
+  document
+    .querySelectorAll(".video-tab-btn")
+    .forEach((b) => b.addEventListener("click", () => switchVideoTab(b.dataset.vtab)));
 
   switchVideoTab("batch"); // Batch is the default active sub-tab
 
@@ -1748,15 +2002,81 @@
 
   /* ── Session history (Text tab) ──────────────────────────── */
   const SESSION_KEY = "ai-demo-session";
+  const SESSION_TEMP_WARNING =
+    "Conversation history is temporary in this browser. Session storage is unavailable, so " +
+    "the current chat stays visible but may not persist.";
+
+  let historyPanelWarningMessage = "";
+  let sessionStorageWarningActive = false;
+  let sessionMessages = [];
+
+  function syncHistoryPanelWarning() {
+    const el = document.getElementById("history-panel-warning");
+    if (!el) return;
+    const msg = sessionStorageWarningActive ? SESSION_TEMP_WARNING : historyPanelWarningMessage;
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    if (!msg) {
+      el.textContent = "";
+      el.classList.add("hidden");
+      return;
+    }
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  }
+
+  function showHistoryPanelWarning(msg) {
+    historyPanelWarningMessage = msg;
+    syncHistoryPanelWarning();
+  }
+
+  function showSessionStorageWarning() {
+    sessionStorageWarningActive = true;
+    syncHistoryPanelWarning();
+  }
+
+  function loadSessionMessages() {
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "[]");
+      if (Array.isArray(parsed)) return parsed;
+    } catch (_) {
+      // Fall through to the warning below.
+    }
+    showSessionStorageWarning();
+    return [];
+  }
 
   function getSessionMessages() {
-    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "[]"); }
-    catch (_) { return []; }
+    return sessionMessages.slice();
   }
 
   function saveSessionMessages(msgs) {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(msgs));
+    sessionMessages = Array.isArray(msgs) ? msgs.slice() : [];
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionMessages));
+      sessionStorageWarningActive = false;
+      syncHistoryPanelWarning();
+      return true;
+    } catch (_) {
+      showSessionStorageWarning();
+      return false;
+    }
   }
+
+  function clearSessionMessages() {
+    sessionMessages = [];
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorageWarningActive = false;
+      syncHistoryPanelWarning();
+      return true;
+    } catch (_) {
+      showSessionStorageWarning();
+      return false;
+    }
+  }
+
+  sessionMessages = loadSessionMessages();
 
   /* ── Archive storage helpers (localStorage, persistent) ─────── */
 
@@ -1766,8 +2086,9 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]");
       return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
     }
-    catch (_) { return []; }
   }
 
   function saveArchive(entries) {
@@ -1783,8 +2104,10 @@
     const entries = getArchive();
     entries.unshift(entry);
     while (true) {
-      try { saveArchive(entries); return true; }
-      catch (e) {
+      try {
+        saveArchive(entries);
+        return true;
+      } catch (e) {
         if (e.name !== "QuotaExceededError" || entries.length === 0) return false;
         entries.pop();
       }
@@ -1817,26 +2140,16 @@
    */
   function relativeTime(isoString) {
     const s = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-    if (s < 60)     return "just now";
-    if (s < 3600)   return Math.floor(s / 60)   + " minutes ago";
-    if (s < 86400)  return Math.floor(s / 3600)  + " hours ago";
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " minutes ago";
+    if (s < 86400) return Math.floor(s / 3600) + " hours ago";
     if (s < 172800) return "yesterday";
     if (s < 604800) return Math.floor(s / 86400) + " days ago";
-    return new Date(isoString).toLocaleDateString(undefined,
-      { year: "numeric", month: "long", day: "numeric" });
-  }
-
-  /**
-   * Reveals the history-panel warning bar with the provided message.
-   * Null-safe: silently returns if the element is absent from the DOM
-   * (e.g. in layouts that omit the history panel).
-   * The element carries aria-live="polite" so screen readers announce it.
-   */
-  function showHistoryPanelWarning(msg) {
-    const el = document.getElementById("history-panel-warning");
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.remove("hidden");
+    return new Date(isoString).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   }
 
   /* ── History panel render ────────────────────────────────────── */
@@ -1849,26 +2162,28 @@
    * clearing body.innerHTML.
    */
   function renderHistoryPanel() {
-    const entries  = getArchive();
-    const countEl  = document.getElementById("history-count");
-    const body     = document.getElementById("history-panel-body");
-    const toggle   = document.getElementById("btn-history-toggle");
+    const entries = getArchive();
+    const countEl = document.getElementById("history-count");
+    const body = document.getElementById("history-panel-body");
+    const toggle = document.getElementById("btn-history-toggle");
     if (!body || !countEl || !toggle) return;
 
-    const expanded  = toggle.getAttribute("aria-expanded") === "true";
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
     const chevronEl = document.getElementById("history-chevron");
     countEl.textContent = String(entries.length);
     if (chevronEl) chevronEl.textContent = expanded ? "\u25be" : "\u25b8";
-    body.innerHTML      = "";
+    body.innerHTML = "";
 
     if (entries.length === 0) {
       const empty = document.createElement("p");
-      empty.className   = "history-empty";
+      empty.className = "history-empty";
       empty.textContent = "No archived conversations yet.";
       body.appendChild(empty);
+      syncHistoryPanelWarning();
       return;
     }
     entries.forEach((entry) => body.appendChild(buildHistoryRow(entry)));
+    syncHistoryPanelWarning();
   }
 
   /**
@@ -1891,11 +2206,11 @@
       n++;
       const u = entry.messages[i];
       const a = entry.messages[i + 1]; // undefined if odd message count
-      lines.push('#' + n + ' You: ' + u.content);
-      if (a) lines.push('#' + n + ' Assistant: ' + a.content);
-      lines.push(''); // blank line between exchanges
+      lines.push("#" + n + " You: " + u.content);
+      if (a) lines.push("#" + n + " Assistant: " + a.content);
+      lines.push(""); // blank line between exchanges
     }
-    return lines.join('\n').trimEnd();
+    return lines.join("\n").trimEnd();
   }
 
   /**
@@ -1911,8 +2226,8 @@
   function buildTitleSlug(title) {
     return title
       .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9\-]/g, '');
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9\-]/g, "");
   }
 
   /**
@@ -1930,13 +2245,13 @@
    */
   function buildHistoryRow(entry) {
     // ── Precompute pure-text values (used by both toolbars) ───────
-    const fullText  = buildFullTranscriptText(entry);
+    const fullText = buildFullTranscriptText(entry);
     const titleSlug = buildTitleSlug(entry.title);
 
     // ── Root row element ──────────────────────────────────────────
     const row = document.createElement("div");
-    row.className    = "history-row";
-    row.setAttribute("role",    "listitem");
+    row.className = "history-row";
+    row.setAttribute("role", "listitem");
     row.setAttribute("data-id", entry.id);
 
     // ── Summary bar ───────────────────────────────────────────────
@@ -1951,13 +2266,13 @@
 
     // Meta line: message count + archived timestamp
     const meta = document.createElement("span");
-    meta.className   = "history-meta";
-    meta.textContent = entry.messages.length + " messages \u00b7 Archived " +
-                       relativeTime(entry.archivedAt);
+    meta.className = "history-meta";
+    meta.textContent =
+      entry.messages.length + " messages \u00b7 Archived " + relativeTime(entry.archivedAt);
 
     // Delete button
     const delBtn = document.createElement("button");
-    delBtn.className  = "history-delete";
+    delBtn.className = "history-delete";
     delBtn.textContent = "Delete";
     delBtn.setAttribute("aria-label", "Delete conversation: " + entry.title);
 
@@ -1973,12 +2288,12 @@
     // Injected before the message loop so it becomes firstChild of
     // div.history-transcript (above all exchange divs).  Decision 4.
     createReplyToolbar(transcript, {
-      modality: 'text',
-      text:     fullText,
-      dataUrl:  null,
-      srcUrl:   null,
-      mimeType: 'text/plain',
-      filename: 'archived-' + titleSlug + '.txt',
+      modality: "text",
+      text: fullText,
+      dataUrl: null,
+      srcUrl: null,
+      mimeType: "text/plain",
+      filename: "archived-" + titleSlug + ".txt",
     });
 
     // ── Message loop: paired exchanges ───────────────────────────
@@ -1992,24 +2307,24 @@
       const asstMsg = entry.messages[i + 1]; // undefined on odd message count
 
       // Exchange wrapper ────────────────────────────────────────────
-      const exchDiv = document.createElement('div');
-      exchDiv.className = 'history-exchange';
-      exchDiv.setAttribute('data-exchange', String(exchNum));
+      const exchDiv = document.createElement("div");
+      exchDiv.className = "history-exchange";
+      exchDiv.setAttribute("data-exchange", String(exchNum));
 
       // Exchange number label ───────────────────────────────────────
-      const numSpan = document.createElement('span');
-      numSpan.className   = 'history-exchange-number';
-      numSpan.textContent = '#' + exchNum;
-      numSpan.setAttribute('aria-label', 'Exchange ' + exchNum);
+      const numSpan = document.createElement("span");
+      numSpan.className = "history-exchange-number";
+      numSpan.textContent = "#" + exchNum;
+      numSpan.setAttribute("aria-label", "Exchange " + exchNum);
       exchDiv.appendChild(numSpan);
 
       // User bubble (no toolbar — Decision 5) ──────────────────────
-      const userBubble = document.createElement('div');
-      userBubble.className = 'bubble bubble-user';
-      const userLabel = document.createElement('span');
-      userLabel.className   = 'bubble-label';
-      userLabel.textContent = 'You';
-      const userP = document.createElement('p');
+      const userBubble = document.createElement("div");
+      userBubble.className = "bubble bubble-user";
+      const userLabel = document.createElement("span");
+      userLabel.className = "bubble-label";
+      userLabel.textContent = "You";
+      const userP = document.createElement("p");
       userP.textContent = userMsg.content;
       userBubble.appendChild(userLabel);
       userBubble.appendChild(userP);
@@ -2017,24 +2332,24 @@
 
       // Assistant bubble + per-reply toolbar (only when reply exists — Decision 7)
       if (asstMsg) {
-        const asstBubble = document.createElement('div');
-        asstBubble.className = 'bubble bubble-assistant';
-        const asstLabel = document.createElement('span');
-        asstLabel.className   = 'bubble-label';
-        asstLabel.textContent = 'Assistant';
-        const asstP = document.createElement('p');
+        const asstBubble = document.createElement("div");
+        asstBubble.className = "bubble bubble-assistant";
+        const asstLabel = document.createElement("span");
+        asstLabel.className = "bubble-label";
+        asstLabel.textContent = "Assistant";
+        const asstP = document.createElement("p");
         asstP.textContent = asstMsg.content;
         asstBubble.appendChild(asstLabel);
         asstBubble.appendChild(asstP);
 
         // Per-reply toolbar becomes asstBubble.firstChild (called before append)
         createReplyToolbar(asstBubble, {
-          modality: 'text',
-          text:     asstMsg.content,
-          dataUrl:  null,
-          srcUrl:   null,
-          mimeType: 'text/plain',
-          filename: 'archived-reply-' + exchNum + '.txt',
+          modality: "text",
+          text: asstMsg.content,
+          dataUrl: null,
+          srcUrl: null,
+          mimeType: "text/plain",
+          filename: "archived-reply-" + exchNum + ".txt",
         });
 
         exchDiv.appendChild(asstBubble);
@@ -2071,22 +2386,22 @@
    */
   function handleDeleteEntry(id, rowEl) {
     const confirmBar = document.createElement("div");
-    confirmBar.className   = "history-confirm-bar";
+    confirmBar.className = "history-confirm-bar";
     confirmBar.textContent = "Delete this conversation? This cannot be undone. ";
 
     const yes = document.createElement("button");
-    yes.className   = "btn btn--ghost btn--danger";
+    yes.className = "btn btn--ghost btn--danger";
     yes.textContent = "Confirm";
 
     const no = document.createElement("button");
-    no.className   = "btn btn--ghost";
+    no.className = "btn btn--ghost";
     no.textContent = "Cancel";
 
     confirmBar.appendChild(yes);
     confirmBar.appendChild(no);
     rowEl.appendChild(confirmBar);
 
-    no.addEventListener("click",  () => confirmBar.remove());
+    no.addEventListener("click", () => confirmBar.remove());
     yes.addEventListener("click", () => {
       const remaining = getArchive().filter((e) => e.id !== id);
       saveArchive(remaining);
@@ -2106,7 +2421,7 @@
     const existing = document.querySelector(".new-conv-tip");
     if (existing) existing.remove();
     const tip = document.createElement("div");
-    tip.className   = "new-conv-tip";
+    tip.className = "new-conv-tip";
     tip.textContent = msg;
     btnNewConversation.insertAdjacentElement("afterend", tip);
     setTimeout(() => tip.remove(), 2000);
@@ -2126,7 +2441,9 @@
     // Step 1 — debounce
     if (_newConvDebounced) return;
     _newConvDebounced = true;
-    setTimeout(() => { _newConvDebounced = false; }, 200);
+    setTimeout(() => {
+      _newConvDebounced = false;
+    }, 200);
 
     // Step 2 — empty-session guard
     const msgs = getSessionMessages();
@@ -2137,11 +2454,11 @@
 
     // Step 3 — build archive entry
     const entry = {
-      id:         crypto.randomUUID(),
-      startedAt:  new Date().toISOString(),
+      id: crypto.randomUUID(),
+      startedAt: new Date().toISOString(),
       archivedAt: new Date().toISOString(),
-      title:      makeArchiveTitle(msgs),
-      messages:   JSON.parse(JSON.stringify(msgs)),
+      title: makeArchiveTitle(msgs),
+      messages: JSON.parse(JSON.stringify(msgs)),
     };
 
     // Step 4 — persist; warn on unrecoverable overflow
@@ -2149,16 +2466,17 @@
     if (!saved) {
       showHistoryPanelWarning(
         "\u26a0 Storage full \u2014 this conversation could not be archived. " +
-        "Consider clearing old history.");
+          "Consider clearing old history.",
+      );
     }
 
     // Step 5 — clear active session
-    sessionStorage.removeItem(SESSION_KEY);
+    clearSessionMessages();
 
     // Step 6 — reset UI
     sessionHistory.innerHTML = "";
-    textOutput.innerHTML     = "";
-    textUsage.textContent    = "";
+    textOutput.innerHTML = "";
+    textUsage.textContent = "";
     sessionHistory.scrollTop = 0;
 
     // Step 7 — re-render history panel
@@ -2169,7 +2487,7 @@
     const wrap = document.createElement("div");
     wrap.className = "bubble bubble-" + role;
     const lbl = document.createElement("span");
-    lbl.className   = "bubble-label";
+    lbl.className = "bubble-label";
     lbl.textContent = role === "user" ? "You" : "Assistant";
     const p = document.createElement("p");
     p.textContent = content;
@@ -2177,11 +2495,14 @@
     wrap.appendChild(p);
     sessionHistory.appendChild(wrap);
     sessionHistory.scrollTop = sessionHistory.scrollHeight;
-    if (role === 'assistant') {
+    if (role === "assistant") {
       createReplyToolbar(wrap, {
-        modality: 'text', text: content,
-        dataUrl: null, srcUrl: null,
-        mimeType: 'text/plain', filename: 'ai-reply.txt'
+        modality: "text",
+        text: content,
+        dataUrl: null,
+        srcUrl: null,
+        mimeType: "text/plain",
+        filename: "ai-reply.txt",
       });
     }
     return p; // for streaming updates
@@ -2190,6 +2511,7 @@
   function renderSessionHistory() {
     sessionHistory.innerHTML = "";
     getSessionMessages().forEach((m) => addBubble(m.role, m.content));
+    syncHistoryPanelWarning();
   }
 
   function appendSession(role, content) {
@@ -2205,7 +2527,7 @@
   }
 
   btnSessionClear.addEventListener("click", () => {
-    sessionStorage.removeItem(SESSION_KEY);
+    clearSessionMessages();
     sessionHistory.innerHTML = "";
     textOutput.innerHTML = "";
     textUsage.textContent = "";
@@ -2229,10 +2551,15 @@
   btnHistoryClearAll.addEventListener("click", () => {
     const count = getArchive().length;
     if (count === 0) return;
-    if (confirm(
-      "Delete all " + count + " archived conversation" +
-      (count === 1 ? "" : "s") + "? This cannot be undone."
-    )) {
+    if (
+      confirm(
+        "Delete all " +
+          count +
+          " archived conversation" +
+          (count === 1 ? "" : "s") +
+          "? This cannot be undone.",
+      )
+    ) {
       localStorage.removeItem(ARCHIVE_KEY);
       renderHistoryPanel();
     }
@@ -2260,9 +2587,9 @@
         // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
         const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
         const payload = { prompt: fullPrompt };
-        if (tabProvider)    payload.provider = tabProvider;
-        if (tabModel)       payload.model    = tabModel;
-        if (currentFileRef) payload.fileRef  = currentFileRef;
+        if (tabProvider) payload.provider = tabProvider;
+        if (tabModel) payload.model = tabModel;
+        if (currentFileRef) payload.fileRef = currentFileRef;
         result = await proxyPost("/text", payload);
       } else {
         result = await getClient().generateText(fullPrompt);
@@ -2275,12 +2602,15 @@
       textOutput.innerHTML = "";
       const p = document.createElement("p");
       p.style.margin = "0";
-      p.textContent  = reply;
+      p.textContent = reply;
       textOutput.appendChild(p);
       createReplyToolbar(textOutput, {
-        modality: 'text', text: reply,
-        dataUrl: null, srcUrl: null,
-        mimeType: 'text/plain', filename: 'ai-reply.txt'
+        modality: "text",
+        text: reply,
+        dataUrl: null,
+        srcUrl: null,
+        mimeType: "text/plain",
+        filename: "ai-reply.txt",
       });
 
       setUsageText(textUsage, result.usage, result.cost);
@@ -2289,10 +2619,23 @@
       showError(textOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -2323,44 +2666,60 @@
       if (modeSelect.value === "proxy") {
         // TASK-12: Read provider + model from tabState instead of proxyProviderSelect (REQ-PM-01, S-09).
         const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
-        const payload  = { prompt: fullPrompt, stream: true };
-        if (tabProvider)    payload.provider = tabProvider;
-        if (tabModel)       payload.model    = tabModel;
-        if (currentFileRef) payload.fileRef  = currentFileRef;
-        const resp   = await proxyStream("/text", payload);
+        const payload = { prompt: fullPrompt, stream: true };
+        if (tabProvider) payload.provider = tabProvider;
+        if (tabModel) payload.model = tabModel;
+        if (currentFileRef) payload.fileRef = currentFileRef;
+        const resp = await proxyStream("/text", payload);
         const reader = resp.body.getReader();
-        const dec    = new TextDecoder();
+        const dec = new TextDecoder();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           accumulated += dec.decode(value, { stream: true });
-          outP.textContent       = accumulated;
+          outP.textContent = accumulated;
           assistantP.textContent = accumulated;
           sessionHistory.scrollTop = sessionHistory.scrollHeight;
         }
       } else {
         for await (const chunk of getClient().streamText(fullPrompt)) {
           accumulated += chunk;
-          outP.textContent       = accumulated;
+          outP.textContent = accumulated;
           assistantP.textContent = accumulated;
           sessionHistory.scrollTop = sessionHistory.scrollHeight;
         }
       }
       appendSession("assistant", accumulated);
       createReplyToolbar(textOutput, {
-        modality: 'text', text: accumulated,
-        dataUrl: null, srcUrl: null,
-        mimeType: 'text/plain', filename: 'ai-reply.txt'
+        modality: "text",
+        text: accumulated,
+        dataUrl: null,
+        srcUrl: null,
+        mimeType: "text/plain",
+        filename: "ai-reply.txt",
       });
       addUsage(null, null); // streaming — no cost breakdown available
     } catch (err) {
       showError(textOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -2385,21 +2744,21 @@
       let blob;
       let imgResult = null;
       if (modeSelect.value === "proxy") {
-        const isCustom      = imageRatioCategory.value === "custom";
-        const imgAspectRatio = imageAspectRatio.value   || undefined;
-        const imgQuality     = imageQuality.value       || undefined;
-        const imgWidth       = isCustom ? (parseInt(imageWidthInput.value,  10) || undefined) : undefined;
-        const imgHeight      = isCustom ? (parseInt(imageHeightInput.value, 10) || undefined) : undefined;
+        const isCustom = imageRatioCategory.value === "custom";
+        const imgAspectRatio = imageAspectRatio.value || undefined;
+        const imgQuality = imageQuality.value || undefined;
+        const imgWidth = isCustom ? parseInt(imageWidthInput.value, 10) || undefined : undefined;
+        const imgHeight = isCustom ? parseInt(imageHeightInput.value, 10) || undefined : undefined;
         // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
         const { provider: imgProvider, model: imgModel } = tabState.get("image") ?? {};
         const imgPayload = {
           prompt,
-          provider:    imgProvider    || undefined,
-          model:       imgModel       || undefined,
+          provider: imgProvider || undefined,
+          model: imgModel || undefined,
           aspectRatio: imgAspectRatio,
-          width:       imgWidth,
-          height:      imgHeight,
-          quality:     imgQuality,
+          width: imgWidth,
+          height: imgHeight,
+          quality: imgQuality,
         };
         if (imageFileRefs.length === 1) {
           imgPayload.fileRef = imageFileRefs[0];
@@ -2431,11 +2790,14 @@
       img.src = url;
       imageOutput.appendChild(img);
       createReplyToolbar(imageOutput, {
-        modality: 'image', text: null,
-        dataUrl: (imgResult?.data?.startsWith('data:') ? imgResult.data : null),
-        srcUrl: imgResult?.url ?? (imgResult?.data && /^https?:\/\//.test(imgResult.data) ? imgResult.data : url),
-        mimeType: imgResult?.mimeType ?? blob.type ?? 'image/png',
-        filename: 'ai-image.png'
+        modality: "image",
+        text: null,
+        dataUrl: imgResult?.data?.startsWith("data:") ? imgResult.data : null,
+        srcUrl:
+          imgResult?.url ??
+          (imgResult?.data && /^https?:\/\//.test(imgResult.data) ? imgResult.data : url),
+        mimeType: imgResult?.mimeType ?? blob.type ?? "image/png",
+        filename: "ai-image.png",
       });
       addUsage(imgResult?.usage ?? null, imgResult?.cost ?? null);
       setUsageText(imageUsage, imgResult?.usage ?? null, imgResult?.cost ?? null);
@@ -2448,10 +2810,23 @@
       showError(imageOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -2484,8 +2859,8 @@
         const { provider: audioProvider } = tabState.get("audio") ?? {};
         ttsResult = await proxyPost("/audio/speak", {
           text,
-          provider: audioProvider     || undefined,
-          model:    ttsModelSelect.value || undefined,
+          provider: audioProvider || undefined,
+          model: ttsModelSelect.value || undefined,
         });
         blob = base64ToBlob(ttsResult.audio, ttsResult.mimeType || "audio/mpeg");
       } else {
@@ -2495,13 +2870,16 @@
       ttsOutput.innerHTML = "";
       const audio = document.createElement("audio");
       audio.className = "output-audio";
-      audio.controls  = true;
-      audio.src       = url;
+      audio.controls = true;
+      audio.src = url;
       ttsOutput.appendChild(audio);
       createReplyToolbar(ttsOutput, {
-        modality: 'audio', text: null,
-        dataUrl: null, srcUrl: url,
-        mimeType: ttsResult?.mimeType ?? 'audio/mpeg', filename: 'ai-speech.mp3'
+        modality: "audio",
+        text: null,
+        dataUrl: null,
+        srcUrl: url,
+        mimeType: ttsResult?.mimeType ?? "audio/mpeg",
+        filename: "ai-speech.mp3",
       });
       audio.play().catch(() => {});
       addUsage(ttsResult?.usage ?? null, ttsResult?.cost ?? null);
@@ -2515,10 +2893,23 @@
       showError(ttsOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -2533,7 +2924,11 @@
   let selectedAudioBlob = null;
   audioFileInput.addEventListener("change", () => {
     const file = audioFileInput.files[0];
-    if (!file) { selectedAudioBlob = null; btnTranscribe.disabled = true; return; }
+    if (!file) {
+      selectedAudioBlob = null;
+      btnTranscribe.disabled = true;
+      return;
+    }
     selectedAudioBlob = file;
     audioFilename.textContent = file.name + " (" + Math.round(file.size / 1024) + " KB)";
     btnTranscribe.disabled = false;
@@ -2549,7 +2944,7 @@
       if (modeSelect.value === "proxy") {
         const audioBase64 = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload  = () => resolve(reader.result.split(",")[1]);
+          reader.onload = () => resolve(reader.result.split(",")[1]);
           reader.onerror = reject;
           reader.readAsDataURL(selectedAudioBlob);
         });
@@ -2564,9 +2959,9 @@
           // selectedAudioBlob.type is an empty string for programmatically
           // constructed Blobs — omit the field in that case so the server falls
           // back to its "audio/webm" default.
-          mimeType:  selectedAudioBlob.type || undefined,
-          provider:  audioProvider          || undefined,
-          model:     audioModel             || undefined,
+          mimeType: selectedAudioBlob.type || undefined,
+          provider: audioProvider || undefined,
+          model: audioModel || undefined,
         });
         text = transcribeResult.text;
       } else {
@@ -2575,12 +2970,15 @@
       transcribeOutput.innerHTML = "";
       const p = document.createElement("p");
       p.style.margin = "0";
-      p.textContent  = text;
+      p.textContent = text;
       transcribeOutput.appendChild(p);
       createReplyToolbar(transcribeOutput, {
-        modality: 'text', text,
-        dataUrl: null, srcUrl: null,
-        mimeType: 'text/plain', filename: 'transcript.txt'
+        modality: "text",
+        text,
+        dataUrl: null,
+        srcUrl: null,
+        mimeType: "text/plain",
+        filename: "transcript.txt",
       });
       addUsage(transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
       setUsageText(audioUsage, transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
@@ -2588,10 +2986,23 @@
       showError(transcribeOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -2656,15 +3067,15 @@
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
         const parsed = JSON.parse(trimmed);
-        const arr = Array.isArray(parsed)
-          ? parsed
-          : (parsed.shots || parsed.items || [parsed]);
+        const arr = Array.isArray(parsed) ? parsed : parsed.shots || parsed.items || [parsed];
         for (const entry of arr) {
           const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
           if (prompt) {
             const duration = resolveDuration(entry);
             items.push({
-              name: String(entry.name || entry.shot || entry.title || ("Shot " + (items.length + 1))).trim(),
+              name: String(
+                entry.name || entry.shot || entry.title || "Shot " + (items.length + 1),
+              ).trim(),
               prompt,
               modality: String(entry.modality || "video"),
               ...(duration !== undefined ? { duration } : {}),
@@ -2672,7 +3083,9 @@
           }
         }
         return items;
-      } catch (_) { /* fall through to JSONL */ }
+      } catch (_) {
+        /* fall through to JSONL */
+      }
     }
     // JSONL: one JSON object per line
     for (const line of trimmed.split("\n")) {
@@ -2684,13 +3097,15 @@
         if (prompt) {
           const duration = resolveDuration(entry);
           items.push({
-            name: String(entry.name || entry.shot || ("Shot " + (items.length + 1))).trim(),
+            name: String(entry.name || entry.shot || "Shot " + (items.length + 1)).trim(),
             prompt,
             modality: String(entry.modality || "video"),
             ...(duration !== undefined ? { duration } : {}),
           });
         }
-      } catch (_) { /* skip invalid lines */ }
+      } catch (_) {
+        /* skip invalid lines */
+      }
     }
     return items;
   }
@@ -2717,9 +3132,9 @@
   function parseMdFile(text) {
     const items = [];
     const lines = text.split("\n");
-    let currentName     = null;
+    let currentName = null;
     let currentModality = "video";
-    let promptLines     = [];
+    let promptLines = [];
 
     function flush() {
       if (!currentName) return;
@@ -2735,8 +3150,8 @@
       if (headingMatch) {
         flush();
         const rawHeading = headingMatch[1].trim();
-        currentModality  = parseHeadingModality(rawHeading);
-        currentName      = rawHeading.replace(MODALITY_TAG_RE, "").trim();
+        currentModality = parseHeadingModality(rawHeading);
+        currentName = rawHeading.replace(MODALITY_TAG_RE, "").trim();
       } else if (line) {
         // Skip horizontal rules and metadata
         if (/^---+$/.test(line) || /^\*\*[^*]+\*\*:/.test(line)) continue;
@@ -2783,6 +3198,24 @@
   /* ── BATCH UI HELPERS ─────────────────────────────────────── */
 
   let preflightAbortController = null;
+  const BATCH_PROVIDER_BLOCK_TITLE =
+    "One or more shots have unreachable image URLs or no available provider. " +
+    "Remove or fix them before running.";
+  const BATCH_PREFLIGHT_WARNING =
+    "Batch compatibility check unavailable. Server-side validation will still run.";
+
+  function showBatchPreflightWarning(message) {
+    if (!batchSummary) return;
+    let warningEl = batchSummary.querySelector(".batch-preflight-warning");
+    if (!warningEl) {
+      warningEl = document.createElement("p");
+      warningEl.className = "warn-box batch-preflight-warning";
+      warningEl.setAttribute("role", "status");
+      warningEl.setAttribute("aria-live", "polite");
+      batchSummary.appendChild(warningEl);
+    }
+    warningEl.textContent = message;
+  }
 
   async function fetchPreflightCostEstimate(count, model) {
     if (modeSelect.value !== "proxy") return null;
@@ -2790,14 +3223,16 @@
     preflightAbortController = new AbortController();
     try {
       const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-      const url  = `${base}/pricing?modality=video&model=${encodeURIComponent(model)}`;
-      const res  = await fetch(url, { signal: preflightAbortController.signal });
+      const url = `${base}/pricing?modality=video&model=${encodeURIComponent(model)}`;
+      const res = await fetch(url, { signal: preflightAbortController.signal });
       if (!res.ok) return null;
       const data = await res.json();
       const rate = data?.perVideoUsd ?? data?.pricePerUnit;
       if (typeof rate !== "number") return null;
       return { total: (rate * count).toFixed(6), rate: rate.toFixed(6), count };
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   function showBatchPreflight(items) {
@@ -2805,18 +3240,21 @@
     const staleEst = batchSummary.querySelector(".batch-estimate");
     if (staleEst) staleEst.remove();
 
+    btnBatchRun.dataset.providerBlocked = "false";
     batchPreflight.classList.remove("hidden");
     batchProgress.classList.add("hidden");
     batchResults.classList.add("hidden");
     batchSummary.innerHTML = "";
 
     if (!items.length) {
-      batchSummary.innerHTML = "<span style='color:var(--danger)'>No valid shots found in file.</span>";
-      btnBatchRun.disabled = true;
+      batchSummary.innerHTML =
+        "<span style='color:var(--danger)'>No valid shots found in file.</span>";
+      applyDurationValidation();
       return;
     }
 
-    if (items.some(it => !it._id)) console.warn('[showBatchPreflight] one or more items missing _id — check parse sites');
+    if (items.some((it) => !it._id))
+      console.warn("[showBatchPreflight] one or more items missing _id — check parse sites");
 
     const ul = document.createElement("ul");
     ul.className = "shot-preview-list";
@@ -2829,7 +3267,7 @@
       // Label + prompt excerpt (wrapped so the × button stays right-aligned)
       const labelSpan = document.createElement("span");
       labelSpan.className = "shot-preview-label";
-      labelSpan.textContent = (i + 1) + ". " + item.name;
+      labelSpan.textContent = i + 1 + ". " + item.name;
       const badge = document.createElement("span");
       badge.className = `modality-badge modality-badge--${modality}`;
       badge.textContent = modality;
@@ -2858,20 +3296,27 @@
       removeBtn.title = "Remove this shot from the batch";
       removeBtn.dataset.id = item._id;
       removeBtn.addEventListener("click", function () {
-        const id  = this.dataset.id;
-        const idx = batchItems.findIndex(x => x._id === id);
-        if (idx !== -1) { batchItems.splice(idx, 1); showBatchPreflight(batchItems); }
+        const id = this.dataset.id;
+        const idx = batchItems.findIndex((x) => x._id === id);
+        if (idx !== -1) {
+          batchItems.splice(idx, 1);
+          showBatchPreflight(batchItems);
+        }
       });
       li.appendChild(removeBtn);
 
       ul.appendChild(li);
     });
     const p = document.createElement("p");
-    p.innerHTML = "<strong>" + items.length + " shot" + (items.length !== 1 ? "s" : "") + "</strong> loaded and ready to process.";
+    p.innerHTML =
+      "<strong>" +
+      items.length +
+      " shot" +
+      (items.length !== 1 ? "s" : "") +
+      "</strong> loaded and ready to process.";
     batchSummary.appendChild(p);
     batchSummary.appendChild(ul);
-    btnBatchRun.disabled = false;
-    btnBatchRun.title = "";
+    applyDurationValidation();
 
     // Fire cost estimate non-blocking; append result when available
     const estimateModel = videoModelSelect.value || "";
@@ -2880,13 +3325,20 @@
       const estEl = document.createElement("p");
       estEl.className = "batch-estimate";
       estEl.textContent =
-        "Estimated cost: $" + est.total +
-        "  (" + est.count + " clips \xd7 $" + est.rate + " each, est.)";
+        "Estimated cost: $" +
+        est.total +
+        "  (" +
+        est.count +
+        " clips \xd7 $" +
+        est.rate +
+        " each, est.)";
       batchSummary.appendChild(estEl);
     });
 
     // Fire provider pre-flight checks non-blocking (D3: client-side selectI2VProvider, no round-trip)
-    runPreflightProviderChecks(items, ul).catch(() => { /* silently ignore if checks fail */ });
+    void runPreflightProviderChecks(items, ul).catch(() => {
+      showBatchPreflightWarning(BATCH_PREFLIGHT_WARNING);
+    });
   }
 
   /**
@@ -2902,7 +3354,7 @@
    */
   async function runPreflightProviderChecks(items, listEl) {
     const videoImageItems = items.filter(
-      item => (item.modality || "video") === "video" && item.images && item.images.length > 0,
+      (item) => (item.modality || "video") === "video" && item.images && item.images.length > 0,
     );
     if (!videoImageItems.length) return;
 
@@ -2915,10 +3367,14 @@
         if (resp.ok) {
           const all = await resp.json();
           liveProviders = all
-            .filter(p => p.active && Array.isArray(p.modalities) && p.modalities.includes("video"))
-            .map(p => p.id);
+            .filter(
+              (p) => p.active && Array.isArray(p.modalities) && p.modalities.includes("video"),
+            )
+            .map((p) => p.id);
         }
-      } catch { /* server unreachable — liveProviders remains [] */ }
+      } catch {
+        /* server unreachable — liveProviders remains [] */
+      }
     }
 
     // Dynamically import the ESM routing module (D3: mirrors server-side logic)
@@ -2926,7 +3382,10 @@
     try {
       const mod = await import("./smart-default.js");
       selectI2VProvider = mod.selectI2VProvider;
-    } catch { return; /* module unavailable — skip checks silently */ }
+    } catch {
+      showBatchPreflightWarning(BATCH_PREFLIGHT_WARNING);
+      return; /* module unavailable — skip checks with a visible warning */
+    }
 
     // Determine the provider currently selected in the video-tab UI
     const selectedProvider =
@@ -2937,64 +3396,78 @@
     let hasBlockingError = false;
 
     // Check all items in parallel for speed
-    await Promise.all(videoImageItems.map(async (item) => {
-      const urls = item.images;
+    await Promise.all(
+      videoImageItems.map(async (item) => {
+        const urls = item.images;
 
-      // HTTP HEAD checks — parallel per URL, 5 s timeout each
-      const headResults = await Promise.all(urls.map(async (url) => {
-        try {
-          const ac = new AbortController();
-          const timer = setTimeout(() => ac.abort(), 5000);
-          const r = await fetch(url, { method: "HEAD", signal: ac.signal });
-          clearTimeout(timer);
-          return r.ok;
-        } catch { return false; }
-      }));
-      const allUrlsOk = headResults.every(Boolean);
-      const firstBadIdx = headResults.findIndex(ok => !ok);
+        // HTTP HEAD checks — parallel per URL, 5 s timeout each
+        const headResults = await Promise.all(
+          urls.map(async (url) => {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), 5000);
+            try {
+              const r = await fetch(url, { method: "HEAD", signal: ac.signal });
+              return r.ok;
+            } catch {
+              return false;
+            } finally {
+              clearTimeout(timer);
+            }
+          }),
+        );
+        const allUrlsOk = headResults.every(Boolean);
+        const firstBadIdx = headResults.findIndex((ok) => !ok);
 
-      // Routing decision from client-side selectI2VProvider
-      const routing = selectI2VProvider(selectedProvider, urls.length, liveProviders);
-      const noLiveProvider = !liveProviders.length;
+        // Routing decision from client-side selectI2VProvider
+        const routing = selectI2VProvider(selectedProvider, urls.length, liveProviders);
+        const noLiveProvider = !liveProviders.length;
 
-      // Derive icon + tooltip
-      let icon, title, isBlocker = false;
-      if (!allUrlsOk) {
-        icon = "❌"; isBlocker = true;
-        title = "Image URL unreachable: " + urls[firstBadIdx];
-      } else if (noLiveProvider && urls.length > 0) {
-        icon = "❌"; isBlocker = true;
-        title = "No live video provider available — start the proxy with a valid API key";
-      } else if (routing.warning) {
-        icon = "⚠️";
-        title = routing.warning;
-        if (routing.alternativeProviders && routing.alternativeProviders.length) {
-          title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+        // Derive icon + tooltip
+        let icon,
+          title,
+          isBlocker = false;
+        if (!allUrlsOk) {
+          icon = "❌";
+          isBlocker = true;
+          title = "Image URL unreachable: " + urls[firstBadIdx];
+        } else if (noLiveProvider && urls.length > 0) {
+          icon = "❌";
+          isBlocker = true;
+          title = "No live video provider available — start the proxy with a valid API key";
+        } else if (routing.warning) {
+          icon = "⚠️";
+          title = routing.warning;
+          if (routing.alternativeProviders && routing.alternativeProviders.length) {
+            title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+          }
+        } else {
+          icon = "✅";
+          title = "Provider: " + routing.provider + " · " + urls.length + " image(s) accepted";
         }
-      } else {
-        icon = "✅";
-        title = "Provider: " + routing.provider + " · " + urls.length + " image(s) accepted";
-      }
 
-      if (isBlocker) hasBlockingError = true;
+        if (isBlocker) hasBlockingError = true;
 
-      // Update the status icon element already in the DOM
-      const statusEl = listEl.querySelector('.shot-preflight-status[data-shot-id="' + item._id + '"]');
-      if (statusEl) {
-        statusEl.textContent = icon;
-        statusEl.title = title;
-        statusEl.style.color = isBlocker
-          ? "var(--danger, #b91c1c)"
-          : (icon === "⚠️" ? "var(--amber, #d97706)" : "");
-      }
-    }));
+        // Update the status icon element already in the DOM
+        const statusEl = listEl.querySelector(
+          '.shot-preflight-status[data-shot-id="' + item._id + '"]',
+        );
+        if (statusEl) {
+          statusEl.textContent = icon;
+          statusEl.title = title;
+          statusEl.style.color = isBlocker
+            ? "var(--danger, #b91c1c)"
+            : icon === "⚠️"
+              ? "var(--amber, #d97706)"
+              : "";
+        }
+      }),
+    );
 
     // Disable the Run button when any shot has a hard error (AC-15)
     if (hasBlockingError) {
-      btnBatchRun.disabled = true;
-      btnBatchRun.title =
-        "One or more shots have unreachable image URLs or no available provider. " +
-        "Remove or fix them before running.";
+      btnBatchRun.dataset.providerBlocked = "true";
+      btnBatchRun.title = BATCH_PROVIDER_BLOCK_TITLE;
+      syncBatchRunButtonState();
     }
   }
 
@@ -3008,15 +3481,16 @@
     batchResults.classList.add("hidden");
     batchShots.innerHTML = "";
     batchSummary.innerHTML = "";
-    btnBatchRun.disabled = true;
+    btnBatchRun.dataset.providerBlocked = "false";
+    syncBatchRunButtonState();
 
     // ── Combined video reset (AC-19) ─────────────────────────
-    combinedVideoBlob    = null;
+    combinedVideoBlob = null;
     combinedVideoDataUri = null;
-    if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
-    if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
+    if (btnDownloadCombined) btnDownloadCombined.hidden = true;
+    if (combinedVideoPlayer) combinedVideoPlayer.src = "";
     if (combinedVideoSection) combinedVideoSection.hidden = true;
-    if (combinedVideoStatus)  combinedVideoStatus.textContent = "";
+    if (combinedVideoStatus) combinedVideoStatus.textContent = "";
   }
 
   /* ── DROP ZONE WIRE-UP ────────────────────────────────────── */
@@ -3036,10 +3510,13 @@
     batchFilename.textContent = file.name;
     try {
       batchItems = await loadBatchFile(file);
-      batchItems.forEach(item => { item._id = item._id ?? crypto.randomUUID(); });
+      batchItems.forEach((item) => {
+        item._id = item._id ?? crypto.randomUUID();
+      });
       showBatchPreflight(batchItems);
     } catch (err) {
-      batchSummary.innerHTML = "<span style='color:var(--danger)'>Parse error: " + (err.message || err) + "</span>";
+      batchSummary.innerHTML =
+        "<span style='color:var(--danger)'>Parse error: " + (err.message || err) + "</span>";
       batchPreflight.classList.remove("hidden");
     }
   });
@@ -3049,10 +3526,13 @@
     batchFilename.textContent = file.name;
     try {
       batchItems = await loadBatchFile(file);
-      batchItems.forEach(item => { item._id = item._id ?? crypto.randomUUID(); });
+      batchItems.forEach((item) => {
+        item._id = item._id ?? crypto.randomUUID();
+      });
       showBatchPreflight(batchItems);
     } catch (err) {
-      batchSummary.innerHTML = "<span style='color:var(--danger)'>Parse error: " + (err.message || err) + "</span>";
+      batchSummary.innerHTML =
+        "<span style='color:var(--danger)'>Parse error: " + (err.message || err) + "</span>";
       batchPreflight.classList.remove("hidden");
     }
   });
@@ -3074,7 +3554,7 @@
     hdr.className = "shot-card-header";
     const title = document.createElement("span");
     title.className = "shot-card-title";
-    title.textContent = (result.name || ("Shot " + (result.index + 1)));
+    title.textContent = result.name || "Shot " + (result.index + 1);
     const meta = document.createElement("span");
     meta.className = "shot-card-meta";
     meta.textContent = result.status === "ok" ? "✓ Generated" : "✗ Error";
@@ -3100,11 +3580,11 @@
       if (isStubVideoData(result.result.data)) {
         // Stub data from mock provider — generate a real playable preview via Canvas
         const spinEl = document.createElement("span");
-        spinEl.className   = "spinner-msg";
+        spinEl.className = "spinner-msg";
         spinEl.textContent = "Encoding preview…";
         body.appendChild(spinEl);
 
-        const shotName = result.name || ("shot-" + result.index);
+        const shotName = result.name || "shot-" + result.index;
         generatePlaceholderVideoBlob(result.prompt || shotName, 2000)
           .then(function (blob) {
             const url = URL.createObjectURL(blob);
@@ -3117,8 +3597,8 @@
       } else {
         // Real provider data — use it directly
         const blob = dataUriToBlob(result.result.data);
-        const url  = URL.createObjectURL(blob);
-        const shotName = result.name || ("shot-" + result.index);
+        const url = URL.createObjectURL(blob);
+        const shotName = result.name || "shot-" + result.index;
         appendShotVideo(body, url, blob, shotName, "mp4");
       }
     } else if (result.status === "ok") {
@@ -3139,7 +3619,12 @@
     // ── Routing metadata (from NDJSON routingMeta fields added by the batch handler) ──
     // These fields are only present when provider selection differed from the request
     // or when routing produced a warning / informational note (D6: absent ≠ null).
-    if (result.providerUsed || result.warning || result.info || result.alternativeProviders?.length) {
+    if (
+      result.providerUsed ||
+      result.warning ||
+      result.info ||
+      result.alternativeProviders?.length
+    ) {
       const metaSection = document.createElement("div");
       metaSection.className = "shot-routing-meta";
       metaSection.style.cssText =
@@ -3171,8 +3656,7 @@
         const row = document.createElement("p");
         row.style.margin = "0";
         row.innerHTML =
-          "<strong>Alternatives:</strong> " +
-          result.alternativeProviders.map(escHtml).join(", ");
+          "<strong>Alternatives:</strong> " + result.alternativeProviders.map(escHtml).join(", ");
         metaSection.appendChild(row);
       }
 
@@ -3196,13 +3680,15 @@
    * @returns {Promise<string>}
    */
   async function buildResultsHtmlAsync(results) {
-    const totalCost = results.reduce((sum, r) =>
-      sum + (typeof r.result?.cost?.totalUsd === "number" ? r.result.cost.totalUsd : 0), 0);
+    const totalCost = results.reduce(
+      (sum, r) => sum + (typeof r.result?.cost?.totalUsd === "number" ? r.result.cost.totalUsd : 0),
+      0,
+    );
     const costSegment = totalCost > 0 ? " · Total cost: $" + totalCost.toFixed(6) : "";
 
     // Optional combined-video section (AC-14 / REQ-BCV-08)
     const okVideoCount = results.filter(
-      (r) => r.status === "ok" && r.modality === "video" && r.result?.data
+      (r) => r.status === "ok" && r.modality === "video" && r.result?.data,
     ).length;
     const combinedSection = combinedVideoDataUri
       ? `<div style="margin-bottom:1.5rem;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
@@ -3215,19 +3701,22 @@
 </div>`
       : "";
 
-    const shotCards = results.map((r) => {
-      const videoTag = (r.status === "ok" && r.modality === "video" && r.result?.data)
-        ? `<video controls style="width:100%;max-height:360px;display:block;background:#000" src="${r.result.data}"></video>`
-        : (r.status === "error"
-          ? `<p style="color:#b91c1c;font-weight:500">Error: ${escHtml(r.error || "")}</p>`
-          : `<p style="color:#64748b">Generated (no binary preview)</p>`);
-      const costBadge = (r.status === "ok" && typeof r.result?.cost?.totalUsd === "number")
-        ? `<span class="shot-cost-badge">$${r.result.cost.totalUsd.toFixed(6)}</span>`
-        : "";
-      return `
+    const shotCards = results
+      .map((r) => {
+        const videoTag =
+          r.status === "ok" && r.modality === "video" && r.result?.data
+            ? `<video controls style="width:100%;max-height:360px;display:block;background:#000" src="${r.result.data}"></video>`
+            : r.status === "error"
+              ? `<p style="color:#b91c1c;font-weight:500">Error: ${escHtml(r.error || "")}</p>`
+              : `<p style="color:#64748b">Generated (no binary preview)</p>`;
+        const costBadge =
+          r.status === "ok" && typeof r.result?.cost?.totalUsd === "number"
+            ? `<span class="shot-cost-badge">$${r.result.cost.totalUsd.toFixed(6)}</span>`
+            : "";
+        return `
     <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:1rem">
       <div style="display:flex;justify-content:space-between;padding:.5rem .75rem;background:#fff;border-bottom:1px solid #e2e8f0">
-        <strong style="font-size:.85rem">${escHtml(r.name || ("Shot " + (r.index + 1)))}</strong>
+        <strong style="font-size:.85rem">${escHtml(r.name || "Shot " + (r.index + 1))}</strong>
         <span style="font-size:.75rem;color:${r.status === "ok" ? "#16a34a" : "#b91c1c"}">${r.status === "ok" ? "✓ Generated" : "✗ Error"}</span>${costBadge}
       </div>
       <div style="padding:.6rem .75rem;background:#f8fafc">
@@ -3235,7 +3724,8 @@
         ${videoTag}
       </div>
     </div>`;
-    }).join("\n");
+      })
+      .join("\n");
 
     return `<!doctype html>
 <html lang="en">
@@ -3255,7 +3745,11 @@ ${combinedSection}${shotCards}
   }
 
   function escHtml(str) {
-    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
   /* ── DOWNLOAD HANDLERS ────────────────────────────────────── */
@@ -3263,12 +3757,12 @@ ${combinedSection}${shotCards}
   btnDownloadResults.addEventListener("click", async () => {
     if (!batchResultItems.length) return;
     // buildResultsHtmlAsync is async (AC-14 / REQ-BCV-08): must be awaited.
-    const html  = await buildResultsHtmlAsync(batchResultItems);
-    const blob  = new Blob([html], { type: "text/html" });
-    const url   = URL.createObjectURL(blob);
-    const a     = document.createElement("a");
-    a.href      = url;
-    a.download  = "batch-results.html";
+    const html = await buildResultsHtmlAsync(batchResultItems);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "batch-results.html";
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -3294,9 +3788,9 @@ ${combinedSection}${shotCards}
       for (const r of batchResultItems) {
         if (r.status !== "ok" || r.modality !== "video" || !r.result?.data) continue;
         // Strip data-URI prefix if present; add raw bytes to avoid double-encoding.
-        const b64  = r.result.data.replace(/^data:[^,]+,/, "");
+        const b64 = r.result.data.replace(/^data:[^,]+,/, "");
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const filename = (r.name || ("shot-" + r.index)).replace(/[^a-z0-9_\-]/gi, "_") + ".mp4";
+        const filename = (r.name || "shot-" + r.index).replace(/[^a-z0-9_\-]/gi, "_") + ".mp4";
         zip.file(filename, bytes);
       }
 
@@ -3310,8 +3804,8 @@ ${combinedSection}${shotCards}
       zip.file("results.html", await buildResultsHtmlAsync(batchResultItems));
 
       const blob = await zip.generateAsync({ type: "blob" });
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement("a"), {
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement("a"), {
         href: url,
         download: "batch-videos.zip",
       });
@@ -3328,8 +3822,8 @@ ${combinedSection}${shotCards}
     btnDownloadCombined.addEventListener("click", () => {
       if (!combinedVideoBlob) return;
       const url = URL.createObjectURL(combinedVideoBlob);
-      const a   = Object.assign(document.createElement("a"), {
-        href:     url,
+      const a = Object.assign(document.createElement("a"), {
+        href: url,
         download: "combined-video.mp4",
       });
       a.click();
@@ -3360,20 +3854,20 @@ ${combinedSection}${shotCards}
     // Requires ≥ 2 successful video clips — if not, hide section and return
     // immediately without making any network request (REQ-SC-02, Example B).
     const clips = (resultItems || []).filter(
-      (r) => r.status === "ok" && r.modality === "video" && r.result?.data
+      (r) => r.status === "ok" && r.modality === "video" && r.result?.data,
     );
     if (clips.length < 2) {
-      if (combinedVideoStatus)  combinedVideoStatus.textContent = "";
+      if (combinedVideoStatus) combinedVideoStatus.textContent = "";
       if (combinedVideoSection) combinedVideoSection.hidden = true;
-      if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+      if (btnDownloadCombined) btnDownloadCombined.hidden = true;
       return null;
     }
 
     // ── UI prep: show section, clear player, set initial status ─
     if (combinedVideoSection) combinedVideoSection.hidden = false;
-    if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
-    if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
-    if (combinedVideoStatus)  combinedVideoStatus.textContent = "Sending clips to server\u2026";
+    if (combinedVideoPlayer) combinedVideoPlayer.src = "";
+    if (btnDownloadCombined) btnDownloadCombined.hidden = true;
+    if (combinedVideoStatus) combinedVideoStatus.textContent = "Sending clips to server\u2026";
 
     // ── Read proxy base URL (REQ-SC-04) ──────────────────────
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
@@ -3384,49 +3878,47 @@ ${combinedSection}${shotCards}
       // Build ordered array of data URIs from valid clips.
       const clipDataUris = clips.map((r) => r.result.data);
       if (combinedVideoStatus)
-        combinedVideoStatus.textContent =
-          "Stitching on server (" + clips.length + " clips)\u2026";
+        combinedVideoStatus.textContent = "Stitching on server (" + clips.length + " clips)\u2026";
       // POST /stitch with ordered clip data URIs (REQ-SC-02, AC-09)
       const resp = await fetch(base + "/stitch", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ clips: clipDataUris }),
+        body: JSON.stringify({ clips: clipDataUris }),
       });
 
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
-        const base   = errBody.error || resp.statusText;
-        const detail = Array.isArray(errBody.issues) && errBody.issues.length
-          ? " \u2014 " + errBody.issues.join("; ")
-          : "";
-        throw new Error(
-          "Server stitch failed (" + resp.status + "): " + base + detail
-        );
+        const base = errBody.error || resp.statusText;
+        const detail =
+          Array.isArray(errBody.issues) && errBody.issues.length
+            ? " \u2014 " + errBody.issues.join("; ")
+            : "";
+        throw new Error("Server stitch failed (" + resp.status + "): " + base + detail);
       }
 
       const json = await resp.json();
       if (!json.data) throw new Error("Server returned no data URI for combined video.");
 
       // Decode base64 data URI → Blob (avoids storing two copies in memory)
-      const b64   = json.data.replace(/^data:[^,]+,/, "");
+      const b64 = json.data.replace(/^data:[^,]+,/, "");
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const blob  = new Blob([bytes], { type: "video/mp4" });
-      const sizeMB = json.sizeMB ?? Math.round(blob.size / (1024 * 1024) * 10) / 10;
+      const blob = new Blob([bytes], { type: "video/mp4" });
+      const sizeMB = json.sizeMB ?? Math.round((blob.size / (1024 * 1024)) * 10) / 10;
 
       // Cache blobs + update UI (REQ-SC-06: null-guard all DOM refs)
-      combinedVideoBlob    = blob;
+      combinedVideoBlob = blob;
       combinedVideoDataUri = json.data;
       const url = URL.createObjectURL(blob);
-      if (combinedVideoPlayer)  combinedVideoPlayer.src    = url;
-      if (btnDownloadCombined)  btnDownloadCombined.hidden = false;
-      if (combinedVideoStatus)  combinedVideoStatus.textContent = "Ready \u00b7 " + sizeMB + " MB";
+      if (combinedVideoPlayer) combinedVideoPlayer.src = url;
+      if (btnDownloadCombined) btnDownloadCombined.hidden = false;
+      if (combinedVideoStatus) combinedVideoStatus.textContent = "Ready \u00b7 " + sizeMB + " MB";
 
       return blob;
     } catch (err) {
       console.error("[stitchVideos] Stitch failed:", err);
       if (combinedVideoStatus)
         combinedVideoStatus.textContent = "Stitch failed: " + (err.message || String(err));
-      combinedVideoBlob    = null;
+      combinedVideoBlob = null;
       combinedVideoDataUri = null;
       if (btnDownloadCombined) btnDownloadCombined.hidden = true;
       return null;
@@ -3486,28 +3978,38 @@ ${combinedSection}${shotCards}
   let batchDurationError = null;
   const batchDurationHint = document.createElement("span");
   batchDurationHint.className = "field-error-hint";
-  batchDurationHint.style.cssText = "color:var(--danger);font-size:0.85em;display:block;min-height:1.2em";
+  batchDurationHint.style.cssText =
+    "color:var(--danger);font-size:0.85em;display:block;min-height:1.2em";
   if (batchDurationEl && batchDurationEl.parentNode) {
     batchDurationEl.parentNode.insertBefore(batchDurationHint, batchDurationEl.nextSibling);
+  }
+
+  batchDurationHint.id = "batch-duration-hint";
+  batchDurationHint.setAttribute("role", "status");
+  batchDurationHint.setAttribute("aria-live", "polite");
+  batchDurationHint.setAttribute("aria-atomic", "true");
+  if (batchDurationEl) {
+    batchDurationEl.setAttribute("aria-describedby", batchDurationHint.id);
+  }
+
+  function syncBatchRunButtonState() {
+    const providerBlocked = btnBatchRun.dataset.providerBlocked === "true";
+    btnBatchRun.disabled =
+      batchItems.length === 0 || batchDurationError !== null || providerBlocked;
+    if (!providerBlocked) {
+      btnBatchRun.title = "";
+    }
   }
 
   function applyDurationValidation() {
     batchDurationError = batchDurationEl?.value ? validateDuration(batchDurationEl.value) : null;
     batchDurationHint.textContent = batchDurationError || "";
-    // Disable Run button while duration input is present but invalid
-    if (batchDurationEl?.value && batchDurationError !== null) {
-      btnBatchRun.disabled = true;
-    } else if (!batchDurationError) {
-      // Only re-enable if no other condition is disabling it (items loaded)
-      if (batchItems.length > 0) {
-        btnBatchRun.disabled = false;
-      }
-    }
+    syncBatchRunButtonState();
   }
 
   if (batchDurationEl) {
     batchDurationEl.addEventListener("change", applyDurationValidation);
-    batchDurationEl.addEventListener("blur",   applyDurationValidation);
+    batchDurationEl.addEventListener("blur", applyDurationValidation);
   }
 
   /* ── BATCH RUNNER ─────────────────────────────────────────── */
@@ -3531,20 +4033,20 @@ ${combinedSection}${shotCards}
     batchShots.innerHTML = "";
 
     // Reset combined video state before each new run (AC-11, REQ-BCV-06)
-    combinedVideoBlob    = null;
+    combinedVideoBlob = null;
     combinedVideoDataUri = null;
-    if (btnDownloadCombined)  btnDownloadCombined.hidden  = true;
+    if (btnDownloadCombined) btnDownloadCombined.hidden = true;
     if (combinedVideoSection) combinedVideoSection.hidden = true;
-    if (combinedVideoStatus)  combinedVideoStatus.textContent = "";
-    if (combinedVideoPlayer)  combinedVideoPlayer.src     = "";
+    if (combinedVideoStatus) combinedVideoStatus.textContent = "";
+    if (combinedVideoPlayer) combinedVideoPlayer.src = "";
 
     // Switch to progress view
     batchPreflight.classList.add("hidden");
     batchProgress.classList.remove("hidden");
     batchResults.classList.add("hidden");
     batchProgressLabel.textContent = "Processing…";
-    batchProgressCtr.textContent   = "0 / " + total;
-    batchProgressBar.style.width   = "0%";
+    batchProgressCtr.textContent = "0 / " + total;
+    batchProgressBar.style.width = "0%";
     batchProgressBar.classList.remove("progress-bar--error");
     batchCostTally.classList.add("hidden");
 
@@ -3555,17 +4057,15 @@ ${combinedSection}${shotCards}
 
     // Batch constraint defaults — read once and spread into every item
     const batchAspectRatio = batchAspectRatioEl?.value || undefined;
-    const batchResolution  = batchResolutionEl?.value  || undefined;
-    const batchQuality     = batchQualityEl?.value     || undefined;
-    const batchDuration    = batchDurationEl?.value
+    const batchResolution = batchResolutionEl?.value || undefined;
+    const batchQuality = batchQualityEl?.value || undefined;
+    const batchDuration = batchDurationEl?.value
       ? parseFloat(batchDurationEl.value) || undefined
       : undefined;
-    const batchFps         = batchFpsEl?.value
-      ? parseInt(batchFpsEl.value, 10) || undefined
-      : undefined;
+    const batchFps = batchFpsEl?.value ? parseInt(batchFpsEl.value, 10) || undefined : undefined;
 
     // Last-line-of-defense guard — spec: filmbuff/docs/specs/batch-shot-list-spec.md v1.0.0 §2
-    const safeItems = batchItems.map(item => ({
+    const safeItems = batchItems.map((item) => ({
       ...item,
       ...(item.duration !== undefined
         ? { duration: Math.round(item.duration) } // spec: batch-shot-list-spec.md v1.0.0 §2
@@ -3576,25 +4076,25 @@ ${combinedSection}${shotCards}
       items: safeItems.map((item) => ({
         // Identity fields — always from the shot item
         modality: item.modality || "video",
-        name:     item.name,
-        prompt:   item.prompt,
+        name: item.name,
+        prompt: item.prompt,
         // Connection overrides — from UI globals
         ...(provider ? { provider } : {}),
-        ...(model    ? { model }    : {}),
+        ...(model ? { model } : {}),
         // Global batch constraint defaults (lowest precedence)
         ...(batchAspectRatio ? { aspectRatio: batchAspectRatio } : {}),
-        ...(batchResolution  ? { resolution:  batchResolution  } : {}),
-        ...(batchQuality     ? { quality:     batchQuality     } : {}),
-        ...(batchDuration    ? { duration:    batchDuration    } : {}),
-        ...(batchFps         ? { fps:         batchFps         } : {}),
+        ...(batchResolution ? { resolution: batchResolution } : {}),
+        ...(batchQuality ? { quality: batchQuality } : {}),
+        ...(batchDuration ? { duration: batchDuration } : {}),
+        ...(batchFps ? { fps: batchFps } : {}),
         // Per-shot values override globals — applied last so they always win
         ...(item.aspectRatio !== undefined ? { aspectRatio: item.aspectRatio } : {}),
-        ...(item.resolution  !== undefined ? { resolution:  item.resolution  } : {}),
-        ...(item.quality     !== undefined ? { quality:     item.quality     } : {}),
-        ...(item.duration    !== undefined ? { duration:    item.duration    } : {}),
-        ...(item.fps         !== undefined ? { fps:         item.fps         } : {}),
-        ...(item.width       !== undefined ? { width:       item.width       } : {}),
-        ...(item.height      !== undefined ? { height:      item.height      } : {}),
+        ...(item.resolution !== undefined ? { resolution: item.resolution } : {}),
+        ...(item.quality !== undefined ? { quality: item.quality } : {}),
+        ...(item.duration !== undefined ? { duration: item.duration } : {}),
+        ...(item.fps !== undefined ? { fps: item.fps } : {}),
+        ...(item.width !== undefined ? { width: item.width } : {}),
+        ...(item.height !== undefined ? { height: item.height } : {}),
         // Image URLs for I2V routing — passed through verbatim; server trims to effectiveImageCount
         ...(item.images && item.images.length ? { images: item.images } : {}),
       })),
@@ -3610,14 +4110,17 @@ ${combinedSection}${shotCards}
 
       if (!resp.ok) {
         let msg = resp.statusText;
-        try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
+        try {
+          const j = await resp.json();
+          msg = j.error || msg;
+        } catch (_) {}
         throw new Error("HTTP " + resp.status + ": " + msg);
       }
 
       // Read NDJSON stream
       const reader = resp.body.getReader();
-      const dec    = new TextDecoder();
-      let buf      = "";
+      const dec = new TextDecoder();
+      let buf = "";
       // Show results panel immediately so cards populate live
       batchResults.classList.remove("hidden");
 
@@ -3643,10 +4146,12 @@ ${combinedSection}${shotCards}
             }
             done_count++;
             const pct = Math.round((done_count / total) * 100);
-            batchProgressBar.style.width   = pct + "%";
-            batchProgressCtr.textContent   = done_count + " / " + total;
+            batchProgressBar.style.width = pct + "%";
+            batchProgressCtr.textContent = done_count + " / " + total;
             batchProgressLabel.textContent = done_count < total ? "Processing…" : "Complete!";
-          } catch (_) { malformedCount++; }
+          } catch (_) {
+            malformedCount++;
+          }
         }
       }
       // Handle any trailing data in buffer
@@ -3665,11 +4170,12 @@ ${combinedSection}${shotCards}
         } catch (_) {}
       }
 
-      batchProgressLabel.textContent = "Complete — " + batchResultItems.length + " of " + total + " processed";
+      batchProgressLabel.textContent =
+        "Complete — " + batchResultItems.length + " of " + total + " processed";
       if (malformedCount > 0) {
         batchProgressLabel.textContent += ` · ⚠ ${malformedCount} malformed line(s) skipped`;
       }
-      batchProgressBar.style.width   = "100%";
+      batchProgressBar.style.width = "100%";
       if (batchCost > 0) {
         batchCostTally.classList.remove("hidden");
         batchCostTally.textContent = "Total batch cost: $" + batchCost.toFixed(6);
@@ -3677,7 +4183,7 @@ ${combinedSection}${shotCards}
 
       // ── Stitch combined video (REQ-BCV-06, REQ-BCV-07, AC-11,12,16,17,18) ─
       const successCount = batchResultItems.filter(
-        (r) => r.status === "ok" && r.modality === "video" && r.result?.data
+        (r) => r.status === "ok" && r.modality === "video" && r.result?.data,
       ).length;
 
       if (successCount >= 2) {
@@ -3694,8 +4200,11 @@ ${combinedSection}${shotCards}
             });
             if (combinedVideoStatus) {
               combinedVideoStatus.textContent =
-                "✓ " + successCount + " shots stitched · " +
-                Math.round(stitchedBlob.size / (1024 * 1024) * 10) / 10 + " MB";
+                "✓ " +
+                successCount +
+                " shots stitched · " +
+                Math.round((stitchedBlob.size / (1024 * 1024)) * 10) / 10 +
+                " MB";
             }
             if (btnDownloadCombined) btnDownloadCombined.hidden = false;
           }
@@ -3711,14 +4220,25 @@ ${combinedSection}${shotCards}
       // successCount < 2: section + button remain hidden (AC-17)
     } catch (err) {
       if (err.name === "AbortError") {
-        batchProgressLabel.textContent =
-          `Cancelled — ${done_count} of ${total} processed`;
+        batchProgressLabel.textContent = `Cancelled — ${done_count} of ${total} processed`;
       } else {
         if (err instanceof ProxyError) {
           switch (err.statusCode) {
-            case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-            case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-            case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
+            case 402:
+              showGlobalError(
+                "Budget exceeded — increase your budget in Settings or stop generating.",
+                "warning",
+              );
+              break;
+            case 429:
+              showGlobalError("Rate limited — wait a moment before retrying.", "info");
+              break;
+            case 503:
+              showGlobalError(
+                "All AI providers are unavailable — wait a few minutes before retrying.",
+                "warning",
+              );
+              break;
             default: {
               const rawMsg = err.message || String(err);
               const friendlyMsg = formatVideoApiError(rawMsg, done_count);
@@ -3736,8 +4256,7 @@ ${combinedSection}${shotCards}
         batchProgress.classList.remove("hidden");
       }
     } finally {
-      // Re-enable Run only when there is no active duration-validation error
-      btnBatchRun.disabled = batchDurationError !== null;
+      syncBatchRunButtonState();
       btnCancelBatch.style.display = "none";
     }
   }
@@ -3770,13 +4289,17 @@ ${combinedSection}${shotCards}
     // Guard 3: Luma AI image-to-video requires PROXY_PUBLIC_BASE_URL to be set.
     // Fail fast before the API call so the user gets an actionable message immediately.
     const _videoProvider = videoProviderSelect?.value || "";
-    if (_videoProvider === "lumaai" && videoFileRefs.length > 0 && serverLumaImageToVideoEnabled === false) {
+    if (
+      _videoProvider === "lumaai" &&
+      videoFileRefs.length > 0 &&
+      serverLumaImageToVideoEnabled === false
+    ) {
       showError(
         videoOutput,
         new Error(
           "Luma AI image-to-video requires a public tunnel.\n" +
-          "Restart the proxy with:  .\\scripts\\cycle-service.ps1 -Ngrok\n" +
-          "Or set PROXY_PUBLIC_BASE_URL to your server's public address before starting.",
+            "Restart the proxy with:  .\\scripts\\cycle-service.ps1 -Ngrok\n" +
+            "Or set PROXY_PUBLIC_BASE_URL to your server's public address before starting.",
         ),
       );
       return;
@@ -3791,22 +4314,22 @@ ${combinedSection}${shotCards}
       // handler is robust even if a control element is missing from the DOM).
       const videoOptions = {};
       const ar = videoAspectRatio?.value;
-      if (ar)   videoOptions.aspectRatio = ar;
+      if (ar) videoOptions.aspectRatio = ar;
       const vidRes = videoResolution?.value;
-      if (vidRes)  videoOptions.resolution  = vidRes;
+      if (vidRes) videoOptions.resolution = vidRes;
       const qual = videoQuality?.value;
-      if (qual) videoOptions.quality     = qual;
+      if (qual) videoOptions.quality = qual;
       const dur = Number(videoDuration?.value);
       if (dur > 0) videoOptions.duration = dur;
       const fpsVal = Number(videoFps?.value);
-      if (fpsVal > 0) videoOptions.fps   = fpsVal;
+      if (fpsVal > 0) videoOptions.fps = fpsVal;
 
       // TASK-12: Read provider + model from tabState["video"] so the correct
       // provider (e.g. Luma AI) is forwarded to the proxy (REQ-PM-01, S-09).
       // tabState is the single source of truth — direct DOM reads removed.
       const { provider: videoProvider, model: videoModel } = tabState.get("video") ?? {};
       if (videoProvider) videoOptions.provider = videoProvider;
-      if (videoModel)    videoOptions.model    = videoModel;
+      if (videoModel) videoOptions.model = videoModel;
       // Attach the uploaded image references for image-to-video generation.
       if (videoFileRefs.length === 1) {
         videoOptions.fileRef = videoFileRefs[0];
@@ -3844,12 +4367,14 @@ ${combinedSection}${shotCards}
         videoOutput.innerHTML = "";
         const video = document.createElement("video");
         video.className = "output-video";
-        video.controls  = true;
-        video.src       = url;
+        video.controls = true;
+        video.src = url;
         videoOutput.appendChild(video);
         addUsage(null, null);
         setUsageText(videoUsage, null, null);
-        if (videoUsage) videoUsage.textContent = "Video · " + Math.round(placeholderBlob.size / 1024) + " KB (preview)";
+        if (videoUsage)
+          videoUsage.textContent =
+            "Video · " + Math.round(placeholderBlob.size / 1024) + " KB (preview)";
         return;
       }
 
@@ -3857,14 +4382,16 @@ ${combinedSection}${shotCards}
       videoOutput.innerHTML = "";
       const video = document.createElement("video");
       video.className = "output-video";
-      video.controls  = true;
-      video.src       = url;
+      video.controls = true;
+      video.src = url;
       videoOutput.appendChild(video);
       createReplyToolbar(videoOutput, {
-        modality: 'video', text: null,
+        modality: "video",
+        text: null,
         dataUrl: videoResult?.data ?? null,
         srcUrl: videoResult?.url ?? null,
-        mimeType: 'video/mp4', filename: 'ai-video.mp4'
+        mimeType: "video/mp4",
+        filename: "ai-video.mp4",
       });
       addUsage(videoResult?.usage ?? null, videoResult?.cost ?? null);
       setUsageText(videoUsage, videoResult?.usage ?? null, videoResult?.cost ?? null);
@@ -3873,10 +4400,23 @@ ${combinedSection}${shotCards}
       showError(videoOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -3903,27 +4443,40 @@ ${combinedSection}${shotCards}
         result = await proxyPost("/structured", {
           prompt,
           provider: structProvider || undefined,
-          model:    structModel    || undefined,
+          model: structModel || undefined,
         });
       } else {
         result = await getClient().generateStructured(prompt);
       }
       renderJson(structuredOutput, result.data);
       addUsage(result?.usage ?? null, result?.cost ?? null);
-      const providerModel = "Provider: " + (result.provider || "—") + " · Model: " + (result.model || "—");
+      const providerModel =
+        "Provider: " + (result.provider || "—") + " · Model: " + (result.model || "—");
       setUsageText(structuredUsage, result?.usage ?? null, result?.cost ?? null);
-      structuredUsage.textContent = (structuredUsage.textContent
-        ? structuredUsage.textContent + " · "
-        : "") + providerModel;
+      structuredUsage.textContent =
+        (structuredUsage.textContent ? structuredUsage.textContent + " · " : "") + providerModel;
     } catch (err) {
       structuredOutput.classList.remove("json-output");
       showError(structuredOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
-          case 402: showGlobalError("Budget exceeded — increase your budget in Settings or stop generating.", "warning"); break;
-          case 429: showGlobalError("Rate limited — wait a moment before retrying.", "info"); break;
-          case 503: showGlobalError("All AI providers are unavailable — wait a few minutes before retrying.", "warning"); break;
-          default:  showGlobalError(`${err.message}`, "error");
+          case 402:
+            showGlobalError(
+              "Budget exceeded — increase your budget in Settings or stop generating.",
+              "warning",
+            );
+            break;
+          case 429:
+            showGlobalError("Rate limited — wait a moment before retrying.", "info");
+            break;
+          case 503:
+            showGlobalError(
+              "All AI providers are unavailable — wait a few minutes before retrying.",
+              "warning",
+            );
+            break;
+          default:
+            showGlobalError(`${err.message}`, "error");
         }
       } else {
         showGlobalError(err.message ?? "Unexpected error", "error");
@@ -3984,42 +4537,49 @@ ${combinedSection}${shotCards}
    * @param {ReplyDescriptor} descriptor
    */
   function createReplyToolbar(container, descriptor) {
-    container.style.position = 'relative';
+    container.style.position = "relative";
 
-    const toolbar = document.createElement('div');
-    toolbar.className = 'reply-toolbar';
+    const toolbar = document.createElement("div");
+    toolbar.className = "reply-toolbar";
 
     const { modality } = descriptor;
     const isSecure = window.isSecureContext;
 
     // Copy button
-    if (modality === 'text' || modality === 'image' ||
-        (modality === 'audio' && descriptor.text)) {
-      const copyBtn = createToolbarBtn('⎘',
-        modality === 'image' && !isSecure
-          ? 'Copy unavailable (requires HTTPS)'
-          : modality === 'audio' ? 'Copy transcript' : 'Copy reply',
-        async () => { await copyReplyContent(descriptor, copyBtn); }
+    if (modality === "text" || modality === "image" || (modality === "audio" && descriptor.text)) {
+      const copyBtn = createToolbarBtn(
+        "⎘",
+        modality === "image" && !isSecure
+          ? "Copy unavailable (requires HTTPS)"
+          : modality === "audio"
+            ? "Copy transcript"
+            : "Copy reply",
+        async () => {
+          await copyReplyContent(descriptor, copyBtn);
+        },
       );
-      if (modality === 'image' && !isSecure) copyBtn.style.display = 'none';
+      if (modality === "image" && !isSecure) copyBtn.style.display = "none";
       toolbar.appendChild(copyBtn);
     }
 
     // Save button
-    const saveBtn = createToolbarBtn('⬇', 'Save reply',
-      async () => { await saveReplyContent(descriptor, saveBtn); }
-    );
-    if (modality === 'video' && typeof isStubVideoData === 'function' &&
-        isStubVideoData(descriptor.dataUrl)) {
+    const saveBtn = createToolbarBtn("⬇", "Save reply", async () => {
+      await saveReplyContent(descriptor, saveBtn);
+    });
+    if (
+      modality === "video" &&
+      typeof isStubVideoData === "function" &&
+      isStubVideoData(descriptor.dataUrl)
+    ) {
       saveBtn.disabled = true;
-      saveBtn.title = 'Save unavailable (stub data)';
+      saveBtn.title = "Save unavailable (stub data)";
     }
     toolbar.appendChild(saveBtn);
 
     // Search button (text only)
-    if (modality === 'text') {
+    if (modality === "text") {
       const searchBar = createSearchBar(container);
-      const searchBtn = createToolbarBtn('🔍', 'Search reply', () => {
+      const searchBtn = createToolbarBtn("🔍", "Search reply", () => {
         activateInlineSearch(container, searchBtn);
       });
       toolbar.appendChild(searchBtn);
@@ -4032,51 +4592,51 @@ ${combinedSection}${shotCards}
   }
 
   function createToolbarBtn(label, title, onClick) {
-    const btn = document.createElement('button');
-    btn.className = 'reply-toolbar-btn';
+    const btn = document.createElement("button");
+    btn.className = "reply-toolbar-btn";
     btn.textContent = label;
     btn.title = title;
-    btn.setAttribute('aria-label', title);
-    btn.addEventListener('click', onClick);
+    btn.setAttribute("aria-label", title);
+    btn.addEventListener("click", onClick);
     return btn;
   }
 
   function createSearchBar(container) {
-    const bar = document.createElement('div');
-    bar.className = 'reply-search-bar hidden';
+    const bar = document.createElement("div");
+    bar.className = "reply-search-bar hidden";
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'reply-search-input';
-    input.placeholder = 'Regex search…';
-    input.setAttribute('aria-label', 'Search within reply');
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "reply-search-input";
+    input.placeholder = "Regex search…";
+    input.setAttribute("aria-label", "Search within reply");
 
-    const counter = document.createElement('span');
-    counter.className = 'reply-search-counter';
-    counter.setAttribute('aria-live', 'polite');
-    counter.setAttribute('aria-atomic', 'true');
+    const counter = document.createElement("span");
+    counter.className = "reply-search-counter";
+    counter.setAttribute("aria-live", "polite");
+    counter.setAttribute("aria-atomic", "true");
 
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'reply-toolbar-btn';
-    closeBtn.textContent = '✕';
-    closeBtn.setAttribute('aria-label', 'Close search');
-    closeBtn.addEventListener('click', () => {
-      bar.classList.add('hidden');
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "reply-toolbar-btn";
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", "Close search");
+    closeBtn.addEventListener("click", () => {
+      bar.classList.add("hidden");
       clearSearchHighlights(container);
-      counter.textContent = '';
+      counter.textContent = "";
     });
 
     let debounceTimer;
-    input.addEventListener('input', () => {
+    input.addEventListener("input", () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => applySearchHighlights(container, input, counter), 500);
     });
 
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        bar.classList.add('hidden');
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        bar.classList.add("hidden");
         clearSearchHighlights(container);
-        counter.textContent = '';
+        counter.textContent = "";
       }
     });
 
@@ -4088,35 +4648,37 @@ ${combinedSection}${shotCards}
 
   async function copyReplyContent(descriptor, btn) {
     try {
-      if (descriptor.modality === 'text' || descriptor.modality === 'audio') {
-        const text = descriptor.text ?? '';
+      if (descriptor.modality === "text" || descriptor.modality === "audio") {
+        const text = descriptor.text ?? "";
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(text);
         } else {
-          const ta = document.createElement('textarea');
+          const ta = document.createElement("textarea");
           ta.value = text;
-          ta.style.position = 'fixed'; ta.style.opacity = '0';
-          document.body.appendChild(ta); ta.select();
-          document.execCommand('copy');
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
           document.body.removeChild(ta);
         }
-        showToolbarFeedback(btn, '✓ Copied');
-      } else if (descriptor.modality === 'image') {
+        showToolbarFeedback(btn, "✓ Copied");
+      } else if (descriptor.modality === "image") {
         const blob = descriptor.dataUrl
           ? dataUrlToBlob(descriptor.dataUrl)
-          : await fetch(descriptor.srcUrl).then(r => r.blob());
+          : await fetch(descriptor.srcUrl).then((r) => r.blob());
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        showToolbarFeedback(btn, '✓ Copied');
+        showToolbarFeedback(btn, "✓ Copied");
       }
     } catch (err) {
-      console.error('[reply-toolbar] copy failed:', err);
-      showToolbarFeedback(btn, '⚠ Failed');
+      console.error("[reply-toolbar] copy failed:", err);
+      showToolbarFeedback(btn, "⚠ Failed");
     }
   }
 
   async function saveReplyContent(descriptor, btn) {
     btn.disabled = true;
-    btn.textContent = '…';
+    btn.textContent = "…";
     try {
       let blob;
       if (descriptor.dataUrl) {
@@ -4126,32 +4688,33 @@ ${combinedSection}${shotCards}
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         blob = await resp.blob();
       } else {
-        showToolbarFeedback(btn, '⚠ No data'); return;
+        showToolbarFeedback(btn, "⚠ No data");
+        return;
       }
-      const filename = descriptor.filename ??
-        `ai-reply.${mimeToExt(descriptor.mimeType ?? blob.type)}`;
+      const filename =
+        descriptor.filename ?? `ai-reply.${mimeToExt(descriptor.mimeType ?? blob.type)}`;
       const file = new File([blob], filename, { type: blob.type });
       if (supportsShare([file])) {
         await navigator.share({ files: [file], title: filename });
       } else {
         triggerDownload(blob, filename);
       }
-      showToolbarFeedback(btn, '✓ Saved');
+      showToolbarFeedback(btn, "✓ Saved");
     } catch (err) {
-      console.error('[reply-toolbar] save failed:', err);
-      showToolbarFeedback(btn, '⚠ Failed');
+      console.error("[reply-toolbar] save failed:", err);
+      showToolbarFeedback(btn, "⚠ Failed");
     }
   }
 
   function activateInlineSearch(container, searchBtn) {
-    const bar = container.querySelector('.reply-search-bar');
+    const bar = container.querySelector(".reply-search-bar");
     if (!bar) return;
-    const isHidden = bar.classList.contains('hidden');
+    const isHidden = bar.classList.contains("hidden");
     if (isHidden) {
-      bar.classList.remove('hidden');
-      bar.querySelector('.reply-search-input')?.focus();
+      bar.classList.remove("hidden");
+      bar.querySelector(".reply-search-input")?.focus();
     } else {
-      bar.classList.add('hidden');
+      bar.classList.add("hidden");
       clearSearchHighlights(container);
       searchBtn.focus();
     }
@@ -4160,21 +4723,26 @@ ${combinedSection}${shotCards}
   function applySearchHighlights(container, input, counter) {
     clearSearchHighlights(container);
     const query = input.value.trim();
-    input.classList.remove('reply-search-input--invalid');
-    if (!query) { counter.textContent = ''; return; }
+    input.classList.remove("reply-search-input--invalid");
+    if (!query) {
+      counter.textContent = "";
+      return;
+    }
 
     let re;
-    try { re = new RegExp(query, 'gi'); }
-    catch {
-      input.classList.add('reply-search-input--invalid');
-      counter.textContent = '⚠ invalid regex'; return;
+    try {
+      re = new RegExp(query, "gi");
+    } catch {
+      input.classList.add("reply-search-input--invalid");
+      counter.textContent = "⚠ invalid regex";
+      return;
     }
 
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     const nodes = [];
     let node;
     while ((node = walker.nextNode())) {
-      if (node.parentElement?.closest('.reply-toolbar, .reply-search-bar')) continue;
+      if (node.parentElement?.closest(".reply-toolbar, .reply-search-bar")) continue;
       nodes.push(node);
     }
 
@@ -4188,8 +4756,8 @@ ${combinedSection}${shotCards}
       let last = 0;
       for (const m of matches) {
         if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-        const mark = document.createElement('mark');
-        mark.className = 'reply-search-highlight';
+        const mark = document.createElement("mark");
+        mark.className = "reply-search-highlight";
         mark.textContent = m[0];
         frag.appendChild(mark);
         last = m.index + m[0].length;
@@ -4197,41 +4765,47 @@ ${combinedSection}${shotCards}
       if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
       textNode.parentNode.replaceChild(frag, textNode);
     }
-    counter.textContent = total ? `${total} match${total === 1 ? '' : 'es'}` : 'no matches';
+    counter.textContent = total ? `${total} match${total === 1 ? "" : "es"}` : "no matches";
   }
 
   function clearSearchHighlights(container) {
-    container.querySelectorAll('mark.reply-search-highlight').forEach(mark => {
+    container.querySelectorAll("mark.reply-search-highlight").forEach((mark) => {
       mark.parentNode.replaceChild(document.createTextNode(mark.textContent), mark);
     });
-    container.querySelectorAll('*').forEach(el => {
-      try { el.normalize(); } catch { /* ignore */ }
+    container.querySelectorAll("*").forEach((el) => {
+      try {
+        el.normalize();
+      } catch {
+        /* ignore */
+      }
     });
   }
 
   function showToolbarFeedback(btn, message, durationMs = 1800) {
     const orig = btn.textContent;
     btn.textContent = message;
-    btn.classList.add('reply-toolbar-btn--feedback');
+    btn.classList.add("reply-toolbar-btn--feedback");
     btn.disabled = true;
     setTimeout(() => {
       btn.textContent = orig;
-      btn.classList.remove('reply-toolbar-btn--feedback');
+      btn.classList.remove("reply-toolbar-btn--feedback");
       btn.disabled = false;
     }, durationMs);
   }
 
   function triggerDownload(blob, filename) {
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   function dataUrlToBlob(dataUrl) {
-    const [header, b64] = dataUrl.split(',');
+    const [header, b64] = dataUrl.split(",");
     const mime = header.match(/:(.*?);/)[1];
     const bytes = atob(b64);
     const arr = new Uint8Array(bytes.length);
@@ -4241,12 +4815,18 @@ ${combinedSection}${shotCards}
 
   function mimeToExt(mimeType) {
     const map = {
-      'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
-      'image/gif': 'gif', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg',
-      'audio/wav': 'wav', 'video/mp4': 'mp4', 'video/webm': 'webm',
-      'text/plain': 'txt',
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "image/gif": "gif",
+      "audio/mpeg": "mp3",
+      "audio/ogg": "ogg",
+      "audio/wav": "wav",
+      "video/mp4": "mp4",
+      "video/webm": "webm",
+      "text/plain": "txt",
     };
-    return map[mimeType] ?? 'bin';
+    return map[mimeType] ?? "bin";
   }
 
   function isMobile() {
@@ -4254,8 +4834,8 @@ ${combinedSection}${shotCards}
   }
 
   function supportsShare(files) {
-    if (typeof navigator.share !== 'function') return false;
-    if (files && typeof navigator.canShare === 'function') {
+    if (typeof navigator.share !== "function") return false;
+    if (files && typeof navigator.canShare === "function") {
       return navigator.canShare({ files });
     }
     return true;
@@ -4274,7 +4854,7 @@ ${combinedSection}${shotCards}
   function formatMicTime(secs) {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
-    return m + ':' + String(s).padStart(2, '0');
+    return m + ":" + String(s).padStart(2, "0");
   }
 
   /**
@@ -4287,16 +4867,18 @@ ${combinedSection}${shotCards}
    * @param {string}      msg - Human-readable error text to display.
    */
   function showMicError(btn, msg) {
-    const group = btn.closest('.input-group');
+    const group = btn.closest(".input-group");
     if (!group) return;
     // Remove any prior error placed immediately after this input group.
     const sibling = group.nextElementSibling;
-    if (sibling && sibling.classList.contains('mic-error')) sibling.remove();
-    const p = document.createElement('p');
-    p.className   = 'mic-error';
+    if (sibling && sibling.classList.contains("mic-error")) sibling.remove();
+    const p = document.createElement("p");
+    p.className = "mic-error";
     p.textContent = msg;
-    group.insertAdjacentElement('afterend', p);
-    setTimeout(() => { if (p.parentNode) p.remove(); }, 5000);
+    group.insertAdjacentElement("afterend", p);
+    setTimeout(() => {
+      if (p.parentNode) p.remove();
+    }, 5000);
   }
 
   /**
@@ -4311,8 +4893,8 @@ ${combinedSection}${shotCards}
   function appendTranscript(ta, text) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    ta.value = ta.value.length > 0 ? ta.value + ' ' + trimmed : trimmed;
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.value = ta.value.length > 0 ? ta.value + " " + trimmed : trimmed;
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   /**
@@ -4330,20 +4912,20 @@ ${combinedSection}${shotCards}
   async function transcribeMicBlob(blob) {
     const audioBase64 = await new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload  = () => resolve(/** @type {string} */ (reader.result).split(',')[1]);
-      reader.onerror = () => reject(new Error('Failed to read audio data.'));
+      reader.onload = () => resolve(/** @type {string} */ (reader.result).split(",")[1]);
+      reader.onerror = () => reject(new Error("Failed to read audio data."));
       reader.readAsDataURL(blob);
     });
     // Design D3: read tabState at call time, not at definition time, so any
     // provider/model switch the user makes is honoured on the very next transcription.
-    const { provider, model } = tabState.get('audio') ?? {};
-    const result = await proxyPost('/audio/transcribe', {
+    const { provider, model } = tabState.get("audio") ?? {};
+    const result = await proxyPost("/audio/transcribe", {
       audioBase64,
       mimeType: blob.type || undefined,
-      provider: provider  || undefined,
-      model:    model     || undefined,
+      provider: provider || undefined,
+      model: model || undefined,
     });
-    return result.text ?? '';
+    return result.text ?? "";
   }
 
   /**
@@ -4371,7 +4953,7 @@ ${combinedSection}${shotCards}
    * Spec bd-95zq: called immediately on page load.
    */
   function initMicButtons() {
-    document.querySelectorAll('.btn-mic').forEach((btn) => {
+    document.querySelectorAll(".btn-mic").forEach((btn) => {
       const targetId = btn.dataset.target;
       if (!targetId) return;
       const ta = document.getElementById(targetId);
@@ -4379,17 +4961,17 @@ ${combinedSection}${shotCards}
 
       // ── Per-button closure state (Design D1) ─────────────
       const state = {
-        recognition:   null,   // SpeechRecognition instance (direct mode)
-        mediaRecorder: null,   // MediaRecorder instance (proxy mode)
-        stream:        null,   // getUserMedia MediaStream (proxy mode)
-        chunks:        [],     // recorded audio chunks (proxy mode)
-        proxyError:    false,  // true when recorder.onerror fired; suppresses onstop errors
-        timerInterval: null,   // setInterval handle
+        recognition: null, // SpeechRecognition instance (direct mode)
+        mediaRecorder: null, // MediaRecorder instance (proxy mode)
+        stream: null, // getUserMedia MediaStream (proxy mode)
+        chunks: [], // recorded audio chunks (proxy mode)
+        proxyError: false, // true when recorder.onerror fired; suppresses onstop errors
+        timerInterval: null, // setInterval handle
         elapsedSeconds: 0,
-        isRecording:   false,
+        isRecording: false,
       };
 
-      const timerEl = btn.querySelector('.mic-timer');
+      const timerEl = btn.querySelector(".mic-timer");
 
       function startTimer() {
         state.elapsedSeconds = 0;
@@ -4403,13 +4985,13 @@ ${combinedSection}${shotCards}
       function stopTimer() {
         clearInterval(state.timerInterval);
         state.timerInterval = null;
-        if (timerEl) timerEl.textContent = '';
+        if (timerEl) timerEl.textContent = "";
       }
 
       function setRecordingUi(recording) {
         state.isRecording = recording;
-        btn.classList.toggle('recording', recording);
-        btn.title = recording ? 'Stop recording' : 'Record voice input';
+        btn.classList.toggle("recording", recording);
+        btn.title = recording ? "Stop recording" : "Record voice input";
       }
 
       // Tears down direct-mode recognition or proxy-mode stream+recorder and
@@ -4418,11 +5000,17 @@ ${combinedSection}${shotCards}
         setRecordingUi(false);
         stopTimer();
         if (state.recognition) {
-          try { state.recognition.stop(); } catch (_) { /* ignore double-stop */ }
+          try {
+            state.recognition.stop();
+          } catch (_) {
+            /* ignore double-stop */
+          }
           state.recognition = null;
         }
-        if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
-          try { state.mediaRecorder.stop(); } catch (_) {}
+        if (state.mediaRecorder && state.mediaRecorder.state !== "inactive") {
+          try {
+            state.mediaRecorder.stop();
+          } catch (_) {}
         }
         state.mediaRecorder = null;
         if (state.stream) {
@@ -4432,10 +5020,10 @@ ${combinedSection}${shotCards}
         state.chunks = [];
       }
 
-      btn.addEventListener('click', async () => {
+      btn.addEventListener("click", async () => {
         // ── Stop path ─────────────────────────────────────
         if (state.isRecording) {
-          if (state.mediaRecorder && state.mediaRecorder.state === 'recording') {
+          if (state.mediaRecorder && state.mediaRecorder.state === "recording") {
             // Proxy mode: trigger onstop which handles blob assembly + transcription.
             state.mediaRecorder.stop();
           } else {
@@ -4446,40 +5034,43 @@ ${combinedSection}${shotCards}
         }
 
         // ── Proxy mode: MediaRecorder → POST /audio/transcribe ──────
-        if (modeSelect.value === 'proxy') {
+        if (modeSelect.value === "proxy") {
           let stream;
           try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           } catch (err) {
             // bd-7g46 edge cases (2) and (3)
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-              showMicError(btn, 'Microphone access was denied. Allow microphone in browser settings and try again.');
-            } else if (err.name === 'NotFoundError') {
-              showMicError(btn, 'No microphone found. Connect a microphone and try again.');
+            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+              showMicError(
+                btn,
+                "Microphone access was denied. Allow microphone in browser settings and try again.",
+              );
+            } else if (err.name === "NotFoundError") {
+              showMicError(btn, "No microphone found. Connect a microphone and try again.");
             } else {
-              showMicError(btn, 'Could not access microphone: ' + (err.message ?? err.name));
+              showMicError(btn, "Could not access microphone: " + (err.message ?? err.name));
             }
             return;
           }
 
           // Prefer opus → webm → ogg; fall back to browser default.
-          const mimeType = (
-            ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']
-              .find((t) => MediaRecorder.isTypeSupported(t))
-          ) || '';
+          const mimeType =
+            ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"].find((t) =>
+              MediaRecorder.isTypeSupported(t),
+            ) || "";
 
           let recorder;
           try {
             recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
           } catch (err) {
             stream.getTracks().forEach((t) => t.stop());
-            showMicError(btn, 'Could not start recording: ' + (err.message ?? String(err)));
+            showMicError(btn, "Could not start recording: " + (err.message ?? String(err)));
             return;
           }
 
-          state.stream        = stream;
-          state.chunks        = [];
-          state.proxyError    = false;
+          state.stream = stream;
+          state.chunks = [];
+          state.proxyError = false;
           state.mediaRecorder = recorder;
 
           recorder.ondataavailable = (e) => {
@@ -4503,12 +5094,12 @@ ${combinedSection}${shotCards}
               return;
             }
 
-            const blob = new Blob(state.chunks, { type: mimeType || 'audio/webm' });
+            const blob = new Blob(state.chunks, { type: mimeType || "audio/webm" });
             state.chunks = [];
 
             // bd-7g46 edge case (1): blob too small → no usable audio captured.
             if (blob.size < 500) {
-              showMicError(btn, 'Recording too short. Hold the button longer and speak clearly.');
+              showMicError(btn, "Recording too short. Hold the button longer and speak clearly.");
               return;
             }
 
@@ -4517,14 +5108,14 @@ ${combinedSection}${shotCards}
               const text = await transcribeMicBlob(blob);
               if (text) appendTranscript(ta, text);
             } catch (err) {
-              showMicError(btn, 'Transcription failed: ' + (err.message ?? String(err)));
+              showMicError(btn, "Transcription failed: " + (err.message ?? String(err)));
             }
           };
 
           recorder.onerror = (e) => {
             // Flag so onstop skips blob processing (error already displayed here).
             state.proxyError = true;
-            showMicError(btn, 'Recording error: ' + (e.error?.message ?? 'unknown'));
+            showMicError(btn, "Recording error: " + (e.error?.message ?? "unknown"));
             // Reset UI immediately; onstop will do final state cleanup.
             setRecordingUi(false);
             stopTimer();
@@ -4540,27 +5131,29 @@ ${combinedSection}${shotCards}
         // bd-7g46 edge case (5): SpeechRecognition unavailable.
         const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRec) {
-          showMicError(btn,
-            'Voice input requires proxy mode or Chrome/Edge with microphone access. ' +
-            'Switch to proxy mode, or open this page in Chrome/Edge and allow the microphone.');
+          showMicError(
+            btn,
+            "Voice input requires proxy mode or Chrome/Edge with microphone access. " +
+              "Switch to proxy mode, or open this page in Chrome/Edge and allow the microphone.",
+          );
           return;
         }
 
         setRecordingUi(true);
         startTimer();
 
-        const recognition      = new SpeechRec();
-        recognition.continuous     = true;
+        const recognition = new SpeechRec();
+        recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang           = 'en-US';
-        state.recognition          = recognition;
+        recognition.lang = "en-US";
+        state.recognition = recognition;
 
         // committedLength marks the boundary between finalized and interim text
         // in ta.value, enabling live interim overlay without duplicating finals.
         let committedLength = ta.value.length;
 
         recognition.onresult = (event) => {
-          let interim = '';
+          let interim = "";
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const result = event.results[i];
             if (result.isFinal) {
@@ -4575,7 +5168,7 @@ ${combinedSection}${shotCards}
           }
           // Live interim preview (Spec AC-17).
           if (interim) {
-            const sep = committedLength > 0 ? ' ' : '';
+            const sep = committedLength > 0 ? " " : "";
             ta.value = ta.value.slice(0, committedLength) + sep + interim;
           }
         };
@@ -4583,12 +5176,13 @@ ${combinedSection}${shotCards}
         recognition.onerror = (event) => {
           // bd-7g46 edge cases (2) and (3) for direct-mode.
           let msg;
-          if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-            msg = 'Microphone access was denied. Allow microphone in browser settings and try again.';
-          } else if (event.error === 'audio-capture') {
-            msg = 'No microphone found. Connect a microphone and try again.';
+          if (event.error === "not-allowed" || event.error === "permission-denied") {
+            msg =
+              "Microphone access was denied. Allow microphone in browser settings and try again.";
+          } else if (event.error === "audio-capture") {
+            msg = "No microphone found. Connect a microphone and try again.";
           } else {
-            msg = 'Speech recognition error: ' + event.error;
+            msg = "Speech recognition error: " + event.error;
           }
           showMicError(btn, msg);
           stopRecording(); // resets .recording CSS + timer
@@ -4606,6 +5200,4 @@ ${combinedSection}${shotCards}
 
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
-
 })(); // end IIFE
-

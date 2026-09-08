@@ -15,8 +15,16 @@ export default defineConfig({
     // Node environment (tests run in Node.js, not jsdom).
     environment: "node",
 
+    // Set up an isolated home directory before each test file loads app code.
+    setupFiles: ["./tests/setup/home-isolation.ts"],
+
     // Test file glob patterns.
-    include: ["tests/**/*.test.ts", "tests/**/*.spec.ts", "openspec/**/*.test.js", "openspec/**/*.test.ts"],
+    include: [
+      "tests/**/*.test.ts",
+      "tests/**/*.spec.ts",
+      "openspec/**/*.test.js",
+      "openspec/**/*.test.ts",
+    ],
 
     // Force mock mode in all test runs.
     env: {

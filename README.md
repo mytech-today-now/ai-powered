@@ -976,7 +976,7 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 | **proxy**  | Production      | Key stays on your server — browser never sees it            |
 | **direct** | Dev / demo only | Key visible in DevTools — non-suppressible DOM banner shown |
 
-### Browser client features (v0.5.0)
+### Browser client features (v0.5.4)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
@@ -1500,12 +1500,16 @@ export const myPlugin: AiPlugin = {
   },
 
   /**
-   * Called for every AiPoweredError (provider errors, budget errors, etc.).
+   * Called for every failure that reaches the client boundary.
+   * Structured `AiPoweredError` instances pass through as-is; plain runtime
+   * failures are normalized to `AiPoweredError` with code `PROVIDER_ERROR`
+   * and retain the original thrown value on `cause`.
    * Return void; errors thrown here are logged but do not propagate.
    */
   async onError(error: AiPoweredError): Promise<void> {
     // error.code      — machine-readable error code string
     // error.message   — human-readable message
+    // error.cause     — original thrown error/value when the client normalized one
   },
 };
 ```

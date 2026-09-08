@@ -587,7 +587,11 @@ export class VeniceProvider extends BaseProvider {
                 const type = typeof m["type"] === "string" ? (m["type"] as string) : "text";
                 return type === "image" ? ["image"] : (["text", "structured"] as Modality[]);
               })();
-        return { id: m.id, name: m.id, capabilities: caps };
+        const descriptor: ModelDescriptor = { id: m.id, name: m.id, capabilities: caps };
+        if (caps.includes("image")) {
+          descriptor.inputCapabilities = ["image"];
+        }
+        return descriptor;
       });
 
       let filtered = modality

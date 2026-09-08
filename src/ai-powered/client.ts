@@ -133,6 +133,22 @@ export class AiClient {
   private _cumulativeCostUsd = 0;
 
   /**
+   * Normalizes any caught failure into an AiPoweredError for plugin hooks.
+   * Plain runtime errors become PROVIDER_ERROR and retain the original thrown
+   * value on `cause` so telemetry plugins can inspect the full envelope.
+   */
+  private _normalizeErrorForPlugins(error: unknown): AiPoweredError {
+    if (error instanceof AiPoweredError) {
+      return error;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = new AiPoweredError(message, "PROVIDER_ERROR");
+    (normalized as Error & { cause?: unknown }).cause = error;
+    return normalized;
+  }
+
+  /**
    * Construct with an explicit config + provider (normal factory path).
    * Also supports a provider-only shorthand for direct/test instantiation:
    *   `new AiClient(provider)` — uses schema defaults for config.
@@ -492,17 +508,17 @@ export class AiClient {
 
   /**
    * Calls every plugin's `onError` hook.
-   * Only invoked when the error is an `AiPoweredError` (or subclass), as
-   * specified by the plugin contract. Raw network or parse errors are not
-   * surfaced to plugins. Plugin errors thrown inside `onError` are silently
-   * ignored to prevent infinite error loops.
+   * Every failure is normalized to `AiPoweredError` before dispatch so plain
+   * runtime errors are still observable by plugins. Original thrown values are
+   * preserved on `cause` for telemetry-style hooks. Plugin errors thrown inside
+   * `onError` are silently ignored to prevent infinite error loops.
    */
-  private async runOnError(error: Error): Promise<void> {
-    if (!(error instanceof AiPoweredError)) return;
+  private async runOnError(error: unknown): Promise<void> {
+    const normalized = this._normalizeErrorForPlugins(error);
     for (const plugin of this._plugins) {
       if (!plugin.onError) continue;
       try {
-        await plugin.onError(error);
+        await plugin.onError(normalized);
       } catch {
         /* ignore */
       }
@@ -746,8 +762,8 @@ export class AiClient {
         callOptions.model,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
     // Post-call guard validates actual reported cost (estimate may differ).
@@ -779,8 +795,8 @@ export class AiClient {
         callOptions.model,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -813,8 +829,8 @@ export class AiClient {
         callOptions.model,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -846,8 +862,8 @@ export class AiClient {
         callOptions.model,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -877,8 +893,8 @@ export class AiClient {
         callOptions.model,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -915,8 +931,8 @@ export class AiClient {
       // Successful stream — reset consecutive failure counter.
       this._getCircuitBreaker(this._config.provider);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
   }
@@ -946,8 +962,8 @@ export class AiClient {
         callOptions.model,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await this.runOnError(error);
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(err);
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);

@@ -37,6 +37,26 @@ The `/stream` endpoint SHALL use SSE (`Content-Type: text/event-stream`) emittin
 - **WHEN** `GET /api/ai-powered/config` is called
 - **THEN** the response contains the current provider and model with all API key values masked
 
+### Requirement: GET /models error handling
+The system SHALL return a structured JSON error for `GET /models` when provider construction
+or model discovery fails. Provider construction failures SHALL use HTTP 503 with code
+`PROVIDER_SETUP_ERROR`; model discovery failures SHALL use HTTP 500 with code
+`MODEL_LIST_ERROR`. The route SHALL return `[]` only when `listModels()` genuinely resolves to
+an empty array.
+
+#### Scenario: Provider setup failure returns structured 503
+- **WHEN** `GET /api/ai-powered/models` is called with a provider that cannot be constructed
+- **THEN** the server responds with HTTP 503 and a JSON body containing `{ error, code:
+  "PROVIDER_SETUP_ERROR" }` without secret material
+
+#### Scenario: listModels failure is surfaced
+- **WHEN** provider construction succeeds but `listModels()` rejects
+- **THEN** the server responds with HTTP 500 and code `MODEL_LIST_ERROR`
+
+#### Scenario: Empty model list stays empty
+- **WHEN** `GET /api/ai-powered/models` reaches a provider whose `listModels()` resolves to `[]`
+- **THEN** the server responds with HTTP 200 and body `[]`
+
 ---
 
 ### Requirement: CORS, rate limiting, and security headers
@@ -76,4 +96,3 @@ SHALL be logged (with keys masked). `--log` SHALL write to `ai-powered.jsonl`.
 #### Scenario: Plugin pipeline runs on server requests
 - **WHEN** the `audit-log` plugin is configured and a browser client sends a request
 - **THEN** the plugin writes an audit entry for the proxied request
-

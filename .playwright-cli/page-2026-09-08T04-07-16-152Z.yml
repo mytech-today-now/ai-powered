@@ -1,0 +1,77 @@
+- generic [active] [ref=e1]:
+    - banner [ref=e2]:
+        - generic [ref=e3]:
+            - heading "ai-powered · web demo" [level=1] [ref=e4]
+            - generic [ref=e5]: v0.1.0
+        - generic [ref=e6]:
+            - generic [ref=e7]:
+                - generic [ref=e8]: "Mode:"
+                - combobox "Mode:" [ref=e9]:
+                    - option "Proxy (recommended)" [selected]
+                    - option "Direct (dev only)"
+            - generic [ref=e10]:
+                - generic [ref=e11]: "Proxy URL:"
+                - textbox "Proxy URL:" [ref=e12]:
+                    - /placeholder: http://localhost:3001
+                    - text: http://localhost:3001
+                - generic [ref=e13]: "Provider:"
+                - combobox "Provider:" [ref=e14]:
+                    - option "Default" [selected]
+                - generic [ref=e15]:
+                    - text: Run
+                    - code [ref=e16]: npm run serve
+                    - text: to start the proxy server.
+    - tablist "Modality" [ref=e17]:
+        - tab "Text" [selected] [ref=e18] [cursor=pointer]
+        - tab "Image" [ref=e19] [cursor=pointer]
+        - tab "Audio" [ref=e20] [cursor=pointer]
+        - tab "Video" [ref=e21] [cursor=pointer]
+        - tab "Structured" [ref=e22] [cursor=pointer]
+    - main [ref=e23]:
+        - tabpanel [ref=e24]:
+            - generic [ref=e25]:
+                - generic [ref=e26]: Session History
+                - button "Clear Session" [ref=e27] [cursor=pointer]
+                - button "New Conversation" [ref=e28] [cursor=pointer]
+            - generic "Conversation history" [ref=e29]: No history yet — send a message to start.
+            - generic [ref=e31]:
+                - button "▸ Conversation History ( 0 )" [ref=e32] [cursor=pointer]:
+                    - generic [ref=e33]: ▸
+                    - text: Conversation History (
+                    - generic [ref=e34]: "0"
+                    - text: )
+                - button "Clear All" [ref=e35] [cursor=pointer]
+            - generic [ref=e36]:
+                - generic [ref=e37]:
+                    - textbox "Enter your prompt…" [ref=e38]: Explain quantum entanglement in two sentences.
+                    - button "Start voice input for text prompt" [ref=e39] [cursor=pointer]
+                - generic [ref=e40]: "46"
+            - generic [ref=e41]:
+                - generic [ref=e42]: Provider
+                - combobox "Provider" [ref=e43]
+            - generic [ref=e44]:
+                - generic [ref=e45]: "Model:"
+                - combobox "Model:" [ref=e46]:
+                    - option "Default" [selected]
+            - generic [ref=e47]:
+                - generic [ref=e48] [cursor=pointer]: Attach file
+                - generic [ref=e49]: No file attached
+            - generic [ref=e50]:
+                - button "Generate" [ref=e51] [cursor=pointer]
+                - button "Stream" [ref=e52] [cursor=pointer]
+            - generic [ref=e53]: Output will appear here…
+        - text: Output will appear here… Output will appear here… Output will appear here… Output will appear here… Output will appear here…
+    - contentinfo [ref=e55]:
+        - generic [ref=e56]:
+            - generic [ref=e57]: "Session cost:"
+            - strong [ref=e58]: $0.000000
+            - generic [ref=e59]: ·
+            - generic [ref=e60]: "Tokens:"
+            - strong [ref=e61]: "0"
+            - generic [ref=e62]: ·
+            - generic [ref=e63]: "Calls:"
+            - strong [ref=e64]: "0"
+        - generic [ref=e66]:
+            - text: Loads
+            - code [ref=e67]: dist-web/ai-powered.umd.js
+            - text: · No build step required

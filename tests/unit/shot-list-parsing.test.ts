@@ -6,8 +6,11 @@
  *
  * Test IDs follow the plan in openspec/changes/change-json/tests/shot-list-parsing.test-plan.md
  *
- * No network calls, no DOM, no server required.
+ * No network calls or server required. Includes a small jsdom regression
+ * suite for batch-duration preflight gating and accessibility semantics.
  */
+
+// @vitest-environment jsdom
 
 // @ts-ignore — plain JS module; types inferred as any
 import {
@@ -17,6 +20,8 @@ import {
   toSafeItems,
   validateDuration,
 } from "../../integrations/web-example/shot-list-parsers.js";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Suite: parseJsonFile — JSON array formats
@@ -440,6 +445,151 @@ describe("duration coercion — ingest and submit guard", () => {
     expect(validateDuration("5")).toBeNull();
     expect(validateDuration("3")).toBeNull();
     expect(validateDuration("60")).toBeNull();
+  });
+});
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+interface BatchRunItem {
+  name: string;
+  prompt: string;
+  duration?: number;
+}
+
+const BATCH_PROVIDER_BLOCK_TITLE =
+  "One or more shots have unreachable image URLs or no available provider. " +
+  "Remove or fix them before running.";
+
+function createBatchRuntime(): {
+  batchDurationEl: HTMLInputElement;
+  batchDurationHint: HTMLSpanElement;
+  btnBatchRun: HTMLButtonElement;
+  showBatchPreflight(items: BatchRunItem[]): void;
+  applyDurationValidation(): void;
+  setProviderBlocked(active: boolean): void;
+} {
+  document.body.innerHTML = `
+    <div class="batch-constraints">
+      <label for="batch-duration">Duration (s):</label>
+      <input id="batch-duration" type="number" min="1" max="60" step="1" class="dim-input" />
+      <button id="btn-batch-run" type="button" disabled>▶ Run Batch</button>
+      <div id="batch-summary"></div>
+    </div>
+  `;
+
+  const batchDurationEl = document.getElementById("batch-duration") as HTMLInputElement;
+  const batchSummary = document.getElementById("batch-summary") as HTMLDivElement;
+  const btnBatchRun = document.getElementById("btn-batch-run") as HTMLButtonElement;
+  const batchDurationHint = document.createElement("span");
+
+  batchDurationHint.className = "field-error-hint";
+  batchDurationHint.id = "batch-duration-hint";
+  batchDurationHint.setAttribute("role", "status");
+  batchDurationHint.setAttribute("aria-live", "polite");
+  batchDurationHint.setAttribute("aria-atomic", "true");
+  batchDurationHint.style.cssText =
+    "color:var(--danger);font-size:0.85em;display:block;min-height:1.2em";
+  batchDurationEl.setAttribute("aria-describedby", batchDurationHint.id);
+  batchDurationEl.insertAdjacentElement("afterend", batchDurationHint);
+
+  let batchItems: BatchRunItem[] = [];
+  let batchDurationError: string | null = null;
+
+  function syncBatchRunButtonState(): void {
+    const providerBlocked = btnBatchRun.dataset.providerBlocked === "true";
+    btnBatchRun.disabled =
+      batchItems.length === 0 || batchDurationError !== null || providerBlocked;
+    if (!providerBlocked) {
+      btnBatchRun.title = "";
+    }
+  }
+
+  function applyDurationValidation(): void {
+    batchDurationError = batchDurationEl.value ? validateDuration(batchDurationEl.value) : null;
+    batchDurationHint.textContent = batchDurationError || "";
+    syncBatchRunButtonState();
+  }
+
+  function showBatchPreflight(items: BatchRunItem[]): void {
+    batchItems = items;
+    btnBatchRun.dataset.providerBlocked = "false";
+    batchSummary.textContent = items.length
+      ? `${items.length} shot${items.length === 1 ? "" : "s"} loaded and ready to process.`
+      : "No valid shots found in file.";
+    applyDurationValidation();
+  }
+
+  function setProviderBlocked(active: boolean): void {
+    btnBatchRun.dataset.providerBlocked = active ? "true" : "false";
+    btnBatchRun.title = active ? BATCH_PROVIDER_BLOCK_TITLE : "";
+    syncBatchRunButtonState();
+  }
+
+  return {
+    batchDurationEl,
+    batchDurationHint,
+    btnBatchRun,
+    showBatchPreflight,
+    applyDurationValidation,
+    setProviderBlocked,
+  };
+}
+
+describe("batch duration UI gating", () => {
+  it("T-DUR-05: invalid duration keeps the run button disabled after preflight renders", () => {
+    const runtime = createBatchRuntime();
+    runtime.batchDurationEl.value = "5.5";
+
+    runtime.showBatchPreflight([{ name: "Shot 1", prompt: "Ocean surf" }]);
+
+    expect(runtime.batchDurationHint.textContent).toBe("Duration must be a whole number (e.g., 5)");
+    expect(runtime.btnBatchRun.disabled).toBe(true);
+  });
+
+  it("T-DUR-06: valid duration and valid batch enable the run button", () => {
+    const runtime = createBatchRuntime();
+    runtime.batchDurationEl.value = "6";
+
+    runtime.showBatchPreflight([{ name: "Shot 1", prompt: "Ocean surf" }]);
+
+    expect(runtime.batchDurationHint.textContent).toBe("");
+    expect(runtime.btnBatchRun.disabled).toBe(false);
+  });
+
+  it("T-DUR-07: empty batch still disables the run button", () => {
+    const runtime = createBatchRuntime();
+    runtime.batchDurationEl.value = "6";
+
+    runtime.showBatchPreflight([]);
+
+    expect(runtime.btnBatchRun.disabled).toBe(true);
+  });
+
+  it("T-DUR-08: the duration hint still appears on invalid input and is announced politely", () => {
+    const runtime = createBatchRuntime();
+    runtime.batchDurationEl.value = "5.5";
+    runtime.applyDurationValidation();
+
+    expect(runtime.batchDurationHint.textContent).toBe("Duration must be a whole number (e.g., 5)");
+    expect(runtime.batchDurationHint.getAttribute("role")).toBe("status");
+    expect(runtime.batchDurationHint.getAttribute("aria-live")).toBe("polite");
+    expect(runtime.batchDurationHint.getAttribute("aria-atomic")).toBe("true");
+    expect(runtime.batchDurationEl.getAttribute("aria-describedby")).toBe("batch-duration-hint");
+  });
+
+  it("T-DUR-09: provider-blocking disable state persists across later duration validation", () => {
+    const runtime = createBatchRuntime();
+    runtime.batchDurationEl.value = "6";
+
+    runtime.showBatchPreflight([{ name: "Shot 1", prompt: "Ocean surf" }]);
+    runtime.setProviderBlocked(true);
+    runtime.batchDurationEl.value = "7";
+    runtime.applyDurationValidation();
+
+    expect(runtime.btnBatchRun.disabled).toBe(true);
+    expect(runtime.btnBatchRun.title).toBe(BATCH_PROVIDER_BLOCK_TITLE);
   });
 });
 

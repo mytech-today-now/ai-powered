@@ -226,6 +226,21 @@ describe("config validate", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Scenario 7b: config path → resolves inside isolated home
+// ---------------------------------------------------------------------------
+
+describe("config path", () => {
+  it("prints the isolated global config path inside spawned CLI processes", () => {
+    const { stdout, exitCode } = run(["config", "path"]);
+    expect(exitCode).toBe(0);
+
+    const home = process.env["HOME"];
+    expect(home).toBeDefined();
+    expect(stdout.trim()).toBe(path.join(home!, ".ai-powered", "config.json"));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Scenario 8: health-check --mock → all checks pass, exit 0
 // ---------------------------------------------------------------------------
 

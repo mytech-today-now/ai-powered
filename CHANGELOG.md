@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.4] – 2026-09-08
+
+### Added
+
+- Regression coverage for plugin error normalization, OpenAI image fetch failures, provider
+  discovery errors, session-storage fallback, and browser model selection behavior.
+
+### Changed
+
+- `AiClient` now normalizes every failure before invoking plugin `onError` hooks and preserves
+  the original thrown value on `cause`.
+- `GET /models` now returns structured `PROVIDER_SETUP_ERROR` and `MODEL_LIST_ERROR` responses
+  instead of silently falling back to an empty list.
+- Browser model loading now only appends `accepts=image` for providers that advertise image
+  input, retries without it when the filtered list is empty, and keeps the current selection when
+  the server returns a structured error.
+- Custom and Venice providers now surface model-discovery metadata more accurately, including
+  image input capabilities and retry-aware discovery failures.
+
+### Fixed
+
+- OpenAI image generation now validates fetched image URLs before converting them to data URIs
+  and returns a retry-aware `ProviderError` for bad responses.
+- The web demo now keeps conversation history visible when session storage is malformed or
+  unavailable, while warning the user that persistence is degraded.
+
+---
+
 ## [0.3.2] – 2026-03-31
 
 ### Added
@@ -92,6 +120,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE` (MIT).
 
 [0.3.2]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.3.2
+[0.5.4]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.5.4
 [0.2.0]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.1.0
-

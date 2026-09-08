@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Shot 1",
+    "prompt": "Ocean at sunrise",
+    "modality": "video",
+    "images": ["http://127.0.0.1:5173/mock-image.jpg"]
+  }
+]

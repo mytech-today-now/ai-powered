@@ -90,6 +90,16 @@ Custom providers SHALL be persisted in `~/.ai-powered/config.json`.
 - **WHEN** the provider is configured as `custom` with `type: 'ollama'` and a local base URL
 - **THEN** `listModels` queries the Ollama `/api/tags` endpoint and returns local model names
 
+#### Scenario: Discovery failure surfaces an error
+- **WHEN** the provider is configured as `custom` with `type: 'openai-compatible'` or `type: 'ollama'`
+  and the live discovery request fails
+- **THEN** `listModels` throws a provider error instead of fabricating a stub or empty fallback list
+
+#### Scenario: Empty discovery result stays empty
+- **WHEN** the provider is configured as `custom` with `type: 'openai-compatible'` or `type: 'ollama'`
+  and the live discovery endpoint returns an empty model list
+- **THEN** `listModels` returns `[]`
+
 ---
 
 ### Requirement: Mock provider
@@ -100,4 +110,3 @@ Mock responses SHALL include plausible `usage` (token counts) and `cost` fields.
 #### Scenario: Mock provider selected automatically
 - **WHEN** `AI_MOCK=true` is set
 - **THEN** the factory selects `MockProvider` regardless of the configured real provider
-

@@ -396,11 +396,7 @@ export class OpenAiProvider extends BaseProvider {
       if (imageData?.b64_json) {
         data = `data:image/png;base64,${imageData.b64_json}`;
       } else if (imageData?.url) {
-        const imgResp = await fetch(imageData.url);
-        const arrayBuf = await imgResp.arrayBuffer();
-        const b64 = Buffer.from(arrayBuf).toString("base64");
-        const ct = imgResp.headers.get("content-type") ?? "image/png";
-        data = `data:${ct};base64,${b64}`;
+        data = await this._fetchImageUrlAsDataUri(imageData.url);
       } else {
         data = "";
       }
@@ -606,7 +602,27 @@ export class OpenAiProvider extends BaseProvider {
   // Error wrapping
   // -------------------------------------------------------------------------
 
+  private async _fetchImageUrlAsDataUri(url: string): Promise<string> {
+    const imgResp = await fetch(url);
+    if (!imgResp.ok) {
+      const statusText = imgResp.statusText ? ` ${imgResp.statusText}` : "";
+      const retryable = imgResp.status === 429 || (imgResp.status >= 500 && imgResp.status < 600);
+      throw new ProviderError(
+        "openai",
+        `Image URL fetch failed with HTTP ${imgResp.status}${statusText}`,
+        imgResp.status,
+        retryable,
+      );
+    }
+
+    const arrayBuf = await imgResp.arrayBuffer();
+    const b64 = Buffer.from(arrayBuf).toString("base64");
+    const ct = imgResp.headers.get("content-type") ?? "image/png";
+    return `data:${ct};base64,${b64}`;
+  }
+
   private _wrapError(err: unknown): ProviderError {
+    if (err instanceof ProviderError) return err;
     if (err instanceof OpenAI.APIError) {
       const retryable = err.status === 429 || (err.status >= 500 && err.status < 600);
       return new ProviderError("openai", err.message, err.status, retryable);

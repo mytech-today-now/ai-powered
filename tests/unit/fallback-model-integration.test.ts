@@ -2,7 +2,7 @@
  * @file tests/unit/fallback-model-integration.test.ts
  * @vitest-environment jsdom
  *
- * Integration tests (T-PM-07 through T-PM-12) for the fallback-model change.
+ * Integration tests (T-PM-07 through T-PM-16) for the fallback-model change.
  * Uses jsdom DOM so event dispatch and <select> value assignments work.
  * All functions are mirrored from app.js (browser IIFE, not importable).
  *
@@ -18,6 +18,7 @@ interface ModelEntry {
   name?: string;
   costPerUnit?: number | null;
 }
+type ModelsResponse = ModelEntry[] | { error: string; code?: string };
 type TabState = Map<string, { provider: string; model: string }>;
 
 function persistSelection(ls: Storage, modality: string, provider: string, model: string): void {
@@ -43,6 +44,28 @@ function autoSelectCheapest(modelList: ModelEntry[]): string | null {
     return ca - cb;
   });
   return sorted[0].id;
+}
+
+function normalizeModelsResponse(
+  response: ModelsResponse,
+): { ok: true; modelList: ModelEntry[] } | { ok: false; error: unknown } {
+  if (Array.isArray(response)) {
+    return { ok: true, modelList: response };
+  }
+  return { ok: false, error: response };
+}
+
+function formatModelWarning(modality: string, provider: string, error: unknown): string {
+  const errorRecord =
+    error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+  const code = typeof errorRecord?.code === "string" ? ` (${errorRecord.code})` : "";
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof errorRecord?.error === "string"
+        ? errorRecord.error
+        : "Model list unavailable.";
+  return `Could not refresh ${modality} models for ${provider || "default provider"}${code}: ${detail} Keeping the current selection until the server recovers.`;
 }
 
 function populateModelSelect(sel: HTMLSelectElement, modelList: ModelEntry[]): void {
@@ -72,15 +95,25 @@ async function simulateProviderChange(
   modelSel: HTMLSelectElement,
   tabState: TabState,
   ls: Storage,
-  fetchModels: (modality: string, provider: string) => Promise<ModelEntry[]>,
-): Promise<void> {
-  tabState.set(modality, { provider: newProvider, model: "" });
-  const modelList = await fetchModels(modality, newProvider);
+  fetchModels: (modality: string, provider: string) => Promise<ModelsResponse>,
+): Promise<boolean> {
+  const previous = tabState.get(modality) ?? { provider: "", model: "" };
+  providerSel.value = newProvider;
+  const response = normalizeModelsResponse(await fetchModels(modality, newProvider));
+  if (!response.ok) {
+    providerSel.value = previous.provider;
+    modelSel.value = previous.model;
+    tabState.set(modality, previous);
+    return false;
+  }
+
+  const modelList = response.modelList;
   populateModelSelect(modelSel, modelList);
   const cheapest = autoSelectCheapest(modelList) ?? "";
   modelSel.value = cheapest;
   tabState.set(modality, { provider: newProvider, model: cheapest });
   persistSelection(ls, modality, newProvider, cheapest);
+  return true;
 }
 
 /** Mirrors the model-change handler logic. */
@@ -104,7 +137,7 @@ async function simulateInitModality(
   modelSel: HTMLSelectElement,
   tabState: TabState,
   ls: Storage,
-  fetchModels: (m: string, p: string) => Promise<ModelEntry[]>,
+  fetchModels: (m: string, p: string) => Promise<ModelsResponse>,
   warnSpy: (msg: string) => void,
 ): Promise<void> {
   const saved = restoreSelection(ls, modality);
@@ -119,8 +152,21 @@ async function simulateInitModality(
     }
   }
   providerSel.value = provider;
-  tabState.set(modality, { provider, model: "" });
-  const modelList = await fetchModels(modality, provider);
+  const response = normalizeModelsResponse(await fetchModels(modality, provider));
+  if (!response.ok) {
+    warnSpy(formatModelWarning(modality, provider, response.error));
+    if (saved) {
+      populateModelSelect(modelSel, [{ id: saved.model, name: saved.model }]);
+      modelSel.value = saved.model;
+      tabState.set(modality, { provider, model: saved.model });
+    } else {
+      populateModelSelect(modelSel, []);
+      tabState.set(modality, { provider, model: "" });
+    }
+    return;
+  }
+
+  const modelList = response.modelList;
   populateModelSelect(modelSel, modelList);
   let model = autoSelectCheapest(modelList) ?? "";
   if (saved && modelList.some((m) => m.id === saved.model)) {
@@ -233,6 +279,110 @@ describe("T-PM-09: page-load restores saved selections", () => {
     );
 
     expect(tabState.get("video")).toEqual({ provider: "lumaai", model: "dream-machine" });
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── T-PM-14: Structured /models errors preserve saved selection ─────────────
+
+describe("T-PM-14: structured /models errors preserve saved selection", () => {
+  it("keeps the saved provider and model in tabState and localStorage when /models returns an error object", async () => {
+    const ls = window.localStorage;
+    ls.clear();
+    ls.setItem("ai-powered:provider:text", "anthropic");
+    ls.setItem("ai-powered:model:text", "claude-haiku-3-5");
+
+    const tabState: TabState = new Map();
+    const providerSel = makeSelect("anthropic", "openai");
+    const modelSel = makeSelect();
+    const warnSpy = vi.fn();
+
+    await simulateInitModality(
+      "text",
+      ["anthropic", "openai"],
+      "openai",
+      providerSel,
+      modelSel,
+      tabState,
+      ls,
+      async () => ({ error: "Model listing failed.", code: "MODEL_LIST_ERROR" }),
+      warnSpy,
+    );
+
+    expect(ls.getItem("ai-powered:provider:text")).toBe("anthropic");
+    expect(ls.getItem("ai-powered:model:text")).toBe("claude-haiku-3-5");
+    expect(tabState.get("text")).toEqual({ provider: "anthropic", model: "claude-haiku-3-5" });
+    expect(providerSel.value).toBe("anthropic");
+    expect(modelSel.value).toBe("claude-haiku-3-5");
+    expect([...modelSel.options].map((opt) => opt.value)).toEqual(["claude-haiku-3-5"]);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toMatch(/MODEL_LIST_ERROR/);
+  });
+});
+
+// ── T-PM-15: Provider failures do not persist blank models ──────────────────
+
+describe("T-PM-15: provider failures keep the previous selection", () => {
+  it("reverts the provider select and leaves localStorage untouched when the new provider cannot load models", async () => {
+    const ls = window.localStorage;
+    ls.clear();
+    ls.setItem("ai-powered:provider:image", "openai");
+    ls.setItem("ai-powered:model:image", "dall-e-3");
+
+    const tabState: TabState = new Map([["image", { provider: "openai", model: "dall-e-3" }]]);
+    const providerSel = makeSelect("openai", "stability");
+    providerSel.value = "openai";
+    const modelSel = makeSelect("dall-e-3", "dall-e-2");
+
+    const changed = await simulateProviderChange(
+      "image",
+      "stability",
+      providerSel,
+      modelSel,
+      tabState,
+      ls,
+      async () => ({ error: "Provider could not be constructed.", code: "PROVIDER_SETUP_ERROR" }),
+    );
+
+    expect(changed).toBe(false);
+    expect(providerSel.value).toBe("openai");
+    expect(modelSel.value).toBe("dall-e-3");
+    expect(tabState.get("image")).toEqual({ provider: "openai", model: "dall-e-3" });
+    expect(ls.getItem("ai-powered:provider:image")).toBe("openai");
+    expect(ls.getItem("ai-powered:model:image")).toBe("dall-e-3");
+  });
+});
+
+// ── T-PM-16: Empty model arrays keep the blank fallback ─────────────────────
+
+describe("T-PM-16: empty model arrays keep the blank fallback", () => {
+  it("renders the no-model placeholder and persists an empty model when the response is a real empty array", async () => {
+    const ls = window.localStorage;
+    ls.clear();
+
+    const tabState: TabState = new Map();
+    const providerSel = makeSelect("openai");
+    const modelSel = makeSelect();
+    const warnSpy = vi.fn();
+
+    await simulateInitModality(
+      "structured",
+      ["openai"],
+      "openai",
+      providerSel,
+      modelSel,
+      tabState,
+      ls,
+      async () => [],
+      warnSpy,
+    );
+
+    expect(modelSel.options.length).toBe(1);
+    expect(modelSel.options[0].textContent).toBe("No compatible models");
+    expect(modelSel.value).toBe("");
+    expect(tabState.get("structured")).toEqual({ provider: "openai", model: "" });
+    expect(ls.getItem("ai-powered:provider:structured")).toBe("openai");
+    expect(ls.getItem("ai-powered:model:structured")).toBe("");
     expect(warnSpy).not.toHaveBeenCalled();
   });
 });

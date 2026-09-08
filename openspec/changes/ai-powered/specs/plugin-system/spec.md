@@ -9,7 +9,7 @@ interface AiPlugin {
   description?: string;
   onRequest?(ctx: RequestContext): Promise<RequestContext>;
   onResponse?(ctx: ResponseContext): Promise<ResponseContext>;
-  onError?(err: AiPowerError): Promise<void>;
+  onError?(err: AiPoweredError): Promise<void>;
 }
 ```
 Plugins SHALL be discovered from the `plugins` array in config (file paths or npm package
@@ -28,8 +28,11 @@ names), loaded dynamically via `import()`, and composed into an ordered pipeline
 ### Requirement: Plugin pipeline execution
 The system SHALL invoke `onRequest` hooks on every provider call (in registration order)
 before dispatching the request, and `onResponse` hooks after receiving the response (in
-reverse order). `onError` SHALL be called for every plugin when a `AiPowerError` is thrown.
-Plugins SHALL NOT be able to mutate the `AiConfig` object directly.
+reverse order). `onError` SHALL be called for every plugin when a failure reaches the
+client boundary. Failures that are not already `AiPoweredError` SHALL be normalized to an
+`AiPoweredError` with code `PROVIDER_ERROR` before dispatch, and the original thrown value
+SHALL be preserved on `cause`. Plugins SHALL NOT be able to mutate the `AiConfig` object
+directly.
 
 #### Scenario: onRequest hook transforms context
 - **WHEN** a plugin's `onRequest` modifies `ctx.messages` (e.g., prepends a system message)
@@ -39,6 +42,19 @@ Plugins SHALL NOT be able to mutate the `AiConfig` object directly.
 - **WHEN** a plugin's `onRequest` throws an error
 - **THEN** the system wraps it as `PluginError`, logs it, bypasses that plugin for the
   session, and continues processing with the remaining plugins
+
+#### Scenario: Plain runtime failure is normalized for error hooks
+- **WHEN** a provider call throws a plain `Error`
+- **THEN** the system dispatches an `AiPoweredError` with code `PROVIDER_ERROR` to
+  `onError` and preserves the original thrown value on `cause`
+
+#### Scenario: Structured failure passes through unchanged
+- **WHEN** the provider throws an `AiPoweredError`
+- **THEN** `onError` receives the same `AiPoweredError` instance
+
+#### Scenario: Intentional plugin abort bypasses error broadcast
+- **WHEN** a plugin throws `PluginError` directly from `onRequest`
+- **THEN** the request aborts immediately and `onError` is not invoked for that abort path
 
 ---
 
@@ -78,4 +94,3 @@ previous instructions"), the plugin SHALL log a WARNING and optionally reject th
 #### Scenario: Rejection mode blocks request
 - **WHEN** `prompt-shield` is configured with `reject: true` and an injection is detected
 - **THEN** the plugin throws `PluginError` and the request is not dispatched to the provider
-

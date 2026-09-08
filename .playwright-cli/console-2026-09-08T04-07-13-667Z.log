@@ -1,0 +1,77 @@
+[    2375ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[    2392ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/favicon.ico:0
+[  105488ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  105496ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  105865ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  105878ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  105902ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  363063ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  363070ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  363415ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  363433ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  363467ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  433248ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  433255ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  433577ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  433589ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  433653ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  457544ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  457549ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  457568ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  457577ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  457597ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  470223ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  470230ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  470565ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  470576ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  470596ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  497948ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/smart-default.js:0
+[  606735ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  606741ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  606762ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  606774ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  606794ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  616384ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/smart-default.js:0
+[  637478ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/smart-default.js:0
+[  637484ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/integrations/web-example/smart-default.js:0
+[  712114ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[  712120ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  712456ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  712480ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[  712500ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2622438ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2622445ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2622768ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2622778ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2622800ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2623954ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2623960ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2623976ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2623986ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2624003ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2625216ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2625222ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2625270ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2625278ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2625298ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2627180ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2627190ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2627279ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2627373ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2627444ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2628624ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2628636ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2628692ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2628706ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2628734ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2629821ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2629825ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2629847ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2629859ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2629885ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2830689ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5173/:0
+[ 2830700ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "text"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2831051ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "image"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2831134ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "audio"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 2831229ms] [WARNING] [fallback-model] Saved provider "openai" not found for modality "structured"; falling back to default. @ http://127.0.0.1:5173/@vite/client:509
+[ 7641632ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:968
