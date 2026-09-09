@@ -329,3 +329,30 @@ describe("session clear <id>", () => {
     expect(clearResult.stdout).toContain("cleared");
   }, 30_000);
 });
+
+// ---------------------------------------------------------------------------
+// Scenario 12: mistyped commands / flags → syntax guidance
+// ---------------------------------------------------------------------------
+
+describe("syntax guidance", () => {
+  it("suggests the correct lifecycle flag when update is entered as a command", () => {
+    const { stderr, exitCode } = run(["update"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Invalid invocation");
+    expect(stderr).toContain("Use `ai-powered --update`.");
+  });
+
+  it("suggests the correct command when text is entered with --", () => {
+    const { stderr, exitCode } = run(["--text"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Invalid invocation");
+    expect(stderr).toContain("Use `ai-powered text");
+  });
+
+  it("suggests the correct nested command when config validate is entered with --", () => {
+    const { stderr, exitCode } = run(["config", "--validate"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Invalid invocation");
+    expect(stderr).toContain("Use `ai-powered config validate`.");
+  });
+});

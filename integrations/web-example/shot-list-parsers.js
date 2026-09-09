@@ -11,6 +11,9 @@
  *
  * Each shot item has the shape:
  *   { name, prompt, modality, duration?, fps?, aspectRatio?, resolution?, quality?, width?, height?, images? }
+ *
+ * Rounded fractional durations also carry non-enumerable `durationCoercion`
+ * metadata so the browser preflight UI can warn users before submit.
  */
 
 /**
@@ -35,35 +38,44 @@ export function _buildItem(entry, globalRefs, existing) {
   const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
   if (!prompt) return null;
 
+  let durationCoercion = null;
   const item = {
-    name: String(
-      entry.name || entry.shot || entry.title || ("Shot " + (existing + 1))
-    ).trim(),
+    name: String(entry.name || entry.shot || entry.title || "Shot " + (existing + 1)).trim(),
     prompt,
     modality: String(entry.modality || "video"),
     // spec: filmbuff/docs/specs/batch-shot-list-spec.md v1.0.0 §2, §8
-    ...(entry.duration !== undefined ? (() => {
-      const raw = typeof entry.duration === "object" && entry.duration !== null
-        ? (entry.duration.seconds ?? entry.duration)
-        : entry.duration;
-      const coerced = typeof raw === "number"
-        ? (Number.isInteger(raw) ? raw : Math.round(raw))
-        : raw;
-      if (typeof raw === "number" && !Number.isInteger(raw)) {
-        console.warn(
-          `[batch-ingest] duration ${raw} is not an integer; ` +
-          `rounded to ${coerced}. See filmbuff/docs/specs/batch-shot-list-spec.md §2`,
-        );
-      }
-      return { duration: coerced };
-    })() : {}),
-    ...(entry.fps         !== undefined ? { fps:         entry.fps         } : {}),
+    ...(entry.duration !== undefined
+      ? (() => {
+          const raw =
+            typeof entry.duration === "object" && entry.duration !== null
+              ? (entry.duration.seconds ?? entry.duration)
+              : entry.duration;
+          const coerced =
+            typeof raw === "number" ? (Number.isInteger(raw) ? raw : Math.round(raw)) : raw;
+          if (typeof raw === "number" && !Number.isInteger(raw)) {
+            durationCoercion = { raw, rounded: coerced };
+            console.warn(
+              `[batch-ingest] duration ${raw} is not an integer; ` +
+                `rounded to ${coerced}. See filmbuff/docs/specs/batch-shot-list-spec.md §2`,
+            );
+          }
+          return { duration: coerced };
+        })()
+      : {}),
+    ...(entry.fps !== undefined ? { fps: entry.fps } : {}),
     ...(entry.aspectRatio !== undefined ? { aspectRatio: entry.aspectRatio } : {}),
-    ...(entry.resolution  !== undefined ? { resolution:  entry.resolution  } : {}),
-    ...(entry.quality     !== undefined ? { quality:     entry.quality     } : {}),
-    ...(entry.width       !== undefined ? { width:       entry.width       } : {}),
-    ...(entry.height      !== undefined ? { height:      entry.height      } : {}),
+    ...(entry.resolution !== undefined ? { resolution: entry.resolution } : {}),
+    ...(entry.quality !== undefined ? { quality: entry.quality } : {}),
+    ...(entry.width !== undefined ? { width: entry.width } : {}),
+    ...(entry.height !== undefined ? { height: entry.height } : {}),
   };
+
+  if (durationCoercion) {
+    Object.defineProperty(item, "durationCoercion", {
+      value: durationCoercion,
+      enumerable: false,
+    });
+  }
 
   // Reference resolution priority cascade
   if (Array.isArray(entry.references)) {
@@ -88,6 +100,64 @@ export function _buildItem(entry, globalRefs, existing) {
   // Priority 4: none of the above → no images key
 
   return item;
+}
+
+/**
+ * Returns true when the input contains more than one top-level JSON value.
+ * This lets parseJsonFile() keep NDJSON fallback for line-oriented files while
+ * failing fast for a malformed single JSON object or array.
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+function hasMultipleTopLevelJsonValues(text) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let sawTopLevelValue = false;
+  let sawLineBreakAfterValue = false;
+
+  for (const char of text) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "\n" || char === "\r") {
+      if (sawTopLevelValue && depth === 0) sawLineBreakAfterValue = true;
+      continue;
+    }
+
+    if (char === "{" || char === "[") {
+      if (depth === 0 && sawTopLevelValue && sawLineBreakAfterValue) return true;
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      if (depth > 0) depth -= 1;
+      if (depth === 0) sawTopLevelValue = true;
+      continue;
+    }
+
+    if (depth === 0 && /\S/.test(char)) {
+      if (sawTopLevelValue && sawLineBreakAfterValue) return true;
+      sawTopLevelValue = true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -118,12 +188,13 @@ export function parseJsonFile(text) {
 
       if (!Array.isArray(parsed)) {
         // (A) JSON object path: read parsed.references (non-array object) as globalRefs
-        const globalRefs = (
+        const globalRefs =
           parsed.references !== null &&
           parsed.references !== undefined &&
           !Array.isArray(parsed.references) &&
           typeof parsed.references === "object"
-        ) ? parsed.references : {};
+            ? parsed.references
+            : {};
 
         // Support shots, items, or bare-object fallback (preserves existing behaviour)
         const arr = parsed.shots || parsed.items || [parsed];
@@ -135,11 +206,7 @@ export function parseJsonFile(text) {
         // (B) JSON array path: consume _type:"references" sentinel into globalRefs
         const globalRefs = {};
         for (const entry of parsed) {
-          if (
-            entry !== null &&
-            typeof entry === "object" &&
-            entry._type === "references"
-          ) {
+          if (entry !== null && typeof entry === "object" && entry._type === "references") {
             // Destructure sentinel: spread all fields except _type into globalRefs
             const { _type, ...rest } = entry; // eslint-disable-line no-unused-vars
             Object.assign(globalRefs, rest);
@@ -151,7 +218,16 @@ export function parseJsonFile(text) {
       }
 
       return items;
-    } catch (_) { /* fall through to NDJSON */ }
+    } catch (err) {
+      if (trimmed.startsWith("[") || !hasMultipleTopLevelJsonValues(trimmed)) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "Unable to parse structured JSON batch file";
+        throw new Error(`Malformed structured JSON batch file: ${message}`);
+      }
+      /* fall through to NDJSON */
+    }
   }
 
   // NDJSON: one JSON object per line — also handle _type:"references" sentinels
@@ -161,18 +237,16 @@ export function parseJsonFile(text) {
     if (!l) continue;
     try {
       const entry = JSON.parse(l);
-      if (
-        entry !== null &&
-        typeof entry === "object" &&
-        entry._type === "references"
-      ) {
+      if (entry !== null && typeof entry === "object" && entry._type === "references") {
         const { _type, ...rest } = entry; // eslint-disable-line no-unused-vars
         Object.assign(globalRefs, rest);
         continue; // do NOT emit as a shot
       }
       const item = _buildItem(entry, globalRefs, items.length);
       if (item) items.push(item);
-    } catch (_) { /* skip invalid lines */ }
+    } catch (_) {
+      /* skip invalid lines */
+    }
   }
   return items;
 }
@@ -205,6 +279,10 @@ function parseHeadingModality(heading) {
  * Horizontal rules (---) and bold-key metadata lines (**Key:** …) are skipped.
  * Shots with no accumulated prompt text are not emitted.
  *
+ * When a `**References:**` line is present, the emitted shot item also carries a
+ * non-enumerable `referenceResolution` payload with the requested keys, resolved
+ * URLs, and missing keys for later UI warning display.
+ *
  * @param {string} text - Raw file contents
  * @returns {{ name: string, prompt: string, modality: string }[]}
  */
@@ -214,37 +292,55 @@ export function parseMdFile(text) {
   // not supported for Markdown shot lists. Use JSON or JSONL for per-shot constraints.
   const items = [];
   const lines = text.split("\n");
-  let currentName     = null;
+  let currentName = null;
   let currentModality = "video";
-  let promptLines     = [];
+  let promptLines = [];
 
   // --- Reference-resolution state (TASK-05) ---
   let inReferencesSection = false; // true while parsing a ## References block
-  const globalRefs        = {};    // document-level key → URL map
-  let currentRefs         = [];    // per-shot key list from **References:** line
+  const globalRefs = {}; // document-level key → URL map
+  let currentRefs = []; // per-shot key list from **References:** line
 
   function flush() {
     if (currentName === null) return;
     const prompt = promptLines.join(" ").replace(/\s+/g, " ").trim();
     if (prompt) {
       const shot = { name: currentName, prompt, modality: currentModality };
-      // Resolve currentRefs against globalRefs → images[]; silently drop unknown keys
-      if (currentRefs.length) {
-        const resolved = currentRefs.map((k) => globalRefs[k]).filter(Boolean);
+      // Resolve currentRefs against globalRefs → images[] and warning metadata.
+      const requested = currentRefs.map((k) => k.trim()).filter(Boolean);
+      if (requested.length) {
+        const resolved = [];
+        const missing = [];
+        for (const key of requested) {
+          const url = globalRefs[key];
+          if (url !== undefined && url !== null && url !== "") {
+            resolved.push(url);
+          } else {
+            missing.push(key);
+          }
+        }
         if (resolved.length) shot.images = resolved;
+        Object.defineProperty(shot, "referenceResolution", {
+          value: {
+            requested,
+            resolved,
+            missing,
+          },
+          enumerable: false,
+        });
       }
       items.push(shot);
     }
     currentModality = "video";
-    promptLines     = [];
-    currentRefs     = []; // always reset per-shot refs after flush
+    promptLines = [];
+    currentRefs = []; // always reset per-shot refs after flush
   }
 
   for (const raw of lines) {
     const line = raw.trim();
     const headingMatch = line.match(/^#{1,4}\s+(.+)/);
     if (headingMatch) {
-      const rawHeading  = headingMatch[1].trim();
+      const rawHeading = headingMatch[1].trim();
       const headingText = rawHeading.replace(MODALITY_TAG_RE, "").trim();
 
       if (headingText.toLowerCase() === "references") {
@@ -256,7 +352,7 @@ export function parseMdFile(text) {
         inReferencesSection = false;
         flush();
         currentModality = parseHeadingModality(rawHeading);
-        currentName     = headingText;
+        currentName = headingText;
       }
     } else if (line) {
       // --- Inside ## References section: collect key → URL bullets ---

@@ -217,12 +217,186 @@ export interface WebMessage {
   content: string;
 }
 
+const SESSION_STORAGE_STATUS_ID = "__ai_powered_session_storage_status__";
+const SESSION_STORAGE_STATUS_TEXT =
+  "Conversation history is temporary in this browser. Session storage is unavailable, so this session stays in memory.";
+
+type MinimalStatusElement = {
+  hidden: boolean;
+  id: string;
+  tabIndex: number;
+  textContent: string | null;
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+  style: { cssText: string };
+};
+
+type MinimalDocument = {
+  getElementById(id: string): MinimalStatusElement | null;
+  createElement(tag: string): MinimalStatusElement;
+  body: { appendChild(node: unknown): void };
+};
+
+type MinimalStorage = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+};
+
+const SESSION_HISTORY_CACHE = new Map<string, WebMessage[]>();
+const SESSION_STORAGE_FAILURES = new Set<string>();
+
+function cloneHistory(history: WebMessage[]): WebMessage[] {
+  return history.map((msg) => ({ role: msg.role, content: msg.content }));
+}
+
+function normalizeHistory(raw: unknown): { history: WebMessage[]; ok: boolean } {
+  if (!Array.isArray(raw)) return { history: [], ok: false };
+
+  const history: WebMessage[] = [];
+  let ok = true;
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") {
+      ok = false;
+      continue;
+    }
+
+    const role = (entry as { role?: unknown }).role;
+    const content = (entry as { content?: unknown }).content;
+    if ((role === "user" || role === "assistant") && typeof content === "string") {
+      history.push({ role, content });
+      continue;
+    }
+    ok = false;
+  }
+
+  return { history, ok };
+}
+
+function getMinimalDocument(): MinimalDocument | undefined {
+  const doc = (globalThis as Record<string, unknown>)["document"] as MinimalDocument | undefined;
+  if (!doc) return undefined;
+  if (typeof doc.getElementById !== "function") return undefined;
+  return doc;
+}
+
+function getSessionStorage(): MinimalStorage | undefined {
+  try {
+    const storage = (globalThis as Record<string, unknown>)["sessionStorage"] as
+      | MinimalStorage
+      | undefined;
+    if (!storage) return undefined;
+    if (typeof storage.getItem !== "function") return undefined;
+    return storage;
+  } catch {
+    return undefined;
+  }
+}
+
+function updateSessionStorageWarning(): void {
+  const doc = getMinimalDocument();
+  if (!doc) return;
+
+  let warning = doc.getElementById(SESSION_STORAGE_STATUS_ID);
+  if (SESSION_STORAGE_FAILURES.size === 0) {
+    if (warning) {
+      warning.textContent = "";
+      warning.hidden = true;
+      warning.tabIndex = -1;
+    }
+    return;
+  }
+
+  if (!warning) {
+    warning = doc.createElement("p");
+    warning.id = SESSION_STORAGE_STATUS_ID;
+    warning.setAttribute("role", "status");
+    warning.setAttribute("aria-live", "polite");
+    warning.setAttribute("aria-atomic", "true");
+    warning.tabIndex = 0;
+    warning.style.cssText =
+      "position:fixed;right:1rem;bottom:1rem;z-index:2147483646;" +
+      "max-width:min(90vw,32rem);margin:0;padding:0.75rem 1rem;border-radius:0.75rem;" +
+      "border:1px solid #f59e0b;background:#fffbeb;color:#92400e;font-family:system-ui,sans-serif;" +
+      "font-size:13px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,0.18)";
+    doc.body.appendChild(warning);
+  }
+
+  warning.hidden = false;
+  warning.tabIndex = 0;
+  warning.textContent = SESSION_STORAGE_STATUS_TEXT;
+}
+
+function markSessionStorageFailure(sessionId: string): void {
+  SESSION_STORAGE_FAILURES.add(sessionId);
+  updateSessionStorageWarning();
+}
+
+function markSessionStorageHealthy(sessionId: string): void {
+  SESSION_STORAGE_FAILURES.delete(sessionId);
+  updateSessionStorageWarning();
+}
+
+function readPersistedHistory(storageKey: string): {
+  history: WebMessage[];
+  status: "ok" | "missing" | "failed";
+} {
+  const storage = getSessionStorage();
+  if (!storage) return { history: [], status: "failed" };
+
+  try {
+    const raw = storage.getItem(storageKey);
+    if (raw === null) return { history: [], status: "missing" };
+
+    const parsed = JSON.parse(raw) as unknown;
+    const normalized = normalizeHistory(parsed);
+    return {
+      history: normalized.history,
+      status: normalized.ok ? "ok" : "failed",
+    };
+  } catch {
+    return { history: [], status: "failed" };
+  }
+}
+
+function persistHistory(storageKey: string, history: WebMessage[]): boolean {
+  const storage = getSessionStorage();
+  if (!storage) return false;
+
+  try {
+    storage.setItem(storageKey, JSON.stringify(history));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearPersistedHistory(storageKey: string): boolean {
+  const storage = getSessionStorage();
+  if (!storage) return false;
+
+  try {
+    storage.removeItem(storageKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatHistoryPrompt(history: WebMessage[]): string {
+  return history
+    .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
+    .join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // BrowserConversationSession
 // ---------------------------------------------------------------------------
 
 /**
- * Lightweight multi-turn session backed by `sessionStorage`.
+ * Lightweight multi-turn session backed by `sessionStorage` with an in-memory
+ * fallback when browser storage is malformed or blocked.
  *
  * History is keyed as `ai-session:<id>` and persisted for the tab lifetime.
  * Each call to `send()` prepends the accumulated history so the model has
@@ -230,29 +404,60 @@ export interface WebMessage {
  */
 export class BrowserConversationSession {
   private readonly storageKey: string;
+  private history: WebMessage[];
 
   constructor(
     private readonly sessionId: string,
     private readonly client: WebAiClient,
   ) {
     this.storageKey = `ai-session:${sessionId}`;
+    this.history = this.loadHistory();
   }
 
   /** Retrieve the full conversation history from sessionStorage. */
   getHistory(): WebMessage[] {
-    try {
-      const raw = sessionStorage.getItem(this.storageKey);
-      return raw ? (JSON.parse(raw) as WebMessage[]) : [];
-    } catch {
-      return [];
-    }
+    return cloneHistory(this.history);
   }
 
   /** Append a message to the persistent history. */
   private appendMessage(msg: WebMessage): void {
-    const history = this.getHistory();
-    history.push(msg);
-    sessionStorage.setItem(this.storageKey, JSON.stringify(history));
+    this.history = [...this.history, { role: msg.role, content: msg.content }];
+    SESSION_HISTORY_CACHE.set(this.sessionId, cloneHistory(this.history));
+    if (persistHistory(this.storageKey, this.history)) {
+      markSessionStorageHealthy(this.sessionId);
+    } else {
+      markSessionStorageFailure(this.sessionId);
+    }
+  }
+
+  /** Load the initial history from sessionStorage or the in-memory fallback cache. */
+  private loadHistory(): WebMessage[] {
+    const persisted = readPersistedHistory(this.storageKey);
+    if (persisted.status === "ok") {
+      const history = cloneHistory(persisted.history);
+      SESSION_HISTORY_CACHE.set(this.sessionId, history);
+      markSessionStorageHealthy(this.sessionId);
+      return history;
+    }
+
+    const cached = SESSION_HISTORY_CACHE.get(this.sessionId);
+    if (persisted.status === "missing") {
+      if (SESSION_STORAGE_FAILURES.has(this.sessionId) && cached) {
+        markSessionStorageFailure(this.sessionId);
+        return cloneHistory(cached);
+      }
+      return [];
+    }
+
+    const history = cloneHistory(cached ?? persisted.history);
+    SESSION_HISTORY_CACHE.set(this.sessionId, history);
+    markSessionStorageFailure(this.sessionId);
+    return history;
+  }
+
+  /** Format the current history into the single-turn prompt shape. */
+  private buildHistoryPrompt(): string {
+    return formatHistoryPrompt(this.history);
   }
 
   /**
@@ -261,14 +466,7 @@ export class BrowserConversationSession {
    */
   async send(userMessage: string, options?: WebCallOptions): Promise<string> {
     this.appendMessage({ role: "user", content: userMessage });
-    const history = this.getHistory();
-
-    // Build a combined prompt from the history for single-turn providers.
-    const historyPrompt = history
-      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-      .join("\n");
-
-    const result = await this.client.generateText(historyPrompt, options);
+    const result = await this.client.generateText(this.buildHistoryPrompt(), options);
     const reply = result.content;
     this.appendMessage({ role: "assistant", content: reply });
     return reply;
@@ -277,13 +475,8 @@ export class BrowserConversationSession {
   /** Stream the assistant reply, persisting both turns on completion. */
   async *stream(userMessage: string, options?: WebCallOptions): AsyncIterable<string> {
     this.appendMessage({ role: "user", content: userMessage });
-    const history = this.getHistory();
-    const historyPrompt = history
-      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-      .join("\n");
-
     const chunks: string[] = [];
-    for await (const chunk of this.client.streamText(historyPrompt, options)) {
+    for await (const chunk of this.client.streamText(this.buildHistoryPrompt(), options)) {
       chunks.push(chunk);
       yield chunk;
     }
@@ -292,7 +485,13 @@ export class BrowserConversationSession {
 
   /** Clear session history from sessionStorage. */
   clear(): void {
-    sessionStorage.removeItem(this.storageKey);
+    this.history = [];
+    SESSION_HISTORY_CACHE.set(this.sessionId, []);
+    if (clearPersistedHistory(this.storageKey)) {
+      markSessionStorageHealthy(this.sessionId);
+    } else {
+      markSessionStorageFailure(this.sessionId);
+    }
   }
 }
 

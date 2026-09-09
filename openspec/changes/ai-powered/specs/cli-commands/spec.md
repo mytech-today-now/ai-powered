@@ -46,6 +46,26 @@ Every command SHALL accept: `--provider`, `--model`, `--api-key`, `--temperature
 
 ---
 
+### Requirement: Syntax guidance for mistyped flags and commands
+The CLI SHALL detect unambiguous syntax mistakes where a flag is entered as a bare command or
+a command/subcommand is entered with `--`. In those cases the CLI SHALL print the canonical
+invocation and a help hint instead of only Commander.js' raw parse error. This guidance SHALL
+cover lifecycle flags and nested command paths.
+
+#### Scenario: Lifecycle flag entered as a command
+- **WHEN** `ai-powered update` is run
+- **THEN** stderr instructs the user to run `ai-powered --update`
+
+#### Scenario: Command entered with --
+- **WHEN** `ai-powered --text` is run
+- **THEN** stderr instructs the user to run `ai-powered text`
+
+#### Scenario: Nested command entered with --
+- **WHEN** `ai-powered config --validate` is run
+- **THEN** stderr instructs the user to run `ai-powered config validate`
+
+---
+
 ### Requirement: stdin and interoperability
 The system SHALL read full input from stdin when no prompt argument is provided.
 The `--stdin` flag SHALL explicitly enable stdin reading. stdout SHALL carry only final
@@ -94,4 +114,3 @@ Health-check SHALL NEVER make a billable generation call.
 #### Scenario: health-check fails with missing API key
 - **WHEN** no API key is configured for the active provider
 - **THEN** the key-check step reports fail and the command exits with code 2
-

@@ -11,6 +11,7 @@
  *   --status   print resolved config and provider health
  *   --update   check npm for a newer version, update, migrate config
  *   --uninstall remove local .ai-powered/ directory and hooks
+ *   --init     alias for the `init` subcommand
  *   --install  alias for the `init` subcommand
  *   --log      print the tail of the log file
  *   --debug    enable verbose debug output globally
@@ -90,6 +91,7 @@ const program = new Command()
   .version(CURRENT_VERSION, "-v, --version", "Print version and exit")
   .helpOption("-h, --help", "Show help")
   .addOption(new Option("--status", "Print resolved config and provider health"))
+  .addOption(new Option("--init", "Alias for the init subcommand"))
   .addOption(new Option("--install", "Alias for the init subcommand"))
   .addOption(new Option("--update", "Check for a newer npm version and update"))
   .addOption(new Option("--uninstall", "Remove local .ai-powered/ directory and hooks"));
@@ -261,6 +263,115 @@ async function handleUpdate(): Promise<void> {
   } catch {
     console.error("Update failed. Ensure npm is in PATH and you have network access.");
     process.exit(EXIT_ERROR);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CLI syntax guidance
+// ---------------------------------------------------------------------------
+type CliInvocationHint = {
+  pattern: ReadonlyArray<string>;
+  usage: string;
+};
+
+function matchesInvocationPattern(
+  tokens: ReadonlyArray<string>,
+  pattern: ReadonlyArray<string>,
+): boolean {
+  if (tokens.length < pattern.length) return false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    if (tokens[index] !== pattern[index]) return false;
+  }
+  return true;
+}
+
+function formatInvocation(tokens: ReadonlyArray<string>): string {
+  return tokens.length > 0 ? `ai-powered ${tokens.join(" ")}` : "ai-powered";
+}
+
+function commandHint(pattern: ReadonlyArray<string>, usage: string): CliInvocationHint[] {
+  if (pattern.length === 0) return [];
+  if (pattern.length === 1) {
+    return [{ pattern: [`--${pattern[0]}`], usage }];
+  }
+
+  const head = pattern[0]!;
+  const next = pattern[1]!;
+  const tail = pattern.slice(1);
+  return [
+    { pattern: [`--${head}`, ...tail], usage },
+    { pattern: [head, `--${next}`], usage },
+    { pattern: [`--${head}`, `--${next}`], usage },
+  ];
+}
+
+const CLI_INVOCATION_HINTS: ReadonlyArray<CliInvocationHint> = [
+  { pattern: ["update"], usage: "ai-powered --update" },
+  { pattern: ["status"], usage: "ai-powered --status" },
+  { pattern: ["install"], usage: "ai-powered --init" },
+  { pattern: ["uninstall"], usage: "ai-powered --uninstall" },
+  { pattern: ["log"], usage: "ai-powered --log" },
+  { pattern: ["debug"], usage: "ai-powered --debug" },
+  ...commandHint(["audio", "transcribe"], "ai-powered audio transcribe <file>"),
+  ...commandHint(["audio", "speak"], 'ai-powered audio speak "Hello world" --output hello.mp3'),
+  ...commandHint(["config", "get"], "ai-powered config get <key>"),
+  ...commandHint(["config", "set"], "ai-powered config set <key> <value>"),
+  ...commandHint(["config", "list"], "ai-powered config list"),
+  ...commandHint(["config", "delete"], "ai-powered config delete <key>"),
+  ...commandHint(["config", "reset"], "ai-powered config reset"),
+  ...commandHint(["config", "path"], "ai-powered config path"),
+  ...commandHint(["config", "validate"], "ai-powered config validate"),
+  ...commandHint(["session", "list"], "ai-powered session list"),
+  ...commandHint(["session", "clear"], "ai-powered session clear <id>"),
+  {
+    pattern: ["--audio"],
+    usage: "ai-powered audio transcribe <file> or ai-powered audio speak <text>",
+  },
+  { pattern: ["--config"], usage: "ai-powered config <subcommand>" },
+  { pattern: ["--session"], usage: "ai-powered session <subcommand>" },
+  ...commandHint(["text"], 'ai-powered text "Hello!"'),
+  ...commandHint(
+    ["image"],
+    'ai-powered image "A serene mountain lake at sunrise" --output image.png',
+  ),
+  ...commandHint(["video"], 'ai-powered video "A timelapse of clouds over a city"'),
+  ...commandHint(["structured"], 'ai-powered structured --schema schema.json "Describe France."'),
+  ...commandHint(["wizard"], "ai-powered wizard"),
+  ...commandHint(["setup"], "ai-powered wizard"),
+  ...commandHint(["list-models"], "ai-powered list-models text"),
+  ...commandHint(["list-templates"], "ai-powered list-templates"),
+  ...commandHint(["health-check"], "ai-powered health-check"),
+  ...commandHint(["batch"], "ai-powered batch <mode>"),
+  ...commandHint(["serve"], "ai-powered serve"),
+  ...commandHint(["mcp-server"], "ai-powered mcp-server --transport stdio"),
+];
+
+function buildInvocationHint(tokens: ReadonlyArray<string>): string | null {
+  const hint = CLI_INVOCATION_HINTS.find((entry) =>
+    matchesInvocationPattern(tokens, entry.pattern),
+  );
+  if (!hint) return null;
+
+  return [
+    `Invalid invocation: \`${formatInvocation(tokens)}\``,
+    `Use \`${hint.usage}\`.`,
+    "Run `ai-powered --help` for the full command list.",
+  ].join("\n");
+}
+
+function getCommanderErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function silenceCommanderErrors(cmd: Command): void {
+  cmd.exitOverride();
+  cmd.configureOutput({
+    writeErr: () => {},
+  });
+  for (const child of cmd.commands) {
+    silenceCommanderErrors(child);
   }
 }
 
@@ -1361,7 +1472,7 @@ program.action(async (opts: Record<string, unknown>) => {
     handleStatus();
     return;
   }
-  if (opts["install"]) {
+  if (opts["init"] || opts["install"]) {
     handleInit();
     return;
   }
@@ -1391,11 +1502,26 @@ program.action(async (opts: Record<string, unknown>) => {
 // ---------------------------------------------------------------------------
 // Parse and run (ValidationError → exit code 2)
 // ---------------------------------------------------------------------------
+silenceCommanderErrors(program);
+
 program.parseAsync(process.argv).catch((err: unknown) => {
+  const commanderCode = getCommanderErrorCode(err);
+  if (commanderCode === "commander.helpDisplayed" || commanderCode === "commander.version") {
+    process.exit(EXIT_OK);
+    return;
+  }
+
   if (err instanceof ValidationError) {
     process.stderr.write(`Validation error: ${err.message}\n`);
     process.exit(EXIT_FAIL);
   }
+
+  const invocationHint = buildInvocationHint(process.argv.slice(2));
+  if (invocationHint) {
+    process.stderr.write(`${invocationHint}\n`);
+    process.exit(EXIT_ERROR);
+  }
+
   process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(EXIT_ERROR);
 });

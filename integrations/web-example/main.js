@@ -33,6 +33,17 @@ function setLoading(loading) {
   btnStream.disabled   = loading;
 }
 
+function appendStreamWarning(message) {
+  output.textContent = output.textContent
+    ? `${output.textContent}\n\n${message}`
+    : message;
+}
+
+function formatStreamWarning(malformedCount) {
+  const noun = malformedCount === 1 ? "frame" : "frames";
+  return `Warning: stream stopped after ${malformedCount} malformed SSE ${noun}; the answer may be incomplete.`;
+}
+
 // ---------------------------------------------------------------------------
 // Generate (non-streaming)
 // ---------------------------------------------------------------------------
@@ -85,6 +96,8 @@ btnStream.addEventListener("click", async () => {
 
     const decoder = new TextDecoder();
     let buf = "";
+    let malformedCount = 0;
+    let streamTruncated = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -101,9 +114,22 @@ btnStream.addEventListener("click", async () => {
           const evt = JSON.parse(payload);
           if (typeof evt.delta === "string") output.textContent += evt.delta;
         } catch {
-          // ignore malformed SSE
+          malformedCount += 1;
+          streamTruncated = true;
+          try {
+            await reader.cancel("Malformed SSE frame");
+          } catch {
+            // Ignore cancellation errors; the warning below still explains the truncation.
+          }
+          break;
         }
       }
+
+      if (streamTruncated) break;
+    }
+
+    if (malformedCount > 0) {
+      appendStreamWarning(formatStreamWarning(malformedCount));
     }
   } catch (err) {
     output.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
@@ -111,4 +137,3 @@ btnStream.addEventListener("click", async () => {
     setLoading(false);
   }
 });
-

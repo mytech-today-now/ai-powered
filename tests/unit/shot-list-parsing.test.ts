@@ -131,6 +131,33 @@ describe("parseJsonFile — empty and invalid inputs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Suite: parseJsonFile — malformed structured JSON must fail fast
+// ---------------------------------------------------------------------------
+
+describe("parseJsonFile — malformed structured JSON", () => {
+  // T-SP-26
+  it("T-SP-26: malformed JSON array throws a clear parse error", () => {
+    const input = '[{"name":"A","prompt":"Ocean"}, {"name":"B","prompt":"Forest"}';
+    expect(() => parseJsonFile(input)).toThrow(/Malformed structured JSON batch file/i);
+  });
+
+  // T-SP-27
+  it("T-SP-27: malformed JSON object throws a clear parse error", () => {
+    const input = '{"name":"C","prompt":"Rain"';
+    expect(() => parseJsonFile(input)).toThrow(/Malformed structured JSON batch file/i);
+  });
+
+  // T-SP-28
+  it("T-SP-28: valid NDJSON still parses successfully", () => {
+    const input = '{"prompt":"Sun"}\n{"name":"B","prompt":"Moon"}';
+    const result = parseJsonFile(input);
+    expect(result).toHaveLength(2);
+    expect(result[0].prompt).toBe("Sun");
+    expect(result[1].name).toBe("B");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Suite: parseMdFile — Markdown shot-list parsing
 // ---------------------------------------------------------------------------
 
@@ -141,6 +168,7 @@ describe("parseMdFile — Markdown shot-list parsing", () => {
     expect(result).toEqual([
       { name: "Shot Alpha", prompt: "A mountain lake at sunrise", modality: "video" },
     ]);
+    expect("referenceResolution" in result[0]).toBe(false);
   });
 
   // T-SP-15
@@ -364,10 +392,18 @@ describe("parseMdFile — ## References section support", () => {
     expect(result[0].name).toBe("Scene One");
     expect(result[0].prompt).toBe("Mountain lake at dawn.");
     expect(result[0].images).toEqual([heroUrl, bgUrl]);
+    expect(result[0].referenceResolution).toEqual({
+      requested: ["hero", "bg"],
+      resolved: [heroUrl, bgUrl],
+      missing: [],
+    });
+    expect(Object.getOwnPropertyDescriptor(result[0], "referenceResolution")?.enumerable).toBe(
+      false,
+    );
   });
 
-  // P-REF-07: **References:** Key1, Key2 resolves against globalRefs; unknown keys dropped
-  it("P-REF-07: **References:** keys resolved in order; unknown key silently dropped", () => {
+  // P-REF-07: **References:** Key1, Key2 resolves against globalRefs; unknown keys warned
+  it("P-REF-07: **References:** keys resolved in order; unknown key surfaces metadata", () => {
     const md = [
       "## References",
       `- hero: ${heroUrl}`,
@@ -384,13 +420,19 @@ describe("parseMdFile — ## References section support", () => {
 
     expect(result).toHaveLength(2);
 
-    // Shot Alpha: "hero" resolves, "missing-key" is silently dropped
+    // Shot Alpha: "hero" resolves, "missing-key" is preserved in metadata.
     expect(result[0].name).toBe("Shot Alpha");
     expect(result[0].images).toEqual([heroUrl]);
+    expect(result[0].referenceResolution).toEqual({
+      requested: ["hero", "missing-key"],
+      resolved: [heroUrl],
+      missing: ["missing-key"],
+    });
 
     // Shot Beta: no **References:** line → no images key
     expect(result[1].name).toBe("Shot Beta");
     expect("images" in result[1]).toBe(false);
+    expect("referenceResolution" in result[1]).toBe(false);
   });
 });
 
@@ -419,6 +461,7 @@ describe("duration coercion — ingest and submit guard", () => {
     expect(item).not.toBeNull();
     expect(item!.duration).toBe(8);
     expect(Number.isInteger(item!.duration)).toBe(true);
+    expect("durationCoercion" in item!).toBe(false);
   });
 
   // T-DUR-03: toSafeItems() applies Math.round() defence without mutating source
@@ -448,6 +491,74 @@ describe("duration coercion — ingest and submit guard", () => {
   });
 });
 
+describe("duration coercion warnings — visible before submit", () => {
+  it("T-DUR-10: _buildItem() rounds 3.25 and 4.75 while recording hidden coercion metadata", () => {
+    const first = _buildItem({ prompt: "Dialogue scene", duration: 3.25 }, {}, 0);
+    const second = _buildItem({ prompt: "Final shot", duration: 4.75 }, {}, 1);
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(first!.duration).toBe(3);
+    expect(second!.duration).toBe(5);
+    expect(first!.durationCoercion).toEqual({ raw: 3.25, rounded: 3 });
+    expect(second!.durationCoercion).toEqual({ raw: 4.75, rounded: 5 });
+    expect(Object.prototype.propertyIsEnumerable.call(first!, "durationCoercion")).toBe(false);
+    expect(Object.prototype.propertyIsEnumerable.call(second!, "durationCoercion")).toBe(false);
+  });
+
+  it("T-DUR-11: batch preflight shows rounded-duration warning inline before submit", () => {
+    const runtime = createBatchRuntime();
+    runtime.batchDurationEl.value = "6";
+
+    runtime.showBatchPreflight([
+      {
+        name: "Shot 1",
+        prompt: "Ocean surf",
+        duration: 3,
+        durationCoercion: { raw: 3.25, rounded: 3 },
+      },
+      {
+        name: "Shot 2",
+        prompt: "Sunset skyline",
+        duration: 5,
+        durationCoercion: { raw: 4.75, rounded: 5 },
+      },
+    ]);
+
+    const warningEl = runtime.batchSummary.querySelector(".batch-duration-warning");
+    expect(warningEl).not.toBeNull();
+    expect(warningEl?.textContent).toContain("Fractional durations were rounded before submit");
+    expect(warningEl?.textContent).toContain("Shot 1: 3.25 s → 3 s");
+    expect(warningEl?.textContent).toContain("Shot 2: 4.75 s → 5 s");
+    expect(warningEl?.getAttribute("role")).toBe("status");
+    expect(warningEl?.getAttribute("aria-live")).toBe("polite");
+    expect(warningEl?.getAttribute("aria-atomic")).toBe("true");
+    expect(runtime.btnBatchRun.disabled).toBe(false);
+  });
+
+  it("T-DUR-12: reference resolution still works when a fractional duration is coerced", () => {
+    const heroUrl = "https://img.example.com/hero.jpg";
+    const input = JSON.stringify({
+      references: { hero: heroUrl },
+      shots: [
+        {
+          name: "Shot Alpha",
+          prompt: "Desert dunes at sunset.",
+          duration: 4.75,
+          references: ["hero"],
+        },
+      ],
+    });
+
+    const result = parseJsonFile(input);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].duration).toBe(5);
+    expect(result[0].durationCoercion).toEqual({ raw: 4.75, rounded: 5 });
+    expect(result[0].images).toEqual([heroUrl]);
+  });
+});
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -456,6 +567,15 @@ interface BatchRunItem {
   name: string;
   prompt: string;
   duration?: number;
+  durationCoercion?: {
+    raw: number;
+    rounded: number;
+  };
+  referenceResolution?: {
+    requested: string[];
+    resolved: string[];
+    missing: string[];
+  };
 }
 
 const BATCH_PROVIDER_BLOCK_TITLE =
@@ -465,6 +585,7 @@ const BATCH_PROVIDER_BLOCK_TITLE =
 function createBatchRuntime(): {
   batchDurationEl: HTMLInputElement;
   batchDurationHint: HTMLSpanElement;
+  batchSummary: HTMLDivElement;
   btnBatchRun: HTMLButtonElement;
   showBatchPreflight(items: BatchRunItem[]): void;
   applyDurationValidation(): void;
@@ -497,6 +618,27 @@ function createBatchRuntime(): {
   let batchItems: BatchRunItem[] = [];
   let batchDurationError: string | null = null;
 
+  function renderBatchWarning(className: string, message: string): void {
+    let warningEl = batchSummary.querySelector<HTMLParagraphElement>(`.${className}`);
+    if (!warningEl) {
+      warningEl = document.createElement("p");
+      warningEl.className = `warn-box ${className}`;
+      warningEl.setAttribute("role", "status");
+      warningEl.setAttribute("aria-live", "polite");
+      warningEl.setAttribute("aria-atomic", "true");
+      batchSummary.appendChild(warningEl);
+    }
+    warningEl.textContent = message;
+  }
+
+  function showBatchPreflightWarning(message: string): void {
+    renderBatchWarning("batch-preflight-warning", message);
+  }
+
+  function showBatchDurationWarning(message: string): void {
+    renderBatchWarning("batch-duration-warning", message);
+  }
+
   function syncBatchRunButtonState(): void {
     const providerBlocked = btnBatchRun.dataset.providerBlocked === "true";
     btnBatchRun.disabled =
@@ -512,12 +654,59 @@ function createBatchRuntime(): {
     syncBatchRunButtonState();
   }
 
+  function formatDurationWarning(items: BatchRunItem[]): string {
+    const rounded = items
+      .map((item) => {
+        const coercion = item.durationCoercion;
+        if (!coercion) return null;
+        return `${item.name}: ${coercion.raw} s → ${coercion.rounded} s`;
+      })
+      .filter((value): value is string => value !== null);
+
+    if (!rounded.length) return "";
+
+    return (
+      "Fractional duration" +
+      (rounded.length === 1 ? "" : "s") +
+      " were rounded before submit: " +
+      rounded.join("; ")
+    );
+  }
+
   function showBatchPreflight(items: BatchRunItem[]): void {
     batchItems = items;
     btnBatchRun.dataset.providerBlocked = "false";
-    batchSummary.textContent = items.length
+    batchSummary.innerHTML = "";
+
+    if (items.length) {
+      const unresolved = items
+        .map((item) => {
+          const missing = item.referenceResolution?.missing ?? [];
+          if (!missing.length) return null;
+          return { name: item.name, missing };
+        })
+        .filter((entry): entry is { name: string; missing: string[] } => entry !== null);
+
+      if (unresolved.length) {
+        showBatchPreflightWarning(
+          "Unresolved Markdown reference key" +
+            (unresolved.length === 1 ? "" : "s") +
+            ": " +
+            unresolved.map(({ name, missing }) => `${name}: ${missing.join(", ")}`).join("; "),
+        );
+      }
+
+      const durationWarning = formatDurationWarning(items);
+      if (durationWarning) {
+        showBatchDurationWarning(durationWarning);
+      }
+    }
+
+    const status = document.createElement("p");
+    status.textContent = items.length
       ? `${items.length} shot${items.length === 1 ? "" : "s"} loaded and ready to process.`
       : "No valid shots found in file.";
+    batchSummary.appendChild(status);
     applyDurationValidation();
   }
 
@@ -530,6 +719,7 @@ function createBatchRuntime(): {
   return {
     batchDurationEl,
     batchDurationHint,
+    batchSummary,
     btnBatchRun,
     showBatchPreflight,
     applyDurationValidation,
@@ -590,6 +780,32 @@ describe("batch duration UI gating", () => {
 
     expect(runtime.btnBatchRun.disabled).toBe(true);
     expect(runtime.btnBatchRun.title).toBe(BATCH_PROVIDER_BLOCK_TITLE);
+  });
+});
+
+describe("batch preflight reference warnings", () => {
+  it("T-SP-29: unresolved Markdown references surface an accessible warning in batch preflight", () => {
+    const runtime = createBatchRuntime();
+    runtime.showBatchPreflight([
+      {
+        name: "Shot Alpha",
+        prompt: "Desert dunes at sunset.",
+        referenceResolution: {
+          requested: ["hero", "missing-key"],
+          resolved: ["https://img.example.com/hero.jpg"],
+          missing: ["missing-key"],
+        },
+      },
+    ]);
+
+    const warningEl = runtime.batchSummary.querySelector(".batch-preflight-warning");
+    expect(warningEl).not.toBeNull();
+    expect(warningEl?.textContent).toContain("Unresolved Markdown reference key");
+    expect(warningEl?.textContent).toContain("Shot Alpha");
+    expect(warningEl?.textContent).toContain("missing-key");
+    expect(warningEl?.getAttribute("role")).toBe("status");
+    expect(warningEl?.getAttribute("aria-live")).toBe("polite");
+    expect(warningEl?.getAttribute("aria-atomic")).toBe("true");
   });
 });
 

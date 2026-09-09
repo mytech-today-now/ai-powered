@@ -3028,6 +3028,64 @@
   /* ── BATCH FILE PARSERS ───────────────────────────────────── */
 
   /**
+   * Returns true when the input contains more than one top-level JSON value.
+   * This lets parseJsonFile() keep NDJSON fallback for line-oriented files while
+   * failing fast for a malformed single JSON object or array.
+   *
+   * @param {string} text
+   * @returns {boolean}
+   */
+  function hasMultipleTopLevelJsonValues(text) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let sawTopLevelValue = false;
+    let sawLineBreakAfterValue = false;
+
+    for (const char of text) {
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (char === "\n" || char === "\r") {
+        if (sawTopLevelValue && depth === 0) sawLineBreakAfterValue = true;
+        continue;
+      }
+
+      if (char === "{" || char === "[") {
+        if (depth === 0 && sawTopLevelValue && sawLineBreakAfterValue) return true;
+        depth += 1;
+        continue;
+      }
+
+      if (char === "}" || char === "]") {
+        if (depth > 0) depth -= 1;
+        if (depth === 0) sawTopLevelValue = true;
+        continue;
+      }
+
+      if (depth === 0 && /\S/.test(char)) {
+        if (sawTopLevelValue && sawLineBreakAfterValue) return true;
+        sawTopLevelValue = true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Parse a JSON/JSONL file into an array of shot items.
    * Accepts:
    *  - JSON array of objects with at least a `prompt` field
@@ -3063,27 +3121,57 @@
       return undefined;
     }
 
+    function buildItem(entry, index) {
+      const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
+      if (!prompt) return null;
+
+      const duration = resolveDuration(entry);
+      const roundedDuration =
+        typeof duration === "number" && !Number.isInteger(duration) ? Math.round(duration) : duration;
+      const durationCoercion =
+        typeof duration === "number" && !Number.isInteger(duration)
+          ? { raw: duration, rounded: roundedDuration }
+          : null;
+
+      const item = {
+        name: String(entry.name || entry.shot || entry.title || "Shot " + (index + 1)).trim(),
+        prompt,
+        modality: String(entry.modality || "video"),
+        ...(roundedDuration !== undefined ? { duration: roundedDuration } : {}),
+      };
+
+      if (durationCoercion) {
+        console.warn(
+          `[batch-ingest] duration ${durationCoercion.raw} is not an integer; ` +
+            `rounded to ${durationCoercion.rounded}. See filmbuff/docs/specs/batch-shot-list-spec.md §2`,
+        );
+        Object.defineProperty(item, "durationCoercion", {
+          value: durationCoercion,
+          enumerable: false,
+        });
+      }
+
+      return item;
+    }
+
     // Try as a JSON value first
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
         const parsed = JSON.parse(trimmed);
         const arr = Array.isArray(parsed) ? parsed : parsed.shots || parsed.items || [parsed];
         for (const entry of arr) {
-          const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
-          if (prompt) {
-            const duration = resolveDuration(entry);
-            items.push({
-              name: String(
-                entry.name || entry.shot || entry.title || "Shot " + (items.length + 1),
-              ).trim(),
-              prompt,
-              modality: String(entry.modality || "video"),
-              ...(duration !== undefined ? { duration } : {}),
-            });
-          }
+          const item = buildItem(entry, items.length);
+          if (item) items.push(item);
         }
         return items;
-      } catch (_) {
+      } catch (err) {
+        if (trimmed.startsWith("[") || !hasMultipleTopLevelJsonValues(trimmed)) {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : "Unable to parse structured JSON batch file";
+          throw new Error(`Malformed structured JSON batch file: ${message}`);
+        }
         /* fall through to JSONL */
       }
     }
@@ -3093,16 +3181,8 @@
       if (!l) continue;
       try {
         const entry = JSON.parse(l);
-        const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
-        if (prompt) {
-          const duration = resolveDuration(entry);
-          items.push({
-            name: String(entry.name || entry.shot || "Shot " + (items.length + 1)).trim(),
-            prompt,
-            modality: String(entry.modality || "video"),
-            ...(duration !== undefined ? { duration } : {}),
-          });
-        }
+        const item = buildItem(entry, items.length);
+        if (item) items.push(item);
       } catch (_) {
         /* skip invalid lines */
       }
@@ -3126,7 +3206,8 @@
 
   /**
    * Parse a Markdown shot-list file.
-   * Looks for headings as shot names and paragraph text as prompts.
+   * Looks for headings as shot names, paragraph text as prompts, and optional
+   * `## References` / `**References:**` metadata for image reference resolution.
    * Pattern: ## Shot N\nPrompt text…
    */
   function parseMdFile(text) {
@@ -3135,24 +3216,77 @@
     let currentName = null;
     let currentModality = "video";
     let promptLines = [];
+    let inReferencesSection = false;
+    const globalRefs = {};
+    let currentRefs = [];
+    let sawHeading = false;
+    let sawReferenceSyntax = false;
 
     function flush() {
-      if (!currentName) return;
+      if (currentName === null) return;
       const prompt = promptLines.join(" ").replace(/\s+/g, " ").trim();
-      if (prompt) items.push({ name: currentName, prompt, modality: currentModality });
+      if (prompt) {
+        const shot = { name: currentName, prompt, modality: currentModality };
+        const requested = currentRefs.map((k) => k.trim()).filter(Boolean);
+        if (requested.length) {
+          const resolved = [];
+          const missing = [];
+          for (const key of requested) {
+            const url = globalRefs[key];
+            if (url !== undefined && url !== null && url !== "") {
+              resolved.push(url);
+            } else {
+              missing.push(key);
+            }
+          }
+          if (resolved.length) shot.images = resolved;
+          Object.defineProperty(shot, "referenceResolution", {
+            value: { requested, resolved, missing },
+            enumerable: false,
+          });
+        }
+        items.push(shot);
+      }
       currentModality = "video";
       promptLines = [];
+      currentRefs = [];
     }
 
     for (const raw of lines) {
       const line = raw.trim();
       const headingMatch = line.match(/^#{1,4}\s+(.+)/);
       if (headingMatch) {
-        flush();
+        sawHeading = true;
         const rawHeading = headingMatch[1].trim();
-        currentModality = parseHeadingModality(rawHeading);
-        currentName = rawHeading.replace(MODALITY_TAG_RE, "").trim();
+        const headingText = rawHeading.replace(MODALITY_TAG_RE, "").trim();
+
+        if (headingText.toLowerCase() === "references") {
+          flush();
+          inReferencesSection = true;
+          currentName = null;
+        } else {
+          inReferencesSection = false;
+          flush();
+          currentModality = parseHeadingModality(rawHeading);
+          currentName = headingText;
+        }
       } else if (line) {
+        if (inReferencesSection) {
+          const m = line.match(/^[-*]\s+([^:]+):\s*(https?:\/\/\S+)/);
+          if (m) {
+            sawReferenceSyntax = true;
+            globalRefs[m[1].trim()] = m[2].trim();
+          }
+          continue;
+        }
+
+        const refMatch = line.match(/\*\*References:\*\*\s*(.+)/i);
+        if (refMatch) {
+          sawReferenceSyntax = true;
+          currentRefs = refMatch[1].split(",").map((k) => k.trim());
+          continue;
+        }
+
         // Skip horizontal rules and metadata
         if (/^---+$/.test(line) || /^\*\*[^*]+\*\*:/.test(line)) continue;
         // Auto-assign name for text appearing before the first heading
@@ -3164,8 +3298,9 @@
     }
     flush();
 
-    // Fallback: if no headings found, treat each non-empty line as a prompt
-    if (items.length === 0) {
+    // Fallback: if no headings or reference metadata were found, treat each
+    // non-empty line as a plain Markdown shot prompt.
+    if (items.length === 0 && !sawHeading && !sawReferenceSyntax) {
       for (const raw of lines) {
         const line = raw.trim();
         if (line && !line.startsWith("#")) {
@@ -3205,16 +3340,65 @@
     "Batch compatibility check unavailable. Server-side validation will still run.";
 
   function showBatchPreflightWarning(message) {
+    renderBatchWarning("batch-preflight-warning", message);
+  }
+
+  function showBatchDurationWarning(message) {
+    renderBatchWarning("batch-duration-warning", message);
+  }
+
+  function renderBatchWarning(className, message) {
     if (!batchSummary) return;
-    let warningEl = batchSummary.querySelector(".batch-preflight-warning");
+    let warningEl = batchSummary.querySelector("." + className);
     if (!warningEl) {
       warningEl = document.createElement("p");
-      warningEl.className = "warn-box batch-preflight-warning";
+      warningEl.className = "warn-box " + className;
       warningEl.setAttribute("role", "status");
       warningEl.setAttribute("aria-live", "polite");
+      warningEl.setAttribute("aria-atomic", "true");
       batchSummary.appendChild(warningEl);
     }
     warningEl.textContent = message;
+  }
+
+  function formatReferenceWarning(items) {
+    const unresolved = items
+      .map((item) => {
+        const missing = item.referenceResolution?.missing ?? [];
+        if (!missing.length) return null;
+        return { name: item.name, missing };
+      })
+      .filter(Boolean);
+
+    if (!unresolved.length) return "";
+
+    return (
+      "Unresolved Markdown reference key" +
+      (unresolved.length === 1 ? "" : "s") +
+      ": " +
+      unresolved
+        .map(({ name, missing }) => `${name}: ${missing.join(", ")}`)
+      .join("; ")
+    );
+  }
+
+  function formatDurationWarning(items) {
+    const rounded = items
+      .map((item) => {
+        const coercion = item.durationCoercion;
+        if (!coercion) return null;
+        return `${item.name}: ${coercion.raw} s → ${coercion.rounded} s`;
+      })
+      .filter(Boolean);
+
+    if (!rounded.length) return "";
+
+    return (
+      "Fractional duration" +
+      (rounded.length === 1 ? "" : "s") +
+      " were rounded before submit: " +
+      rounded.join("; ")
+    );
   }
 
   async function fetchPreflightCostEstimate(count, model) {
@@ -3258,6 +3442,17 @@
 
     const ul = document.createElement("ul");
     ul.className = "shot-preview-list";
+
+    const referenceWarning = formatReferenceWarning(items);
+    if (referenceWarning) {
+      showBatchPreflightWarning(referenceWarning);
+    }
+
+    const durationWarning = formatDurationWarning(items);
+    if (durationWarning) {
+      showBatchDurationWarning(durationWarning);
+    }
+
     items.forEach((item, i) => {
       const li = document.createElement("li");
       li.className = "shot-preview-item";

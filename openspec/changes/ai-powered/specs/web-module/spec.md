@@ -60,6 +60,19 @@ SHALL return a session-aware client that prepends history to each request.
 - **WHEN** two messages are exchanged using `client.session('chat1').generateText(...)` in the same tab
 - **THEN** the second call includes the first exchange in the request context
 
+### Requirement: Browser sessionStorage failures fail soft
+The system SHALL preserve the in-memory conversation history when `sessionStorage` read,
+write, or removal operations fail, or when stored session history is malformed. The session
+helper SHALL keep `send()`, `stream()`, and `clear()` working without throwing, preserve the
+existing message order and prompt formatting, and expose a short accessible status message
+indicating that browser storage is unavailable.
+
+#### Scenario: Malformed or blocked storage keeps the session usable
+- **WHEN** the browser rejects `sessionStorage` access or the stored history payload is malformed
+- **THEN** `BrowserConversationSession` continues using its in-memory history, `send()` and
+  `stream()` still return the assistant reply, `clear()` still empties the live transcript, and
+  the browser shows an `aria-live="polite"` warning that persistence is temporarily unavailable
+
 ---
 
 ### Requirement: Vite dual ESM/UMD build
@@ -84,4 +97,3 @@ binary outputs, cost/usage display, and a multi-turn session panel.
 #### Scenario: Web demo runs without build tooling
 - **WHEN** `integrations/web-example/index.html` is opened directly in a browser
 - **THEN** all UI features are functional without running npm or any build command
-
