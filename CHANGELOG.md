@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.5] – 2026-09-10
+
+### Fixed
+
+- Smart-default image-to-video routing now only keeps a requested provider when that provider
+  is actually live and can accept the image count. Otherwise it falls back to the current
+  live priority order or the existing no-live-provider warning state.
+
+---
+
 ## [0.5.4] – 2026-09-08
 
 ### Added
@@ -120,6 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE` (MIT).
 
 [0.3.2]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.3.2
+[0.5.5]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.5.5
 [0.5.4]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.5.4
 [0.2.0]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mytech-today-now/ai-powered/releases/tag/v0.1.0

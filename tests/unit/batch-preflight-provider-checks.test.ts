@@ -349,6 +349,39 @@ describe("Routing and blocking", () => {
     expect(runtime.btnBatchRun.disabled).toBe(false);
   });
 
+  it("falls back to xai when lumaai is requested but not live", async () => {
+    const runtime = createRuntime({
+      importModule: async () => ({ selectI2VProvider }),
+      fetchImpl: vi.fn(async () => ({ ok: true, status: 200 }) as Response),
+      liveProviders: ["xai", "venice"],
+      selectedProvider: "lumaai",
+    });
+
+    const items: BatchItem[] = [
+      {
+        _id: "shot-1",
+        modality: "video",
+        images: ["https://cdn.example.com/hero.jpg"],
+      },
+    ];
+
+    const ul = document.createElement("ul");
+    const li = document.createElement("li");
+    const status = document.createElement("span");
+    status.className = "shot-preflight-status";
+    status.dataset.shotId = "shot-1";
+    li.appendChild(status);
+    ul.appendChild(li);
+
+    await runtime.runPreflightProviderChecks(items, ul);
+
+    expect(status.textContent).toBe("⚠️");
+    expect(status.title).toContain("Routed from lumaai to xai");
+    expect(status.title).toContain("alternatives: venice");
+    expect(runtime.btnBatchRun.dataset.providerBlocked).toBe("false");
+    expect(runtime.btnBatchRun.disabled).toBe(false);
+  });
+
   it("keeps the current blocking behavior when no live provider is available", async () => {
     const runtime = createRuntime({
       importModule: async () => ({ selectI2VProvider }),

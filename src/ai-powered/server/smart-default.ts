@@ -71,9 +71,17 @@ export function selectI2VProvider(
     return { provider: requestedProvider, effectiveImageCount: 0, truncated: false };
   }
 
-  // Requested provider can handle the image count without routing
   const requested = PRIORITY.find((p) => p.id === requestedProvider);
-  if (requested && requested.max >= imageCount && imageCount <= 2) {
+  const requestedIsLive = liveProviders.includes(requestedProvider);
+
+  // Explicit Pika requests keep their provider choice only when Pika is live.
+  if (requestedProvider === "pika" && requestedIsLive) {
+    return { provider: requestedProvider, effectiveImageCount: imageCount, truncated: false };
+  }
+
+  // Requested provider can handle the image count without routing, but only
+  // when it is actually live.
+  if (requested && requestedIsLive && requested.max >= imageCount && imageCount <= 2) {
     return { provider: requestedProvider, effectiveImageCount: imageCount, truncated: false };
   }
 

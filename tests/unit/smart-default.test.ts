@@ -12,6 +12,8 @@ import { selectI2VProvider } from "../../src/ai-powered/server/smart-default.js"
 
 /** Simulated live provider list (all video-capable providers available). */
 const ALL_LIVE = ["lumaai", "xai", "venice", "runway", "mock"];
+const LIVE_WITHOUT_LUMAAI = ["xai", "venice"];
+const VENICE_ONLY = ["venice"];
 
 // ---------------------------------------------------------------------------
 // SM-01 — imageCount=0 → no change
@@ -49,10 +51,25 @@ describe("selectI2VProvider — SM-02: imageCount=1, capable provider", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SM-03 — imageCount=2, requestedProvider=xai → routes to lumaai
+// SM-03 — lumaai missing from liveProviders → falls back to xai
 // ---------------------------------------------------------------------------
 
-describe("selectI2VProvider — SM-03: imageCount=2, xai→lumaai", () => {
+describe("selectI2VProvider — SM-03: lumaai missing from liveProviders", () => {
+  it("routes to xai when lumaai is requested but absent from liveProviders", () => {
+    const result = selectI2VProvider("lumaai", 1, LIVE_WITHOUT_LUMAAI);
+    expect(result.provider).toBe("xai");
+    expect(result.effectiveImageCount).toBe(1);
+    expect(result.truncated).toBe(false);
+    expect(result.warning).toMatch(/Routed from lumaai to xai/);
+    expect(result.alternativeProviders).toEqual(["venice"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SM-04 — imageCount=2, requestedProvider=xai → routes to lumaai
+// ---------------------------------------------------------------------------
+
+describe("selectI2VProvider — SM-04: imageCount=2, xai→lumaai", () => {
   it("routes xai to lumaai when imageCount=2 (xai max=1)", () => {
     const result = selectI2VProvider("xai", 2, ALL_LIVE);
     expect(result.provider).toBe("lumaai");
@@ -63,10 +80,10 @@ describe("selectI2VProvider — SM-03: imageCount=2, xai→lumaai", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SM-04 — imageCount=3 → truncates to 2, routes to lumaai
+// SM-05 — imageCount=3 → truncates to 2, routes to lumaai
 // ---------------------------------------------------------------------------
 
-describe("selectI2VProvider — SM-04: imageCount=3, xai→lumaai+truncation", () => {
+describe("selectI2VProvider — SM-05: imageCount=3, xai→lumaai+truncation", () => {
   it("routes xai to lumaai and truncates effectiveImageCount to 2 when imageCount=3", () => {
     const result = selectI2VProvider("xai", 3, ALL_LIVE);
     expect(result.provider).toBe("lumaai");
@@ -77,16 +94,16 @@ describe("selectI2VProvider — SM-04: imageCount=3, xai→lumaai+truncation", (
 });
 
 // ---------------------------------------------------------------------------
-// SM-05 — lumaai not in liveProviders → falls back to xai
+// SM-06 — no live provider can handle the count → no-live state
 // ---------------------------------------------------------------------------
 
-describe("selectI2VProvider — SM-05: lumaai not live → fallback", () => {
-  it("falls back to requestedProvider with effectiveImageCount=1 when no live provider can handle 2 images", () => {
-    // Only xai and venice are live, neither supports 2 images (max=1 each)
-    const result = selectI2VProvider("xai", 2, ["xai", "venice"]);
-    expect(result.provider).toBe("xai");
+describe("selectI2VProvider — SM-06: no live provider can handle 2 images", () => {
+  it("returns the existing no-live-provider state when no live provider can handle the count", () => {
+    const result = selectI2VProvider("lumaai", 2, VENICE_ONLY);
+    expect(result.provider).toBe("lumaai");
     expect(result.effectiveImageCount).toBe(1);
     expect(result.truncated).toBe(true);
     expect(result.warning).toMatch(/No live provider/);
+    expect(result.alternativeProviders).toBeUndefined();
   });
 });

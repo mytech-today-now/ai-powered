@@ -27,16 +27,16 @@ console.log(result.content);
 
 **Key features at a glance:**
 
-| Feature           | Detail                                                                                              |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                 |
-| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Luma AI · Runway · VibeVoice · Custom/Ollama · Mock   |
-| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                    |
-| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings |
-| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                             |
-| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners       |
-| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents           |
-| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                      |
+| Feature           | Detail                                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                      |
+| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Luma AI · Runway · Pika · VibeVoice · Custom/Ollama · Mock |
+| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                         |
+| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings      |
+| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                                  |
+| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners            |
+| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents                |
+| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                           |
 
 ---
 
@@ -163,6 +163,33 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 
 Supported `customProviderType` values: `"openai-compatible"` · `"ollama"` · `"other"`
 
+### Pika video generation
+
+Set `PIKA_API_KEY` in the environment or select Pika in `ai-powered --init`. The
+provider keeps the key server-side and uses Pika's asynchronous REST API.
+
+```json
+{
+  "provider": "pika",
+  "model": "pika/pika-2.5/text-to-video"
+}
+```
+
+The current video catalog includes these endpoint IDs:
+
+- `pika/pika-2.5/text-to-video`
+- `pika/pika-2.5/image-to-video`
+- `pika/pikaframes/image-to-video`
+- `pika/pikadditions/video-to-video`
+- `pika/pikaswaps/video-to-video`
+- `pika/pikaffects/image-to-video`
+- `pika/pikaffects/video-to-video`
+
+Pika image and video references must be publicly reachable URLs. When using
+proxy file uploads, set `PROXY_PUBLIC_BASE_URL` so the provider can fetch the
+stored media. Pika's Soundtrack endpoint is not exposed because it returns
+audio rather than a video result.
+
 ### VibeVoice (self-hosted ASR / TTS)
 
 VibeVoice is a self-hosted speech provider with zero per-call cost — billing is determined by your own infrastructure. Set `provider: "vibevoice"` and point `baseUrl` at your VibeVoice server:
@@ -204,19 +231,19 @@ All examples use `--mock` to avoid real API calls. Remove `--mock` and set your 
 
 ### Global flags
 
-| Flag                | Description                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `venice`, `lumaai`, `runway`, `custom`, `mock`) |
-| `--model <id>`      | Override model identifier                                                                        |
-| `--profile <name>`  | Use named profile from config                                                                    |
-| `--mock`            | Force mock provider                                                                              |
-| `--dry-run`         | Estimate cost; skip API call                                                                     |
-| `--quiet`           | Print raw content only (no decorators)                                                           |
-| `--json`            | Print JSON envelope                                                                              |
-| `--session <id>`    | Attach request to a named conversation session                                                   |
-| `--log <path>`      | Write structured JSONL log to file                                                               |
-| `--debug`           | Enable verbose debug logging                                                                     |
-| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                                          |
+| Flag                | Description                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `venice`, `lumaai`, `runway`, `pika`, `custom`, `mock`) |
+| `--model <id>`      | Override model identifier                                                                                |
+| `--profile <name>`  | Use named profile from config                                                                            |
+| `--mock`            | Force mock provider                                                                                      |
+| `--dry-run`         | Estimate cost; skip API call                                                                             |
+| `--quiet`           | Print raw content only (no decorators)                                                                   |
+| `--json`            | Print JSON envelope                                                                                      |
+| `--session <id>`    | Attach request to a named conversation session                                                           |
+| `--log <path>`      | Write structured JSONL log to file                                                                       |
+| `--debug`           | Enable verbose debug logging                                                                             |
+| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                                                  |
 
 ### `text` — Generate text
 
@@ -475,6 +502,11 @@ and rolling off, 3 seconds.
 ### POST /batch API
 
 The proxy exposes `POST /batch` which accepts an `items` array and streams results as NDJSON:
+
+When a video item includes `images`, smart-default routing only keeps the requested provider if
+that provider is live and can accept the image count. Otherwise the request falls back to the
+current live priority order or the existing no-live-provider warning state, and the web demo
+pre-flight preview mirrors the same decision.
 
 ```bash
 curl -X POST http://localhost:3001/batch \
@@ -903,22 +935,23 @@ All endpoints accept per-request overrides (`provider`, `model`, `temperature`, 
 | `POST /v1/images/generations`   | OpenAI Images         | openai · venice · mock                   | —                         |
 | `POST /v1/audio/transcriptions` | OpenAI Audio          | openai · mock                            | —                         |
 | `POST /v1/audio/speech`         | OpenAI TTS            | openai · mock                            | —                         |
-| `POST /v1/video/generations`    | **ai-powered-native** | xai · lumaai · runway · mock             | —                         |
+| `POST /v1/video/generations`    | **ai-powered-native** | xai · lumaai · runway · pika · mock      | -                         |
 
 > ⚠️ `/v1/video/generations` uses an `ai-powered`-native request/response shape. There is no external industry standard for video generation; the route exists to give proxy consumers a consistent `/v1/` namespace.
 
 ### Provider × modality support matrix
 
-| Provider  | text | image | audio | video | structured |
-| --------- | :--: | :---: | :---: | :---: | :--------: |
-| openai    |  ✅  |  ✅   |  ✅   |   —   |     ✅     |
-| anthropic |  ✅  |   —   |   —   |   —   |     ✅     |
-| xai       |  ✅  |   —   |   —   |  ✅   |     ✅     |
-| venice    |  ✅  |  ✅   |   —   |   —   |     —      |
-| lumaai    |  —   |   —   |   —   |  ✅   |     —      |
-| runway    |  —   |   —   |   —   |  ✅   |     —      |
-| vibevoice |  —   |   —   |  ✅   |   —   |     —      |
-| mock      |  ✅  |  ✅   |  ✅   |  ✅   |     ✅     |
+| Provider  | text | image | audio | video |  structured  |
+| --------- | :--: | :---: | :---: | :---: | :----------: |
+| openai    |  ✅  |  ✅   |  ✅   |   —   |      ✅      |
+| anthropic |  ✅  |   —   |   —   |   —   |      ✅      |
+| xai       |  ✅  |   —   |   —   |  ✅   |      ✅      |
+| venice    |  ✅  |  ✅   |   —   |   —   |      —       |
+| lumaai    |  —   |   —   |   —   |  ✅   |      —       |
+| runway    |  —   |   —   |   —   |  ✅   |      —       |
+| pika      |  -   |   -   |   -   |  ✅   | image, video |
+| vibevoice |  —   |   —   |  ✅   |   —   |      —       |
+| mock      |  ✅  |  ✅   |  ✅   |  ✅   |      ✅      |
 
 ### OpenAI client quick-start (FilmBuff pattern)
 
