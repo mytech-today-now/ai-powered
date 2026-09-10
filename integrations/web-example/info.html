@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ai-powered · info</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="info-page">
+    <div class="info-shell">
+      <header class="info-header">
+        <div class="info-header-copy">
+          <h1>Information and settings</h1>
+          <p>
+            Read the live README, explore related posts, and manage browser-owned state for the demo.
+          </p>
+        </div>
+        <div class="info-header-meta">
+          <button class="style-badge" id="info-style-badge" type="button">Style</button>
+          <span class="version-badge" id="info-version-badge">UMD</span>
+        </div>
+      </header>
+
+      <nav class="info-tabs" role="tablist" aria-label="Information tabs">
+        <button class="info-tab-btn active" data-info-tab="readme" role="tab" aria-selected="true">
+          README
+        </button>
+        <button class="info-tab-btn" data-info-tab="discover" role="tab" aria-selected="false">
+          Discovery
+        </button>
+        <button class="info-tab-btn" data-info-tab="settings" role="tab" aria-selected="false">
+          Settings
+        </button>
+      </nav>
+
+      <main class="info-main">
+        <section class="info-panel" id="info-panel-readme" role="tabpanel">
+          <div class="info-panel-header">
+            <div>
+              <h2>Live README</h2>
+              <p>Fetched from the published upstream source and rendered as semantic HTML.</p>
+            </div>
+            <span id="readme-status" class="info-status">Loading...</span>
+          </div>
+          <article id="readme-content" class="info-article"></article>
+        </section>
+
+        <section class="info-panel hidden" id="info-panel-discover" role="tabpanel">
+          <div class="info-panel-header">
+            <div>
+              <h2>Discovery</h2>
+              <p>Relevant posts from mytech.today with short context for the browser workbench.</p>
+            </div>
+            <span id="discovery-status" class="info-status">Loading...</span>
+          </div>
+          <div id="discovery-grid" class="discovery-grid"></div>
+        </section>
+
+        <section class="info-panel hidden" id="info-panel-settings" role="tabpanel">
+          <div class="info-panel-header">
+            <div>
+              <h2>Configuration</h2>
+              <p>Reset all app-owned browser state and review the current storage footprint.</p>
+            </div>
+            <span id="settings-status" class="info-status">Ready</span>
+          </div>
+          <div id="storage-summary" class="storage-summary"></div>
+          <div class="settings-actions">
+            <button id="btn-reset-all" class="btn-primary btn--danger" type="button">Reset All</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="../../dist-web/ai-powered.umd.js"></script>
+    <script src="info.js"></script>
+  </body>
+</html>

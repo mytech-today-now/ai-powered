@@ -12,7 +12,7 @@ import { z } from "zod";
 import { AiConfigSchema } from "./core.js";
 import type { AiConfig, Modality } from "./core.js";
 import type { ProviderName } from "./core.js";
-import type { BaseProvider, ProviderCallOptions } from "./providers/index.js";
+import type { BaseProvider, ProviderCallOptions, StreamTextIterable } from "./providers/index.js";
 import { createProvider } from "./providers/index.js";
 import type {
   TextResult,
@@ -28,6 +28,7 @@ import type {
   BaseResult,
   ProviderFailure,
   InputModality,
+  TokenUsage,
 } from "./types.js";
 import {
   AiPoweredError,
@@ -107,6 +108,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function readFinishReason(source: { finishReason?: unknown } | null | undefined): string | null {
+  return typeof source?.finishReason === "string" ? source.finishReason : null;
 }
 
 /**
@@ -903,38 +908,66 @@ export class AiClient {
     return responseCtx.result as VideoResult;
   }
 
-  /** Stream text deltas as an AsyncIterable<string>. */
-  async *streamText(prompt: string, options?: CallOptions): AsyncIterable<string> {
-    const modality: Modality = "text";
-    const initialCtx: RequestContext = {
-      config: this._config,
-      modality,
-      messages: [{ role: "user", content: prompt }],
-      options: { ...options, stream: true } as Record<string, unknown>,
-    };
-    const requestCtx = await this.runOnRequest(initialCtx);
-    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
-    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
-    callOptions.stream = true;
-    // Pre-call guard prevents starting a stream that would exceed the budget.
-    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
-    // Circuit breaker check before starting the stream (fast-fail if open).
-    const cb = this._getCircuitBreaker(this._config.provider);
-    if (cb.state === "OPEN") {
-      // Delegate to the cb.call path so it either fast-fails or transitions to HALF_OPEN.
-      await cb.call(() => Promise.resolve());
-    }
-    try {
-      for await (const chunk of this._provider.streamText(effectivePrompt, callOptions)) {
-        yield chunk;
+  /** Stream text deltas as an AsyncIterable<string> plus optional finish reason metadata. */
+  streamText(
+    prompt: string,
+    options?: CallOptions,
+  ): StreamTextIterable & { usage: TokenUsage | undefined } {
+    const client = this;
+    let finishReason: string | null = null;
+    let usage: TokenUsage | undefined;
+
+    const iterator = (async function* (): AsyncGenerator<string> {
+      const modality: Modality = "text";
+      const initialCtx: RequestContext = {
+        config: client._config,
+        modality,
+        messages: [{ role: "user", content: prompt }],
+        options: { ...options, stream: true } as Record<string, unknown>,
+      };
+      const requestCtx = await client.runOnRequest(initialCtx);
+      const effectivePrompt = client._extractUserMessage(requestCtx) ?? prompt;
+      const callOptions = client._buildCallOptions(options, requestCtx, initialCtx.messages);
+      callOptions.stream = true;
+      // Pre-call guard prevents starting a stream that would exceed the budget.
+      client.preCheckBudget(callOptions.model ?? client._config.model ?? "", effectivePrompt);
+      // Circuit breaker check before starting the stream (fast-fail if open).
+      const cb = client._getCircuitBreaker(client._config.provider);
+      if (cb.state === "OPEN") {
+        // Delegate to the cb.call path so it either fast-fails or transitions to HALF_OPEN.
+        await cb.call(() => Promise.resolve());
       }
-      // Successful stream — reset consecutive failure counter.
-      this._getCircuitBreaker(this._config.provider);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
-      throw error;
-    }
+      try {
+        const providerStream = client._provider.streamText(
+          effectivePrompt,
+          callOptions,
+        ) as StreamTextIterable & { usage: TokenUsage | undefined };
+        for await (const chunk of providerStream) {
+          yield chunk;
+        }
+        finishReason = readFinishReason(providerStream);
+        usage = providerStream.usage;
+        // Successful stream — reset consecutive failure counter.
+        client._getCircuitBreaker(client._config.provider);
+      } catch (err) {
+        finishReason = null;
+        const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+        await client.runOnError(err);
+        throw error;
+      }
+    })();
+
+    return {
+      get finishReason() {
+        return finishReason;
+      },
+      get usage() {
+        return usage;
+      },
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+    };
   }
 
   /** Generate structured output validated against the given Zod schema. */

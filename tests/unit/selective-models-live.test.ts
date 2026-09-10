@@ -61,10 +61,12 @@ describe("Venice live model lists", () => {
     const allModels = await provider.listModels();
     expect(allModels.map((m) => m.id)).toEqual(["qwen-2.5-vl", "llama-3.3-70b"]);
     expect(allModels.find((m) => m.id === "qwen-2.5-vl")?.inputCapabilities).toEqual(["image"]);
+    expect(allModels.find((m) => m.id === "qwen-2.5-vl")?.type).toBe("image");
 
     const imageModels = await provider.listModels(undefined, "image" as never);
     expect(imageModels.map((m) => m.id)).toEqual(["qwen-2.5-vl"]);
     expect(imageModels[0]?.inputCapabilities).toEqual(["image"]);
+    expect(imageModels[0]?.type).toBe("image");
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.venice.ai/api/v1/models",
       expect.objectContaining({

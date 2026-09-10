@@ -22,12 +22,35 @@
     return;
   }
 
-  const { createWebClient } = window.AiPowered;
+  const {
+    createWebClient,
+    createBrowserRecordStore,
+    createObjectUrlRegistry,
+    createStyleController,
+    buildSessionTitle,
+    clearPrefsByPrefix,
+    listPrefsByPrefix,
+    loadDiscoveryPosts,
+    loadReadmeMarkdown,
+    recordDownloadName,
+    recordDownloadPayload,
+    recordSummaryText,
+    recordToManifest,
+    recordToPlainText,
+    readJsonPreference,
+    writeJsonPreference,
+    DEFAULT_BROWSER_DB_NAME,
+    DEFAULT_UI_KEYS,
+    DEFAULT_STORAGE_PREFIXES,
+    DEFAULT_REMOTE_CACHE_PREFIXES,
+  } = window.AiPowered;
 
   /* ── DOM references ─────────────────────────────────────── */
   const $ = (id) => document.getElementById(id);
 
   const libVersionEl = $("lib-version");
+  const styleBadgeEl = $("style-badge");
+  const btnOpenInfo = $("btn-open-info");
   const modeSelect = $("mode-select");
   const proxyConfig = $("proxy-config");
   const directConfig = $("direct-config");
@@ -55,6 +78,15 @@
 
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
+  const historyPanelWrap = $("history-panel-wrap");
+  const historyPanelHeader = $("history-panel-header");
+  const historyPanelBody = $("history-panel-body");
+  const historyPanelWarning = $("history-panel-warning");
+  const historyPanelLabel = $("history-panel-label");
+  const historyChevron = $("history-chevron");
+  const btnHistoryToggle = $("btn-history-toggle");
+  const btnHistoryClearAll = $("btn-history-clear-all");
+  const btnHistoryExportAll = $("btn-history-export-all");
 
   const textPromptEl = $("text-prompt");
   const btnTextGenerate = $("btn-text-generate");
@@ -117,11 +149,63 @@
   const batchQualityEl = $("batch-quality");
   const batchDurationEl = $("batch-duration");
   const batchFpsEl = $("batch-fps");
+  const batchPikaOptionsEl = $("batch-pika-options");
+  const batchNegativePromptEl = $("batch-negative-prompt");
+  const batchSeedEl = $("batch-seed");
+  const batchTransitionDurationEl = $("batch-transition-duration");
+  const batchPikaffectEl = $("batch-pikaffect");
+  const batchModifyRegionRoiEl = $("batch-modify-region-roi");
+  const batchModifyRegionMaskEl = $("batch-modify-region-mask");
 
   const structuredPromptEl = $("structured-prompt");
   const btnStructuredGenerate = $("btn-structured-generate");
   const structuredOutput = $("structured-output");
   const structuredUsage = $("structured-usage");
+
+  const browserStore = createBrowserRecordStore({
+    dbName: DEFAULT_BROWSER_DB_NAME,
+    localStorage: window.localStorage,
+    sessionStorage: window.sessionStorage,
+    storagePrefixes: DEFAULT_STORAGE_PREFIXES,
+    remoteCachePrefixes: DEFAULT_REMOTE_CACHE_PREFIXES,
+  });
+  const objectUrlRegistry = createObjectUrlRegistry();
+  const styleController = createStyleController({
+    document,
+    storage: window.localStorage,
+  });
+  const activeUiTabKey = DEFAULT_UI_KEYS.activeTab;
+  const historyExpandedKey = DEFAULT_UI_KEYS.historyExpanded;
+  const currentTextSessionKey = DEFAULT_UI_KEYS.currentTextSessionId;
+  const initialActiveTab = readJsonPreference(window.localStorage, activeUiTabKey, "text");
+  const initialHistoryExpanded = readJsonPreference(window.localStorage, historyExpandedKey, false);
+  const legacySessionKey = "ai-demo-session";
+  const legacyArchiveKey = "ai-demo-archive";
+  const sessionDraftRecordState = {
+    id: window.localStorage.getItem(currentTextSessionKey) || "",
+  };
+
+  function syncStyleBadge(style = styleController.style) {
+    if (!styleBadgeEl) return;
+    styleBadgeEl.textContent = style.label;
+    styleBadgeEl.title = `Rotate style from ${style.label}`;
+    styleBadgeEl.setAttribute("aria-label", `Rotate style. Current style: ${style.label}`);
+  }
+
+  syncStyleBadge();
+
+  if (styleBadgeEl) {
+    styleBadgeEl.addEventListener("click", () => {
+      const nextStyle = styleController.rotate();
+      syncStyleBadge(nextStyle);
+    });
+  }
+
+  if (btnOpenInfo) {
+    btnOpenInfo.addEventListener("click", () => {
+      window.open("info.html", "_blank", "noopener,noreferrer");
+    });
+  }
 
   // Per-tab model selects (proxy mode)
   const textModelSelect = $("text-model-select");
@@ -181,6 +265,13 @@
   const videoQuality = $("video-quality");
   const videoDuration = $("video-duration");
   const videoFps = $("video-fps");
+  const videoPikaOptionsEl = $("video-pika-options");
+  const videoNegativePrompt = $("video-negative-prompt");
+  const videoSeed = $("video-seed");
+  const videoTransitionDuration = $("video-transition-duration");
+  const videoPikaffect = $("video-pikaffect");
+  const videoModifyRegionRoi = $("video-modify-region-roi");
+  const videoModifyRegionMask = $("video-modify-region-mask");
 
   // File upload controls (Text, Image, Video tabs)
   const fileUploadInput = $("file-upload-input");
@@ -403,10 +494,11 @@
    * @param {string} modality
    * @param {string} provider
    */
-  async function fetchModelList(modality, provider) {
+  async function fetchModelList(modality, provider, acceptsImage = false) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
     let url = `${base}/models?modality=${modality}`;
     if (provider) url += `&provider=${encodeURIComponent(provider)}`;
+    if (acceptsImage) url += "&accepts=image";
 
     try {
       const data = await fetch(url).then((r) => r.json());
@@ -446,6 +538,10 @@
   function activeTab() {
     const btn = [...tabBtns].find((b) => b.classList.contains("active"));
     return btn ? btn.dataset.tab : "text";
+  }
+
+  function normalizeTabId(tabId) {
+    return [...tabBtns].some((btn) => btn.dataset.tab === tabId) ? tabId : "text";
   }
 
   /**
@@ -562,6 +658,103 @@
     });
   }
 
+  function _setPikaControlVisible(control, visible) {
+    if (!control) return;
+    control.hidden = !visible;
+    if (control.previousElementSibling) control.previousElementSibling.hidden = !visible;
+  }
+
+  function syncPikaOptions(descriptor) {
+    const options = Array.isArray(descriptor?.options) ? descriptor.options : [];
+    const byName = new Map(options.map((option) => [option.name, option]));
+    const controls = [
+      ["negativePrompt", videoNegativePrompt],
+      ["seed", videoSeed],
+      ["transitionDuration", videoTransitionDuration],
+      ["pikaffect", videoPikaffect],
+      ["modifyRegionRoi", videoModifyRegionRoi],
+      ["modifyRegionMask", videoModifyRegionMask],
+    ];
+    if (videoPikaOptionsEl) videoPikaOptionsEl.classList.toggle("hidden", options.length === 0);
+    if (batchPikaOptionsEl) batchPikaOptionsEl.classList.toggle("hidden", options.length === 0);
+    if (options.length > 0 && !byName.has("duration")) {
+      if (videoDuration) videoDuration.value = "";
+      if (batchDurationEl) batchDurationEl.value = "";
+    }
+
+    for (const [name, control] of controls) {
+      const option = byName.get(name);
+      _setPikaControlVisible(control, Boolean(option));
+      const batchControl = {
+        negativePrompt: batchNegativePromptEl,
+        seed: batchSeedEl,
+        transitionDuration: batchTransitionDurationEl,
+        pikaffect: batchPikaffectEl,
+        modifyRegionRoi: batchModifyRegionRoiEl,
+        modifyRegionMask: batchModifyRegionMaskEl,
+      }[name];
+      _setPikaControlVisible(batchControl, Boolean(option));
+      if (option && control?.tagName === "SELECT") {
+        const select = control;
+        const current = select.value;
+        select.innerHTML = '<option value="">Default</option>';
+        for (const value of option.values ?? []) {
+          const entry = document.createElement("option");
+          entry.value = String(value);
+          entry.textContent = String(value);
+          select.appendChild(entry);
+        }
+        select.value = (option.values ?? []).some((value) => String(value) === current)
+          ? current
+          : "";
+        if (batchControl?.tagName === "SELECT") {
+          batchControl.innerHTML = select.innerHTML;
+          batchControl.value = select.value;
+        }
+      }
+      if (option && control && "min" in option && option.min !== undefined) {
+        control.min = String(option.min);
+        if (batchControl) batchControl.min = String(option.min);
+      }
+      if (option && control && "max" in option && option.max !== undefined) {
+        control.max = String(option.max);
+        if (batchControl) batchControl.max = String(option.max);
+      }
+    }
+
+    const inputRequirements = Array.isArray(descriptor?.inputRequirements)
+      ? descriptor.inputRequirements
+      : [];
+    const maxReferences = inputRequirements.reduce(
+      (max, requirement) => Math.max(max, Number(requirement.max ?? 0)),
+      0,
+    );
+    const label = document.querySelector('label[for="video-file-upload-input"]');
+    if (label) {
+      label.textContent = maxReferences
+        ? `Attach reference media (up to ${maxReferences})`
+        : "Attach reference images or video";
+    }
+  }
+
+  function validateVideoOptions(descriptor, values) {
+    for (const option of descriptor?.options ?? []) {
+      const value = values[option.name];
+      if (value === undefined || value === "") continue;
+      if (option.values && !option.values.some((allowed) => allowed === value)) {
+        throw new Error(
+          `${option.name} must be one of: ${option.values.join(", ")}`,
+        );
+      }
+      if (option.min !== undefined && value < option.min) {
+        throw new Error(`${option.name} must be at least ${option.min}`);
+      }
+      if (option.max !== undefined && value > option.max) {
+        throw new Error(`${option.name} must be at most ${option.max}`);
+      }
+    }
+  }
+
   /**
    * Syncs the video constraint dropdowns (aspect ratio, resolution, fps,
    * quality) to the capabilities of the given model descriptor.  When no
@@ -583,32 +776,51 @@
       [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects].forEach(
         _clearSelectFilter,
       );
+      [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects].forEach(
+        (select) => {
+          if (select) select.value = "";
+        },
+      );
+      syncPikaOptions(null);
       return;
     }
 
     if (descriptor.aspectRatios && descriptor.aspectRatios.length > 0) {
       aspectSelects.forEach((s) => _filterSelect(s, descriptor.aspectRatios));
     } else {
-      aspectSelects.forEach(_clearSelectFilter);
+      aspectSelects.forEach((select) => {
+        _clearSelectFilter(select);
+        if (select) select.value = "";
+      });
     }
 
     if (descriptor.resolutions && descriptor.resolutions.length > 0) {
       resolutionSelects.forEach((s) => _filterSelect(s, descriptor.resolutions));
     } else {
-      resolutionSelects.forEach(_clearSelectFilter);
+      resolutionSelects.forEach((select) => {
+        _clearSelectFilter(select);
+        if (select) select.value = "";
+      });
     }
 
     if (descriptor.fpsOptions && descriptor.fpsOptions.length > 0) {
       fpsSelects.forEach((s) => _filterSelect(s, descriptor.fpsOptions));
     } else {
-      fpsSelects.forEach(_clearSelectFilter);
+      fpsSelects.forEach((select) => {
+        _clearSelectFilter(select);
+        if (select) select.value = "";
+      });
     }
 
     if (descriptor.qualityOptions && descriptor.qualityOptions.length > 0) {
       qualitySelects.forEach((s) => _filterSelect(s, descriptor.qualityOptions));
     } else {
-      qualitySelects.forEach(_clearSelectFilter);
+      qualitySelects.forEach((select) => {
+        _clearSelectFilter(select);
+        if (select) select.value = "";
+      });
     }
+    syncPikaOptions(descriptor);
   }
 
   /**
@@ -1298,9 +1510,14 @@
    * @param {File} file
    * @returns {Promise<string>} The fileRef UUID token.
    */
-  async function uploadFileRaw(file) {
+  async function uploadFileRaw(file, providerOverride) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-    const provider = proxyProviderSelect.value || undefined;
+    const provider =
+      providerOverride ||
+      (videoFileUploadInput
+        ? videoProviderSelect?.value
+        : proxyProviderSelect.value) ||
+      undefined;
     const formData = new FormData();
     formData.append("file", file);
     if (provider) formData.append("provider", provider);
@@ -1334,8 +1551,9 @@
    * @param {HTMLElement}       thumbsEl   - Container for thumbnail previews.
    * @param {string[]}          refsArray  - Per-tab mutable array that receives UUID tokens.
    * @param {Function|null}     onDone     - Optional callback after upload cycle completes.
+   * @param {Function|null}     getMaxFiles - Optional model-aware reference limit getter.
    */
-  function wireMultiFileUpload(inputEl, statusEl, thumbsEl, refsArray, onDone) {
+  function wireMultiFileUpload(inputEl, statusEl, thumbsEl, refsArray, onDone, getMaxFiles) {
     if (!inputEl || !statusEl) return;
 
     function clearThumbs() {
@@ -1385,7 +1603,9 @@
     }
 
     inputEl.addEventListener("change", async (e) => {
-      const files = Array.from(e.target.files || []);
+      const selectedFiles = Array.from(e.target.files || []);
+      const maxFiles = getMaxFiles ? getMaxFiles() : undefined;
+      const files = maxFiles && maxFiles > 0 ? selectedFiles.slice(0, maxFiles) : selectedFiles;
       clearThumbs();
       if (!files.length) {
         statusEl.textContent = "No files attached";
@@ -1394,13 +1614,17 @@
         if (onDone) onDone();
         return;
       }
-      statusEl.textContent = `Uploading ${files.length} file${files.length > 1 ? "s" : ""}…`;
+      const truncatedNotice = files.length < selectedFiles.length ? ` (limited to ${files.length})` : "";
+      statusEl.textContent = `Uploading ${files.length} file${files.length > 1 ? "s" : ""}${truncatedNotice}…`;
       let successCount = 0;
       let lastErr = null;
       for (const file of files) {
         try {
           const uploadReady = await compressImageForUpload(file);
-          const ref = await uploadFileRaw(uploadReady);
+          const ref = await uploadFileRaw(
+            uploadReady,
+            inputEl === videoFileUploadInput ? videoProviderSelect?.value : undefined,
+          );
           refsArray.push(ref);
           addThumb(file, ref);
           successCount++;
@@ -1576,14 +1800,23 @@
     const modelSel = MODEL_SELECTS[modality];
     if (!modelSel) return false;
 
-    const result = await fetchModelList(modality, provider);
+    const acceptsImage = hasImageAttached && providerSupportsInputModality(provider, "image");
+    const result = await fetchModelList(modality, provider, acceptsImage);
     if (!result.ok) {
       showModelWarning(modality, formatModelWarning(modality, provider, result.error));
       return false;
     }
     clearModelWarning(modality);
 
-    const modelList = result.modelList;
+    let modelList = result.modelList;
+    if (acceptsImage && Array.isArray(modelList) && modelList.length === 0) {
+      const fallbackResult = await fetchModelList(modality, provider, false);
+      if (!fallbackResult.ok) {
+        showModelWarning(modality, formatModelWarning(modality, provider, fallbackResult.error));
+        return false;
+      }
+      modelList = fallbackResult.modelList;
+    }
 
     // Video: update the descriptor cache before repopulating the select so that
     // syncVideoConstraints can look up the newly selected model immediately.
@@ -1674,7 +1907,8 @@
       if (providerSel) providerSel.value = provider;
 
       // Step 4 — fetch compatible model list for the resolved provider.
-      const result = await fetchModelList(modality, provider);
+      const acceptsImage = hasImageAttached && providerSupportsInputModality(provider, "image");
+      const result = await fetchModelList(modality, provider, acceptsImage);
       if (!result.ok) {
         showModelWarning(modality, formatModelWarning(modality, provider, result.error));
         if (modelSel) {
@@ -1691,7 +1925,27 @@
         continue;
       }
       clearModelWarning(modality);
-      const modelList = result.modelList;
+      let modelList = result.modelList;
+
+      if (acceptsImage && Array.isArray(modelList) && modelList.length === 0) {
+        const fallbackResult = await fetchModelList(modality, provider, false);
+        if (!fallbackResult.ok) {
+          showModelWarning(modality, formatModelWarning(modality, provider, fallbackResult.error));
+          if (modelSel) {
+            if (saved) {
+              populateModelSelect(modelSel, [{ id: saved.model, name: saved.model }]);
+              modelSel.value = saved.model;
+            } else {
+              populateModelSelect(modelSel, []);
+            }
+          }
+
+          const fallbackModel = saved?.model ?? "";
+          tabState.set(modality, { provider, model: fallbackModel });
+          continue;
+        }
+        modelList = fallbackResult.modelList;
+      }
 
       // Video: update descriptor cache before populating the select so that
       // syncVideoConstraints can look up the selected model immediately.
@@ -1948,6 +2202,12 @@
     videoFileThumbsEl,
     videoFileRefs,
     updateLumaTunnelWarn,
+    () => {
+      const descriptor = videoModelsCache.find((model) => model.id === videoModelSelect?.value);
+      const requirements = descriptor?.inputRequirements;
+      if (!Array.isArray(requirements) || requirements.length === 0) return undefined;
+      return Math.max(...requirements.map((requirement) => Number(requirement.max ?? 0)));
+    },
   );
 
   applyModeUi();
@@ -1976,6 +2236,8 @@
     // "The attached image will be ignored for this modality." without waiting
     // for the async model reload to complete.
     updateAttachmentNotice();
+    writeJsonPreference(window.localStorage, activeUiTabKey, target);
+    void renderHistoryPanel();
   }
   tabBtns.forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
@@ -2011,9 +2273,12 @@
   let sessionMessages = [];
 
   function syncHistoryPanelWarning() {
-    const el = document.getElementById("history-panel-warning");
+    const el = historyPanelWarning;
     if (!el) return;
-    const msg = sessionStorageWarningActive ? SESSION_TEMP_WARNING : historyPanelWarningMessage;
+    const msg =
+      sessionStorageWarningActive
+        ? SESSION_TEMP_WARNING
+        : historyPanelWarningMessage || browserStore.warning || "";
     el.setAttribute("role", "status");
     el.setAttribute("aria-live", "polite");
     if (!msg) {
@@ -2077,6 +2342,250 @@
   }
 
   sessionMessages = loadSessionMessages();
+
+  /* ── Browser workbench persistence ───────────────────────── */
+
+  function currentHistoryModality() {
+    return TAB_MODALITY[activeTab()] ?? "text";
+  }
+
+  function getTextSessionRecordId() {
+    if (sessionDraftRecordState.id) return sessionDraftRecordState.id;
+    try {
+      return window.localStorage.getItem(currentTextSessionKey) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function setTextSessionRecordId(id) {
+    sessionDraftRecordState.id = id || "";
+    try {
+      if (id) {
+        window.localStorage.setItem(currentTextSessionKey, id);
+      } else {
+        window.localStorage.removeItem(currentTextSessionKey);
+      }
+    } catch {
+      /* ignore preference failures */
+    }
+  }
+
+  function buildSessionRecordDraft(status = "draft") {
+    const messages = getSessionMessages();
+    const title = buildSessionTitle(messages);
+    const transcript = buildHistoryPrompt();
+    const { provider, model } = tabState.get("text") ?? {};
+    return {
+      id: getTextSessionRecordId() || undefined,
+      modality: "text",
+      kind: "session",
+      status,
+      title,
+      prompt: messages.find((message) => message.role === "user")?.content ?? transcript,
+      messages,
+      transcript,
+      outputText: transcript,
+      outputSummary: transcript ? transcript.slice(0, 160) : title,
+      provider: provider ?? "",
+      model: model ?? "",
+      styleId: styleController.style.id,
+      fileName: `${buildTitleSlug(title || "conversation")}.txt`,
+      mimeType: "text/plain",
+      metadata: {
+        source: "web-demo",
+        messageCount: messages.length,
+        mode: modeSelect.value,
+      },
+    };
+  }
+
+  async function persistLiveSessionDraft() {
+    const messages = getSessionMessages();
+    if (messages.length === 0) return null;
+    await browserStore.ready;
+    const saved = await browserStore.saveRecord(buildSessionRecordDraft("draft"));
+    setTextSessionRecordId(saved.id);
+    return saved;
+  }
+
+  async function clearLiveSessionDraft() {
+    const draftId = getTextSessionRecordId();
+    if (draftId) {
+      try {
+        await browserStore.deleteRecord(draftId);
+      } catch {
+        /* ignore draft cleanup failures */
+      }
+    }
+    setTextSessionRecordId("");
+  }
+
+  async function hydrateLiveSessionDraft() {
+    await browserStore.ready;
+    const current = getSessionMessages();
+    if (current.length > 0) {
+      await persistLiveSessionDraft();
+      return;
+    }
+
+    const draftId = getTextSessionRecordId();
+    if (draftId) {
+      const draft = await browserStore.getRecord(draftId);
+      if (draft && draft.kind === "session" && draft.messages.length > 0) {
+        sessionMessages = draft.messages.map((message) => ({ ...message }));
+        saveSessionMessages(sessionMessages);
+        renderSessionHistory();
+        return;
+      }
+    }
+
+    const drafts = await browserStore.listRecords("text");
+    const firstDraft = drafts.find((record) => record.kind === "session" && record.status === "draft");
+    if (firstDraft && firstDraft.messages.length > 0) {
+      sessionMessages = firstDraft.messages.map((message) => ({ ...message }));
+      saveSessionMessages(sessionMessages);
+      setTextSessionRecordId(firstDraft.id);
+      renderSessionHistory();
+    }
+  }
+
+  async function archiveLiveSession() {
+    const messages = getSessionMessages();
+    if (messages.length === 0) {
+      showNewConvTooltip("Nothing to archive \u2014 start typing first.");
+      return null;
+    }
+
+    await persistLiveSessionDraft();
+
+    const draft = buildSessionRecordDraft("complete");
+    const archived = await browserStore.saveRecord({
+      ...draft,
+      id: undefined,
+      status: "complete",
+      metadata: {
+        ...draft.metadata,
+        archivedAt: new Date().toISOString(),
+      },
+    });
+
+    const legacyEntry = {
+      id: crypto.randomUUID(),
+      startedAt: new Date().toISOString(),
+      archivedAt: new Date().toISOString(),
+      title: draft.title,
+      messages: JSON.parse(JSON.stringify(messages)),
+    };
+    const savedLegacy = prependToArchive(legacyEntry);
+    if (!savedLegacy) {
+      showHistoryPanelWarning(
+        "\u26a0 Legacy archive storage is full. The browser history was still saved to IndexedDB.",
+      );
+    }
+
+    await clearLiveSessionDraft();
+    clearSessionMessages();
+    sessionHistory.innerHTML = "";
+    textOutput.innerHTML = "";
+    textUsage.textContent = "";
+    sessionHistory.scrollTop = 0;
+    return archived;
+  }
+
+  function summarizeText(value, limit = 160) {
+    const compact = String(value ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
+    if (!compact) return "";
+    return compact.length > limit ? `${compact.slice(0, limit)}...` : compact;
+  }
+
+  function buildArtifactRecordDraft(modality, prompt, resultText, artifactBlob, extra = {}) {
+    const { provider, model } = tabState.get(modality) ?? {};
+    const title =
+      extra.title ||
+      summarizeText(resultText || prompt, 80) ||
+      `${modality} result`;
+    return {
+      modality,
+      kind: "artifact",
+      status: "complete",
+      title,
+      prompt,
+      provider: provider ?? "",
+      model: model ?? "",
+      styleId: styleController.style.id,
+      seed: extra.seed ?? null,
+      aspectRatio: extra.aspectRatio ?? "",
+      resolution: extra.resolution ?? "",
+      quality: extra.quality ?? "",
+      duration: extra.duration ?? null,
+      fps: extra.fps ?? null,
+      transcript: resultText || prompt,
+      outputText: resultText || prompt,
+      outputSummary: summarizeText(resultText || prompt, 160),
+      fileName: extra.fileName || "",
+      mimeType: extra.mimeType ?? artifactBlob?.type ?? null,
+      artifact: artifactBlob ?? null,
+      preview: extra.preview ?? artifactBlob ?? null,
+      notes: "",
+      tags: [],
+      favorite: false,
+      metadata: {
+        ...extra,
+        source: "web-demo",
+      },
+    };
+  }
+
+  async function saveArtifactRecord(modality, prompt, resultText, artifactBlob, extra = {}) {
+    await browserStore.ready;
+    return browserStore.saveRecord(
+      buildArtifactRecordDraft(modality, prompt, resultText, artifactBlob, extra),
+    );
+  }
+
+  async function persistArtifactRecord(modality, prompt, resultText, artifactBlob, extra = {}) {
+    try {
+      return await saveArtifactRecord(modality, prompt, resultText, artifactBlob, extra);
+    } catch (error) {
+      console.error(`[browser-history] Failed to persist ${modality} record:`, error);
+      showHistoryPanelWarning(`Saved output could not be written to browser storage for ${modality}.`);
+      return null;
+    }
+  }
+
+  function currentVisibleHistoryLabel() {
+    const modality = currentHistoryModality();
+    return `${modality.charAt(0).toUpperCase()}${modality.slice(1)} history`;
+  }
+
+  function setHistoryExpanded(expanded, persist = true) {
+    if (btnHistoryToggle) {
+      btnHistoryToggle.setAttribute("aria-expanded", String(expanded));
+    }
+    if (historyPanelBody) {
+      historyPanelBody.classList.toggle("hidden", !expanded);
+    }
+    if (historyChevron) {
+      historyChevron.textContent = expanded ? "\u25be" : "\u25b8";
+    }
+    if (persist) {
+      writeJsonPreference(window.localStorage, historyExpandedKey, expanded);
+    }
+  }
+
+  async function bootstrapPersistentState() {
+    await hydrateLiveSessionDraft();
+    renderSessionHistory();
+    await renderHistoryPanel();
+    syncHistoryPanelWarning();
+  }
+
+  browserStore.subscribe(() => {
+    void renderHistoryPanel();
+  });
 
   /* ── Archive storage helpers (localStorage, persistent) ─────── */
 
@@ -2155,74 +2664,48 @@
   /* ── History panel render ────────────────────────────────────── */
 
   /**
-   * Re-renders the full history panel from the current archive state.
-   * Called after every soft-reset, per-row delete, Clear All, and on page load.
-   * Null-safe: returns silently when any required DOM element is absent.
-   * Preserves the expanded/collapsed state by reading aria-expanded before
-   * clearing body.innerHTML.
+   * Re-renders the full history panel from the active modality records.
    */
-  function renderHistoryPanel() {
-    const entries = getArchive();
+  async function renderHistoryPanel() {
     const countEl = document.getElementById("history-count");
-    const body = document.getElementById("history-panel-body");
-    const toggle = document.getElementById("btn-history-toggle");
-    if (!body || !countEl || !toggle) return;
+    const body = historyPanelBody;
+    const toggle = btnHistoryToggle;
+    const labelEl = historyPanelLabel;
+    if (!body || !countEl || !toggle || !labelEl) return;
 
+    const modality = currentHistoryModality();
     const expanded = toggle.getAttribute("aria-expanded") === "true";
-    const chevronEl = document.getElementById("history-chevron");
-    countEl.textContent = String(entries.length);
-    if (chevronEl) chevronEl.textContent = expanded ? "\u25be" : "\u25b8";
-    body.innerHTML = "";
+    const records = await browserStore.listRecords(modality);
+    const visibleRecords =
+      modality === "text"
+        ? records.filter((record) => record.kind === "session" && record.status === "complete")
+        : records.filter((record) => record.kind === "artifact");
 
-    if (entries.length === 0) {
+    labelEl.textContent = currentVisibleHistoryLabel();
+    countEl.textContent = String(visibleRecords.length);
+    body.innerHTML = "";
+    objectUrlRegistry.revokeAll();
+
+    if (visibleRecords.length === 0) {
       const empty = document.createElement("p");
       empty.className = "history-empty";
-      empty.textContent = "No archived conversations yet.";
+      empty.textContent =
+        modality === "text"
+          ? "No saved text sessions yet."
+          : `No saved ${modality} records yet.`;
       body.appendChild(empty);
-      syncHistoryPanelWarning();
-      return;
+    } else {
+      for (const record of visibleRecords) {
+        body.appendChild(buildHistoryRow(record));
+      }
     }
-    entries.forEach((entry) => body.appendChild(buildHistoryRow(entry)));
+
+    const exportDisabled = visibleRecords.length === 0;
+    if (btnHistoryClearAll) btnHistoryClearAll.disabled = exportDisabled;
+    if (btnHistoryExportAll) btnHistoryExportAll.disabled = exportDisabled;
     syncHistoryPanelWarning();
   }
 
-  /**
-   * Converts an archive entry into numbered plain text suitable for
-   * copying or saving.  Format:
-   *   #N You: <user message>
-   *   #N Assistant: <assistant reply>
-   *   (blank line between exchanges)
-   *
-   * If the last exchange has no assistant reply (odd message count),
-   * the #N Assistant line is omitted for that exchange.
-   *
-   * @param   {ArchiveEntry} entry
-   * @returns {string}
-   */
-  function buildFullTranscriptText(entry) {
-    const lines = [];
-    let n = 0;
-    for (let i = 0; i < entry.messages.length; i += 2) {
-      n++;
-      const u = entry.messages[i];
-      const a = entry.messages[i + 1]; // undefined if odd message count
-      lines.push("#" + n + " You: " + u.content);
-      if (a) lines.push("#" + n + " Assistant: " + a.content);
-      lines.push(""); // blank line between exchanges
-    }
-    return lines.join("\n").trimEnd();
-  }
-
-  /**
-   * Derives a filesystem-safe slug from an archive entry title.
-   * Steps applied in order:
-   *   1. Lowercase
-   *   2. Replace runs of whitespace with a single hyphen
-   *   3. Strip every character that is not a-z, 0-9, or hyphen
-   *
-   * @param   {string} title
-   * @returns {string}  slug (may be empty for all-non-ASCII input)
-   */
   function buildTitleSlug(title) {
     return title
       .toLowerCase()
@@ -2230,164 +2713,170 @@
       .replace(/[^a-z0-9\-]/g, "");
   }
 
-  /**
-   * Builds and returns a single history row DOM element for one archive entry.
-   * Structure:
-   *   div.history-row[role=listitem][data-id]
-   *     div.history-row-summary
-   *       button.history-chevron[aria-expanded=false]   — click toggles transcript
-   *       span.history-meta                             — message count + relative time
-   *       button.history-delete[aria-label=…]           — click opens inline confirm bar
-   *     div.history-transcript.hidden                   — one .bubble per message
-   *
-   * Reuses .bubble / .bubble-label CSS classes from the live chat area — no new selectors.
-   * No inline colour literals.
-   */
-  function buildHistoryRow(entry) {
-    // ── Precompute pure-text values (used by both toolbars) ───────
-    const fullText = buildFullTranscriptText(entry);
-    const titleSlug = buildTitleSlug(entry.title);
-
-    // ── Root row element ──────────────────────────────────────────
+  function buildHistoryRow(record) {
     const row = document.createElement("div");
-    row.className = "history-row";
+    row.className = `history-row history-row--${record.modality}`;
     row.setAttribute("role", "listitem");
-    row.setAttribute("data-id", entry.id);
+    row.setAttribute("data-id", record.id);
+    if (record.favorite) row.classList.add("history-row--favorite");
 
-    // ── Summary bar ───────────────────────────────────────────────
     const summary = document.createElement("div");
     summary.className = "history-row-summary";
 
-    // Chevron toggle button
     const chevron = document.createElement("button");
     chevron.className = "history-chevron";
     chevron.setAttribute("aria-expanded", "false");
-    chevron.textContent = "\u25b8 " + entry.title;
+    chevron.textContent = "\u25b8";
 
-    // Meta line: message count + archived timestamp
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "history-row-title-wrap";
+
+    const titleInput = document.createElement("input");
+    titleInput.className = "history-title-input";
+    titleInput.type = "text";
+    titleInput.value = record.title;
+    titleInput.setAttribute("aria-label", `Title for ${record.title}`);
+
     const meta = document.createElement("span");
     meta.className = "history-meta";
-    meta.textContent =
-      entry.messages.length + " messages \u00b7 Archived " + relativeTime(entry.archivedAt);
+    const metaBits = [
+      record.modality,
+      record.kind,
+      record.provider || "default provider",
+      record.model || "default model",
+      recordSummaryText(record),
+      `Updated ${relativeTime(record.updatedAt)}`,
+    ].filter(Boolean);
+    meta.textContent = metaBits.join(" · ");
 
-    // Delete button
+    titleWrap.appendChild(titleInput);
+
+    const actions = document.createElement("div");
+    actions.className = "history-row-actions";
+
+    const favoriteBtn = document.createElement("button");
+    favoriteBtn.className = "history-favorite";
+    favoriteBtn.type = "button";
+    favoriteBtn.setAttribute("aria-pressed", String(record.favorite));
+    favoriteBtn.title = record.favorite ? "Unfavorite" : "Favorite";
+    favoriteBtn.textContent = record.favorite ? "★" : "☆";
+
+    const exportBtn = document.createElement("button");
+    exportBtn.className = "history-export";
+    exportBtn.type = "button";
+    exportBtn.textContent = "Export";
+
     const delBtn = document.createElement("button");
     delBtn.className = "history-delete";
+    delBtn.type = "button";
     delBtn.textContent = "Delete";
-    delBtn.setAttribute("aria-label", "Delete conversation: " + entry.title);
+    delBtn.setAttribute("aria-label", `Delete record: ${record.title}`);
 
-    summary.appendChild(chevron);
-    summary.appendChild(meta);
-    summary.appendChild(delBtn);
+    actions.append(favoriteBtn, exportBtn, delBtn);
+    summary.append(chevron, titleWrap, meta, actions);
 
-    // ── Transcript (hidden by default) ────────────────────────────
-    const transcript = document.createElement("div");
-    transcript.className = "history-transcript hidden";
+    const details = document.createElement("div");
+    details.className = "history-transcript hidden";
 
-    // Whole-transcript toolbar (⎘ Copy / ⬇ Save / 🔍 Search) ─────
-    // Injected before the message loop so it becomes firstChild of
-    // div.history-transcript (above all exchange divs).  Decision 4.
-    createReplyToolbar(transcript, {
-      modality: "text",
-      text: fullText,
+    const text = recordToPlainText(record);
+    const previewUrl = record.artifact || record.preview ? objectUrlRegistry.create(record.preview ?? record.artifact) : "";
+
+    createReplyToolbar(details, {
+      modality: record.modality,
+      text,
       dataUrl: null,
-      srcUrl: null,
-      mimeType: "text/plain",
-      filename: "archived-" + titleSlug + ".txt",
+      srcUrl: previewUrl || null,
+      mimeType: record.mimeType || (record.modality === "text" ? "text/plain" : "application/octet-stream"),
+      filename: recordDownloadName(record),
     });
 
-    // ── Message loop: paired exchanges ───────────────────────────
-    // Each iteration handles one user↔assistant pair wrapped in
-    // div.history-exchange[data-exchange=N].  exchNum is 1-based (Decision 3).
-    // data-exchange is always set via setAttribute to ensure string type (Decision 8).
-    let exchNum = 0;
-    for (let i = 0; i < entry.messages.length; i += 2) {
-      exchNum++;
-      const userMsg = entry.messages[i];
-      const asstMsg = entry.messages[i + 1]; // undefined on odd message count
-
-      // Exchange wrapper ────────────────────────────────────────────
-      const exchDiv = document.createElement("div");
-      exchDiv.className = "history-exchange";
-      exchDiv.setAttribute("data-exchange", String(exchNum));
-
-      // Exchange number label ───────────────────────────────────────
-      const numSpan = document.createElement("span");
-      numSpan.className = "history-exchange-number";
-      numSpan.textContent = "#" + exchNum;
-      numSpan.setAttribute("aria-label", "Exchange " + exchNum);
-      exchDiv.appendChild(numSpan);
-
-      // User bubble (no toolbar — Decision 5) ──────────────────────
-      const userBubble = document.createElement("div");
-      userBubble.className = "bubble bubble-user";
-      const userLabel = document.createElement("span");
-      userLabel.className = "bubble-label";
-      userLabel.textContent = "You";
-      const userP = document.createElement("p");
-      userP.textContent = userMsg.content;
-      userBubble.appendChild(userLabel);
-      userBubble.appendChild(userP);
-      exchDiv.appendChild(userBubble);
-
-      // Assistant bubble + per-reply toolbar (only when reply exists — Decision 7)
-      if (asstMsg) {
-        const asstBubble = document.createElement("div");
-        asstBubble.className = "bubble bubble-assistant";
-        const asstLabel = document.createElement("span");
-        asstLabel.className = "bubble-label";
-        asstLabel.textContent = "Assistant";
-        const asstP = document.createElement("p");
-        asstP.textContent = asstMsg.content;
-        asstBubble.appendChild(asstLabel);
-        asstBubble.appendChild(asstP);
-
-        // Per-reply toolbar becomes asstBubble.firstChild (called before append)
-        createReplyToolbar(asstBubble, {
-          modality: "text",
-          text: asstMsg.content,
-          dataUrl: null,
-          srcUrl: null,
-          mimeType: "text/plain",
-          filename: "archived-reply-" + exchNum + ".txt",
-        });
-
-        exchDiv.appendChild(asstBubble);
+    if (record.modality === "text") {
+      const transcript = document.createElement("pre");
+      transcript.className = "history-text";
+      transcript.textContent = record.transcript || record.outputText || text;
+      details.appendChild(transcript);
+    } else {
+      const previewWrap = document.createElement("div");
+      previewWrap.className = "history-preview";
+      if (record.modality === "image" && previewUrl) {
+        const img = document.createElement("img");
+        img.className = "history-preview-image";
+        img.alt = record.title;
+        img.src = previewUrl;
+        previewWrap.appendChild(img);
+      } else if (record.modality === "audio" && previewUrl) {
+        const audio = document.createElement("audio");
+        audio.className = "history-preview-audio";
+        audio.controls = true;
+        audio.src = previewUrl;
+        previewWrap.appendChild(audio);
+      } else if (record.modality === "video" && previewUrl) {
+        const video = document.createElement("video");
+        video.className = "history-preview-video";
+        video.controls = true;
+        video.src = previewUrl;
+        previewWrap.appendChild(video);
+      } else {
+        const previewText = document.createElement("p");
+        previewText.className = "history-preview-text";
+        previewText.textContent = text;
+        previewWrap.appendChild(previewText);
       }
-
-      transcript.appendChild(exchDiv);
+      details.appendChild(previewWrap);
     }
 
-    // ── Chevron click: toggle transcript visibility ───────────────
+    const notes = document.createElement("textarea");
+    notes.className = "history-notes";
+    notes.rows = 3;
+    notes.placeholder = "Add notes";
+    notes.value = record.notes || "";
+    notes.addEventListener("change", () => {
+      void browserStore.updateRecordMetadata(record.id, {
+        title: titleInput.value.trim() || record.title,
+        notes: notes.value,
+        favorite: record.favorite,
+      });
+    });
+    details.appendChild(notes);
+
+    titleInput.addEventListener("change", () => {
+      void browserStore.updateRecordMetadata(record.id, {
+        title: titleInput.value.trim() || record.title,
+        notes: notes.value,
+        favorite: record.favorite,
+      });
+    });
+
+    favoriteBtn.addEventListener("click", () => {
+      void browserStore.updateRecordMetadata(record.id, {
+        title: titleInput.value.trim() || record.title,
+        notes: notes.value,
+        favorite: !record.favorite,
+      });
+    });
+
+    exportBtn.addEventListener("click", () => {
+      const payload = recordDownloadPayload(record);
+      triggerDownload(payload.blob, payload.filename);
+    });
+
+    delBtn.addEventListener("click", () => handleDeleteRecord(record, row));
+
     chevron.addEventListener("click", () => {
       const isExpanded = chevron.getAttribute("aria-expanded") === "true";
       chevron.setAttribute("aria-expanded", String(!isExpanded));
-      chevron.textContent = (!isExpanded ? "\u25be" : "\u25b8") + " " + entry.title;
-      transcript.classList.toggle("hidden", isExpanded);
+      chevron.textContent = !isExpanded ? "\u25be" : "\u25b8";
+      details.classList.toggle("hidden", isExpanded);
     });
 
-    // ── Delete click: open inline confirm bar ─────────────────────
-    delBtn.addEventListener("click", () => handleDeleteEntry(entry.id, row));
-
-    row.appendChild(summary);
-    row.appendChild(transcript);
+    row.append(summary, details);
     return row;
   }
 
-  /**
-   * Appends an inline confirmation bar inside rowEl for per-row delete.
-   * Uses an inline bar rather than a native confirm() dialog — non-blocking and
-   * contextual. (Clear All uses native confirm() because it is a high-stakes,
-   * infrequent action where the native dialog adds intentional friction.)
-   *
-   * Cancel: removes the bar; archive unchanged.
-   * Confirm: filters entry by id, saves updated archive, re-renders panel.
-   * No inline colour literals.
-   */
-  function handleDeleteEntry(id, rowEl) {
+  function handleDeleteRecord(record, rowEl) {
     const confirmBar = document.createElement("div");
     confirmBar.className = "history-confirm-bar";
-    confirmBar.textContent = "Delete this conversation? This cannot be undone. ";
+    confirmBar.textContent = `Delete ${record.title}? This cannot be undone. `;
 
     const yes = document.createElement("button");
     yes.className = "btn btn--ghost btn--danger";
@@ -2397,15 +2886,16 @@
     no.className = "btn btn--ghost";
     no.textContent = "Cancel";
 
-    confirmBar.appendChild(yes);
-    confirmBar.appendChild(no);
+    confirmBar.append(yes, no);
     rowEl.appendChild(confirmBar);
 
     no.addEventListener("click", () => confirmBar.remove());
-    yes.addEventListener("click", () => {
-      const remaining = getArchive().filter((e) => e.id !== id);
-      saveArchive(remaining);
-      renderHistoryPanel();
+    yes.addEventListener("click", async () => {
+      try {
+        await browserStore.deleteRecord(record.id);
+      } finally {
+        confirmBar.remove();
+      }
     });
   }
 
@@ -2428,16 +2918,12 @@
   }
 
   /**
-   * Soft-reset handler — 7-step sequence:
+   * Soft-reset handler — 3-step sequence:
    *  1. Debounce guard (200 ms window, prevents double-archive on rapid clicks).
    *  2. Read active messages; show tooltip and bail if session is empty.
-   *  3. Build archive entry with deep-copied messages and crypto.randomUUID() id.
-   *  4. Persist via prependToArchive; show warning if storage is unrecoverable.
-   *  5. Clear active session from sessionStorage.
-   *  6. Reset all visible UI elements (chat, output, usage, scroll).
-   *  7. Re-render history panel so the new entry appears at the top.
+   *  3. Persist the session to browser storage and reset the visible UI.
    */
-  function handleNewConversation() {
+  async function handleNewConversation() {
     // Step 1 — debounce
     if (_newConvDebounced) return;
     _newConvDebounced = true;
@@ -2452,35 +2938,8 @@
       return;
     }
 
-    // Step 3 — build archive entry
-    const entry = {
-      id: crypto.randomUUID(),
-      startedAt: new Date().toISOString(),
-      archivedAt: new Date().toISOString(),
-      title: makeArchiveTitle(msgs),
-      messages: JSON.parse(JSON.stringify(msgs)),
-    };
-
-    // Step 4 — persist; warn on unrecoverable overflow
-    const saved = prependToArchive(entry);
-    if (!saved) {
-      showHistoryPanelWarning(
-        "\u26a0 Storage full \u2014 this conversation could not be archived. " +
-          "Consider clearing old history.",
-      );
-    }
-
-    // Step 5 — clear active session
-    clearSessionMessages();
-
-    // Step 6 — reset UI
-    sessionHistory.innerHTML = "";
-    textOutput.innerHTML = "";
-    textUsage.textContent = "";
-    sessionHistory.scrollTop = 0;
-
-    // Step 7 — re-render history panel
-    renderHistoryPanel();
+    // Step 3 — persist the current session in browser storage
+    await archiveLiveSession();
   }
 
   function addBubble(role, content) {
@@ -2518,6 +2977,7 @@
     const msgs = getSessionMessages();
     msgs.push({ role, content });
     saveSessionMessages(msgs);
+    void persistLiveSessionDraft();
   }
 
   function buildHistoryPrompt() {
@@ -2526,7 +2986,8 @@
       .join("\n");
   }
 
-  btnSessionClear.addEventListener("click", () => {
+  btnSessionClear.addEventListener("click", async () => {
+    await clearLiveSessionDraft();
     clearSessionMessages();
     sessionHistory.innerHTML = "";
     textOutput.innerHTML = "";
@@ -2535,39 +2996,68 @@
 
   // New Conversation — archive current session then soft-reset
   const btnNewConversation = $("btn-new-conversation");
-  btnNewConversation.addEventListener("click", handleNewConversation);
-
-  // History panel toggle — flip aria-expanded and show/hide body
-  const btnHistoryToggle = $("btn-history-toggle");
-  const historyPanelBody = $("history-panel-body");
-  btnHistoryToggle.addEventListener("click", () => {
-    const expanded = btnHistoryToggle.getAttribute("aria-expanded") === "true";
-    btnHistoryToggle.setAttribute("aria-expanded", String(!expanded));
-    historyPanelBody.classList.toggle("hidden", expanded);
+  btnNewConversation.addEventListener("click", () => {
+    void handleNewConversation();
   });
 
-  // Clear All — native confirm dialog with count interpolation
-  const btnHistoryClearAll = $("btn-history-clear-all");
-  btnHistoryClearAll.addEventListener("click", () => {
-    const count = getArchive().length;
-    if (count === 0) return;
-    if (
-      confirm(
-        "Delete all " +
-          count +
-          " archived conversation" +
-          (count === 1 ? "" : "s") +
-          "? This cannot be undone.",
-      )
-    ) {
-      localStorage.removeItem(ARCHIVE_KEY);
-      renderHistoryPanel();
-    }
-  });
+  if (btnHistoryToggle) {
+    btnHistoryToggle.addEventListener("click", () => {
+      const expanded = btnHistoryToggle.getAttribute("aria-expanded") === "true";
+      setHistoryExpanded(!expanded);
+    });
+  }
 
-  // Restore history on load
+  if (btnHistoryClearAll) {
+    btnHistoryClearAll.addEventListener("click", async () => {
+      const modality = currentHistoryModality();
+      const records = await browserStore.listRecords(modality);
+      const visibleRecords =
+        modality === "text"
+          ? records.filter((record) => record.kind === "session" && record.status === "complete")
+          : records.filter((record) => record.kind === "artifact");
+      if (visibleRecords.length === 0) return;
+      const confirmed = window.confirm(
+        `Delete all ${visibleRecords.length} visible ${modality} record${
+          visibleRecords.length === 1 ? "" : "s"
+        }? This cannot be undone.`,
+      );
+      if (!confirmed) return;
+      await browserStore.deleteRecords(visibleRecords.map((record) => record.id));
+      await renderHistoryPanel();
+    });
+  }
+
+  if (btnHistoryExportAll) {
+    btnHistoryExportAll.addEventListener("click", async () => {
+      const modality = currentHistoryModality();
+      const records = await browserStore.listRecords(modality);
+      const visibleRecords =
+        modality === "text"
+          ? records.filter((record) => record.kind === "session" && record.status === "complete")
+          : records.filter((record) => record.kind === "artifact");
+      if (visibleRecords.length === 0) return;
+      const exportBlob = new Blob(
+        [
+          JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              modality,
+              records: visibleRecords.map((record) => recordToManifest(record)),
+            },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      );
+      triggerDownload(exportBlob, `ai-powered-${modality}-history.json`);
+    });
+  }
+
   renderSessionHistory();
-  renderHistoryPanel();
+  setHistoryExpanded(initialHistoryExpanded, false);
+  switchTab(normalizeTabId(initialActiveTab));
+  void bootstrapPersistentState();
 
   /* ── TEXT TAB ─────────────────────────────────────────────── */
   async function handleTextGenerate() {
@@ -2806,6 +3296,13 @@
       } else {
         imageUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
       }
+      await persistArtifactRecord("image", prompt, prompt, blob, {
+        fileName: "ai-image.png",
+        mimeType: blob.type || imgResult?.mimeType || "image/png",
+        aspectRatio: imageAspectRatio.value || "",
+        quality: imageQuality.value || "",
+        preview: blob,
+      });
     } catch (err) {
       showError(imageOutput, err);
       if (err instanceof ProxyError) {
@@ -2889,6 +3386,11 @@
       } else {
         audioUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
       }
+      await persistArtifactRecord("audio", `Speak ${text.slice(0, 80)}`, text, blob, {
+        fileName: "ai-speech.mp3",
+        mimeType: blob.type || ttsResult?.mimeType || "audio/mpeg",
+        preview: blob,
+      });
     } catch (err) {
       showError(ttsOutput, err);
       if (err instanceof ProxyError) {
@@ -2982,6 +3484,18 @@
       });
       addUsage(transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
       setUsageText(audioUsage, transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
+      const transcriptBlob = new Blob([text], { type: "text/plain" });
+      await persistArtifactRecord(
+        "audio",
+        `Transcribe ${selectedAudioBlob.name || "audio"}`,
+        text,
+        transcriptBlob,
+        {
+          fileName: "transcript.txt",
+          mimeType: "text/plain",
+          preview: transcriptBlob,
+        },
+      );
     } catch (err) {
       showError(transcribeOutput, err);
       if (err instanceof ProxyError) {
@@ -4258,6 +4772,14 @@ ${combinedSection}${shotCards}
       ? parseFloat(batchDurationEl.value) || undefined
       : undefined;
     const batchFps = batchFpsEl?.value ? parseInt(batchFpsEl.value, 10) || undefined : undefined;
+    const batchNegativePrompt = batchNegativePromptEl?.value.trim() || undefined;
+    const batchSeed = batchSeedEl?.value ? parseInt(batchSeedEl.value, 10) : undefined;
+    const batchTransitionDuration = batchTransitionDurationEl?.value
+      ? parseInt(batchTransitionDurationEl.value, 10)
+      : undefined;
+    const batchPikaffect = batchPikaffectEl?.value || undefined;
+    const batchModifyRegionRoi = batchModifyRegionRoiEl?.value.trim() || undefined;
+    const batchModifyRegionMask = batchModifyRegionMaskEl?.value.trim() || undefined;
 
     // Last-line-of-defense guard — spec: filmbuff/docs/specs/batch-shot-list-spec.md v1.0.0 §2
     const safeItems = batchItems.map((item) => ({
@@ -4282,6 +4804,14 @@ ${combinedSection}${shotCards}
         ...(batchQuality ? { quality: batchQuality } : {}),
         ...(batchDuration ? { duration: batchDuration } : {}),
         ...(batchFps ? { fps: batchFps } : {}),
+        ...(batchNegativePrompt ? { negativePrompt: batchNegativePrompt } : {}),
+        ...(batchSeed !== undefined && Number.isFinite(batchSeed) ? { seed: batchSeed } : {}),
+        ...(batchTransitionDuration !== undefined && Number.isFinite(batchTransitionDuration)
+          ? { transitionDuration: batchTransitionDuration }
+          : {}),
+        ...(batchPikaffect ? { pikaffect: batchPikaffect } : {}),
+        ...(batchModifyRegionRoi ? { modifyRegionRoi: batchModifyRegionRoi } : {}),
+        ...(batchModifyRegionMask ? { modifyRegionMask: batchModifyRegionMask } : {}),
         // Per-shot values override globals — applied last so they always win
         ...(item.aspectRatio !== undefined ? { aspectRatio: item.aspectRatio } : {}),
         ...(item.resolution !== undefined ? { resolution: item.resolution } : {}),
@@ -4518,6 +5048,20 @@ ${combinedSection}${shotCards}
       if (dur > 0) videoOptions.duration = dur;
       const fpsVal = Number(videoFps?.value);
       if (fpsVal > 0) videoOptions.fps = fpsVal;
+      const negativePrompt = videoNegativePrompt?.value.trim();
+      if (negativePrompt) videoOptions.negativePrompt = negativePrompt;
+      const seed = Number(videoSeed?.value);
+      if (Number.isFinite(seed)) videoOptions.seed = seed;
+      const transitionDuration = Number(videoTransitionDuration?.value);
+      if (Number.isFinite(transitionDuration) && transitionDuration > 0) {
+        videoOptions.transitionDuration = transitionDuration;
+      }
+      const pikaffect = videoPikaffect?.value;
+      if (pikaffect) videoOptions.pikaffect = pikaffect;
+      const modifyRegionRoi = videoModifyRegionRoi?.value.trim();
+      if (modifyRegionRoi) videoOptions.modifyRegionRoi = modifyRegionRoi;
+      const modifyRegionMask = videoModifyRegionMask?.value.trim();
+      if (modifyRegionMask) videoOptions.modifyRegionMask = modifyRegionMask;
 
       // TASK-12: Read provider + model from tabState["video"] so the correct
       // provider (e.g. Luma AI) is forwarded to the proxy (REQ-PM-01, S-09).
@@ -4525,6 +5069,17 @@ ${combinedSection}${shotCards}
       const { provider: videoProvider, model: videoModel } = tabState.get("video") ?? {};
       if (videoProvider) videoOptions.provider = videoProvider;
       if (videoModel) videoOptions.model = videoModel;
+      const descriptor = videoModelsCache.find((model) => model.id === videoModel) ?? null;
+      validateVideoOptions(descriptor, {
+        resolution: videoOptions.resolution,
+        duration: videoOptions.duration,
+        negativePrompt: videoOptions.negativePrompt,
+        seed: videoOptions.seed,
+        transitionDuration: videoOptions.transitionDuration,
+        pikaffect: videoOptions.pikaffect,
+        modifyRegionRoi: videoOptions.modifyRegionRoi,
+        modifyRegionMask: videoOptions.modifyRegionMask,
+      });
       // Attach the uploaded image references for image-to-video generation.
       if (videoFileRefs.length === 1) {
         videoOptions.fileRef = videoFileRefs[0];
@@ -4570,6 +5125,12 @@ ${combinedSection}${shotCards}
         if (videoUsage)
           videoUsage.textContent =
             "Video · " + Math.round(placeholderBlob.size / 1024) + " KB (preview)";
+        await persistArtifactRecord("video", prompt, prompt, placeholderBlob, {
+          fileName: "ai-video.mp4",
+          mimeType: placeholderBlob.type || "video/mp4",
+          preview: placeholderBlob,
+          stubPreview: true,
+        });
         return;
       }
 
@@ -4591,6 +5152,11 @@ ${combinedSection}${shotCards}
       addUsage(videoResult?.usage ?? null, videoResult?.cost ?? null);
       setUsageText(videoUsage, videoResult?.usage ?? null, videoResult?.cost ?? null);
       if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
+      await persistArtifactRecord("video", prompt, prompt, blob, {
+        fileName: "ai-video.mp4",
+        mimeType: blob.type || videoResult?.mimeType || "video/mp4",
+        preview: blob,
+      });
     } catch (err) {
       showError(videoOutput, err);
       if (err instanceof ProxyError) {
@@ -4650,6 +5216,14 @@ ${combinedSection}${shotCards}
       setUsageText(structuredUsage, result?.usage ?? null, result?.cost ?? null);
       structuredUsage.textContent =
         (structuredUsage.textContent ? structuredUsage.textContent + " · " : "") + providerModel;
+      const structuredText =
+        typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
+      const structuredBlob = new Blob([structuredText], { type: "application/json" });
+      await persistArtifactRecord("structured", prompt, structuredText, structuredBlob, {
+        fileName: "ai-structured.json",
+        mimeType: "application/json",
+        preview: structuredBlob,
+      });
     } catch (err) {
       structuredOutput.classList.remove("json-output");
       showError(structuredOutput, err);
@@ -4882,6 +5456,8 @@ ${combinedSection}${shotCards}
         const resp = await fetch(descriptor.srcUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         blob = await resp.blob();
+      } else if (descriptor.text) {
+        blob = new Blob([descriptor.text], { type: descriptor.mimeType || "text/plain" });
       } else {
         showToolbarFeedback(btn, "⚠ No data");
         return;

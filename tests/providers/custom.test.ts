@@ -173,10 +173,19 @@ describe("CustomProvider model discovery", () => {
 
     const models = await provider.listModels();
 
-    expect(models).toEqual([
-      { id: "llava-1", name: "llava-1", capabilities: ["text", "structured"] },
-      { id: "mistral-7b", name: "mistral-7b", capabilities: ["text", "structured"] },
-    ]);
+    expect(models).toHaveLength(2);
+    expect(models[0]).toMatchObject({
+      id: "llava-1",
+      name: "llava-1",
+      capabilities: ["text", "structured"],
+      object: "model",
+    });
+    expect(models[1]).toMatchObject({
+      id: "mistral-7b",
+      name: "mistral-7b",
+      capabilities: ["text", "structured"],
+      object: "model",
+    });
     expect(mockModelsList).toHaveBeenCalledOnce();
   });
 

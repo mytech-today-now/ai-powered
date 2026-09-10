@@ -60,6 +60,7 @@ export const ProviderNameSchema = z.enum([
   "venice",
   "lumaai",
   "runway",
+  "pika",
   "custom",
   "vibevoice",
   "mock",
@@ -414,6 +415,7 @@ function resolveApiKey(merged: PlainObject): string | undefined {
     venice: "VENICE_API_KEY",
     lumaai: "LUMAAI_API_KEY",
     runway: "RUNWAYML_API_SECRET",
+    pika: "PIKA_API_KEY",
     custom: "AI_CUSTOM_API_KEY",
     mock: "",
   };
@@ -518,13 +520,37 @@ export function loadConfig(options: LoadConfigOptions = {}): AiConfig {
     (typeof merged["profile"] === "string" ? merged["profile"] : "default");
 
   // --- Layer 4: named profile ---
-  // Source: local config if present, otherwise global config.
-  const profileSource = localRaw ?? globalRaw;
-  if (profileSource !== null) {
-    const profileLayer = extractProfile(profileSource, profileName);
+  // Resolution order: local config first, then global fallback if needed.
+  let profileLayer: PlainObject | null = null;
+  let profileError: ConfigError | null = null;
+  for (const profileSource of [localRaw, globalRaw]) {
+    if (profileSource === null) continue;
+    try {
+      const candidate = extractProfile(profileSource, profileName);
+      if (profileName === "default") {
+        const profiles = profileSource["profiles"];
+        if (!isPlainObject(profiles) || !isPlainObject(profiles["default"])) {
+          continue;
+        }
+      }
+      profileLayer = candidate;
+      break;
+    } catch (err) {
+      if (err instanceof ConfigError) {
+        if (profileError === null) profileError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (profileLayer !== null) {
     merged = deepMerge(merged, profileLayer);
   } else if (profileName !== "default") {
-    throw new ConfigError(`Profile "${profileName}" requested but no config file found.`);
+    throw (
+      profileError ??
+      new ConfigError(`Profile "${profileName}" requested but no config file found.`)
+    );
   }
 
   // --- Layer 5: environment variables ---

@@ -27,6 +27,10 @@ export const MIME_ALLOWLIST = new Set([
   "image/png",
   "image/gif",
   "image/webp",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-matroska",
   "application/pdf",
   "text/plain",
   "text/html",
@@ -37,6 +41,7 @@ export const MIME_ALLOWLIST = new Set([
 ]);
 
 const IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const VIDEO_MIMES = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska"]);
 
 /** Hard limit: 50 MiB */
 const MAX_FILE_BYTES = 52_428_800;
@@ -165,6 +170,9 @@ export interface FileInput {
  *
  * **lumaai** Image MIMEs only → `{ image_ref:[{ url:"data:…;base64,…", weight:1.0 }] }`. Non-image → throws.
  *
+ * **pika** Image MIMEs → `{ type:"image_url", … }`; video MIMEs →
+ * `{ type:"video_url", … }`.
+ *
  * @throws {ProviderCapabilityError} when the provider does not support the given file type.
  */
 export function buildFileContentBlock(
@@ -216,6 +224,13 @@ export function buildFileContentBlock(
     case "lumaai":
       if (!isImage) throw new ProviderCapabilityError("lumaai" as never, "text" as never);
       return { image_ref: [{ url: dataUrl, weight: 1.0 }] };
+
+    case "pika":
+      if (isImage) return { type: "image_url", image_url: { url: dataUrl } };
+      if (VIDEO_MIMES.has(file.mimeType)) {
+        return { type: "video_url", video_url: { url: dataUrl } };
+      }
+      throw new ProviderCapabilityError("pika" as never, "video" as never);
 
     default:
       throw new ProviderCapabilityError(provider as never, "text" as never);

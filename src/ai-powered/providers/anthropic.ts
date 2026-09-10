@@ -26,7 +26,7 @@ import type {
 import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
 import { BaseProvider } from "./base.js";
-import type { ProviderCallOptions } from "./base.js";
+import type { ProviderCallOptions, StreamTextIterable } from "./base.js";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -151,7 +151,10 @@ export class AnthropicProvider extends BaseProvider {
   // Streaming text
   // -------------------------------------------------------------------------
 
-  override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
+  override streamText(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): StreamTextIterable & { usage: TokenUsage | undefined } {
     this.assertCapability("text");
     const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
     const maxTok = options?.maxTokens ?? this.config.maxTokens ?? MAX_TOKENS_DEFAULT;
@@ -163,23 +166,49 @@ export class AnthropicProvider extends BaseProvider {
       ? (options.messages as Anthropic.MessageParam[])
       : [{ role: "user", content: prompt }];
 
-    try {
-      const stream = this._client.messages.stream({
-        model,
-        max_tokens: maxTok,
-        ...(system ? { system } : {}),
-        messages,
-        temperature: options?.temperature ?? this.config.temperature,
-      });
+    const self = this;
+    let finishReason: string | null = null;
+    let usage: TokenUsage | undefined;
 
-      for await (const event of stream) {
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          yield event.delta.text;
+    const iterator = (async function* (): AsyncGenerator<string> {
+      try {
+        const stream = self._client.messages.stream({
+          model,
+          max_tokens: maxTok,
+          ...(system ? { system } : {}),
+          messages,
+          temperature: options?.temperature ?? self.config.temperature,
+        });
+
+        for await (const event of stream) {
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            yield event.delta.text;
+          }
         }
+
+        const finalMessage = await stream.finalMessage();
+        finishReason = finalMessage.stop_reason ?? null;
+        usage = {
+          promptTokens: finalMessage.usage.input_tokens,
+          completionTokens: finalMessage.usage.output_tokens,
+          totalTokens: finalMessage.usage.input_tokens + finalMessage.usage.output_tokens,
+        };
+      } catch (err) {
+        throw self._wrapError(err);
       }
-    } catch (err) {
-      throw this._wrapError(err);
-    }
+    })();
+
+    return {
+      get finishReason() {
+        return finishReason;
+      },
+      get usage() {
+        return usage;
+      },
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+    };
   }
 
   // -------------------------------------------------------------------------

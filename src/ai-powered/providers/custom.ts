@@ -316,6 +316,7 @@ export class CustomProvider extends BaseProvider {
       try {
         const list = await this._client.models.list();
         const descriptors: ModelDescriptor[] = list.data.map((m) => ({
+          ...m,
           id: m.id,
           name: m.id,
           capabilities: ["text", "structured"] as Modality[],
@@ -357,6 +358,7 @@ export class CustomProvider extends BaseProvider {
       const body = (await resp.json()) as { models?: Array<{ name: string }> };
       const items = body.models ?? [];
       const descriptors: ModelDescriptor[] = items.map((m) => ({
+        ...m,
         id: m.name,
         name: m.name,
         capabilities: ["text", "structured"] as Modality[],

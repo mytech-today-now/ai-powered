@@ -55,6 +55,26 @@ class RecordingMockProvider extends MockProvider {
   }
 }
 
+class FinishReasonStreamProvider extends MockProvider {
+  override streamText(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): AsyncIterable<string> & { finishReason?: string | null } {
+    void prompt;
+    void options;
+    const iterator = (async function* () {
+      yield "Hel";
+      yield "lo";
+    })();
+    return {
+      finishReason: "length",
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+    };
+  }
+}
+
 class DispatchRecordingProvider extends MockProvider {
   readonly name: "venice" | "mock";
   readonly supportedModalities: Modality[] = ["video"];
@@ -148,6 +168,27 @@ describe("AiClient.generateText", () => {
     expect(typeof result.content).toBe("string");
     expect(result.usage.totalTokens).toBeGreaterThan(0);
     expect(result.cost.totalUsd).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// streamText metadata propagation
+// ---------------------------------------------------------------------------
+
+describe("AiClient.streamText", () => {
+  it("exposes finishReason from the provider stream when available", async () => {
+    const config = AiConfigSchema.parse({ mock: true, provider: "mock" });
+    const provider = new FinishReasonStreamProvider(config);
+    const client = new AiClient(config, provider);
+
+    const stream = client.streamText("hello");
+    let content = "";
+    for await (const chunk of stream) {
+      content += chunk;
+    }
+
+    expect(content).toBe("Hello");
+    expect(stream.finishReason).toBe("length");
   });
 });
 

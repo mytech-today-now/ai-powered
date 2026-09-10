@@ -110,20 +110,28 @@ const LOG_FILE_PATH = path.join(LOCAL_LOGS_DIR, "ai-powered.jsonl");
 
 /** Sensitive files that must never be tracked by git. */
 const SENSITIVE_FILES = [".env", ".env.local", ".env.production", ".ai-powered/config.json"];
+const GIT_CREDENTIAL_SCAN_UNAVAILABLE_MESSAGE =
+  "Unable to verify tracked sensitive files: git unavailable or not a repository";
+
+type GitCredentialScanResult = {
+  status: "clean" | "tracked" | "unavailable";
+  tracked: string[];
+};
 
 /**
  * Checks whether any sensitive credential files are currently tracked by git.
- * Returns an array of paths that are tracked (should be empty in a secure repo).
- * Returns an empty array if git is unavailable or we are not in a git repo.
+ * Distinguishes a clean scan from a scan that could not run.
  */
-function checkGitTrackedCredentials(): string[] {
+function checkGitTrackedCredentials(): GitCredentialScanResult {
   try {
     const gitCheck = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       cwd: process.cwd(),
     });
-    if (gitCheck.status !== 0) return []; // Not a git repo
+    if (gitCheck.error || gitCheck.status !== 0) {
+      return { status: "unavailable", tracked: [] };
+    }
 
     const tracked: string[] = [];
     for (const file of SENSITIVE_FILES) {
@@ -132,11 +140,14 @@ function checkGitTrackedCredentials(): string[] {
         stdio: ["ignore", "pipe", "ignore"],
         cwd: process.cwd(),
       });
+      if (result.error || result.status === null) {
+        return { status: "unavailable", tracked: [] };
+      }
       if (result.status === 0) tracked.push(file);
     }
-    return tracked;
+    return { status: tracked.length === 0 ? "clean" : "tracked", tracked };
   } catch {
-    return [];
+    return { status: "unavailable", tracked: [] };
   }
 }
 
@@ -163,6 +174,7 @@ const INIT_PROVIDER_ENV_KEYS: ReadonlyArray<{ id: string; envKey: string }> = [
   { id: "venice", envKey: "VENICE_API_KEY" },
   { id: "lumaai", envKey: "LUMAAI_API_KEY" },
   { id: "runway", envKey: "RUNWAYML_API_SECRET" },
+  { id: "pika", envKey: "PIKA_API_KEY" },
   { id: "custom", envKey: "AI_CUSTOM_API_KEY" },
 ];
 
@@ -905,10 +917,17 @@ addGlobalFlags(listTemplatesCmd);
 const listModelsCmd = new Command("list-models")
   .description("List models available from the active provider")
   .argument("[modality]", "Filter by modality (text|image|audio|video|structured)")
+  .addOption(
+    new Option(
+      "--accepts <input-modality>",
+      "Filter by supported input modality (image|audio|video|document)",
+    ),
+  )
   .action(async (modalityArg: string | undefined, _opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
     const client = await getAiClient("cli-list-models", toConfigOverrides(opts) as never);
-    const models = await client.listModels(modalityArg as never);
+    const acceptsArg = opts["accepts"] as string | undefined;
+    const models = await client.listModels(modalityArg as never, acceptsArg as never);
 
     console.log(JSON.stringify(models, null, 2));
   });
@@ -1034,7 +1053,11 @@ const healthCmd = new Command("health-check")
   .description("Validate config, check API keys, probe provider connectivity")
   .action(async (_opts, cmd: Command) => {
     const opts = cmd.optsWithGlobals<Record<string, unknown>>();
-    const checks: Array<{ check: string; status: "pass" | "fail"; message: string }> = [];
+    const checks: Array<{
+      check: string;
+      status: "pass" | "fail" | "unavailable";
+      message: string;
+    }> = [];
     let allPass = true;
 
     // 1. Config valid?
@@ -1062,19 +1085,26 @@ const healthCmd = new Command("health-check")
     }
 
     // 3. Git-tracked credential files?
-    const gitTracked = checkGitTrackedCredentials();
-    if (gitTracked.length === 0) {
+    const gitScan = checkGitTrackedCredentials();
+    if (gitScan.status === "clean") {
       checks.push({
         check: "git-credentials",
         status: "pass",
         message: "No sensitive files tracked by git",
       });
-    } else {
+    } else if (gitScan.status === "tracked") {
       allPass = false;
       checks.push({
         check: "git-credentials",
         status: "fail",
-        message: `Sensitive files tracked by git: ${gitTracked.join(", ")} — run: git rm --cached <file>`,
+        message: `Sensitive files tracked by git: ${gitScan.tracked.join(", ")} — run: git rm --cached <file>`,
+      });
+    } else {
+      allPass = false;
+      checks.push({
+        check: "git-credentials",
+        status: "unavailable",
+        message: GIT_CREDENTIAL_SCAN_UNAVAILABLE_MESSAGE,
       });
     }
 
@@ -1082,7 +1112,7 @@ const healthCmd = new Command("health-check")
       console.log(JSON.stringify(checks, null, 2));
     } else {
       for (const c of checks) {
-        const icon = c.status === "pass" ? "✓" : "✗";
+        const icon = c.status === "pass" ? "✓" : c.status === "unavailable" ? "!" : "✗";
         process.stdout.write(`${icon} ${c.check}: ${c.message}\n`);
       }
     }

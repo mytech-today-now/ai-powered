@@ -36,6 +36,21 @@ export interface ModelConfig {
   maxDurationSecs?: number;
   fpsOptions?: number[];
   qualityOptions?: string[];
+  options?: Array<{
+    name: string;
+    type: "string" | "integer" | "number" | "boolean" | "enum";
+    values?: Array<string | number | boolean>;
+    min?: number;
+    max?: number;
+    required?: boolean;
+    description?: string;
+  }>;
+  inputRequirements?: Array<{
+    modality: "image" | "audio" | "video" | "document";
+    min?: number;
+    max?: number;
+    required?: boolean;
+  }>;
 }
 
 export interface ProviderConfig {
@@ -66,7 +81,7 @@ function _loadConfigs(): void {
     _configs = _mockConfigs;
     return;
   }
-  const providers = ["openai", "anthropic", "xai", "venice", "lumaai", "runway"];
+  const providers = ["openai", "anthropic", "xai", "venice", "lumaai", "runway", "pika"];
   const dir = _configsDir();
   const loaded: ConfigMap = {};
   for (const name of providers) {
@@ -102,6 +117,8 @@ export interface VideoValidateOpts {
   duration?: number;
   fps?: number;
   resolution?: string;
+  options?: Record<string, unknown>;
+  inputMedia?: Array<{ modality: "image" | "video"; url?: string; mimeType?: string }>;
 }
 
 export const LimitsValidator = {
@@ -213,6 +230,150 @@ export const LimitsValidator = {
         throw new ProviderError(
           provider as import("./core.js").ProviderName,
           `${model}: fps ${opts.fps} not supported. Supported: ${cfg.fpsOptions.join(", ")}`,
+          422,
+          false,
+        );
+      }
+    }
+
+    if (opts.options || opts.inputMedia) {
+      this.validateModelOptions(provider, model, opts.options ?? {}, opts.inputMedia ?? []);
+    }
+  },
+
+  /** Validate model-specific options and media input counts from provider config. */
+  validateModelOptions(
+    provider: string,
+    model: string,
+    values: Record<string, unknown>,
+    inputMedia: Array<{ modality: "image" | "video"; url?: string }> = [],
+  ): void {
+    const cfg = _getModel(provider, model);
+    if (!cfg) return;
+
+    const declared = cfg.options ?? [];
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined || value === null || value === "") continue;
+      const option = declared.find((entry) => entry.name === name);
+      if (!option) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" is not supported`,
+          422,
+          false,
+        );
+      }
+      if (option.type === "string" && typeof value !== "string") {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" must be a string`,
+          422,
+          false,
+        );
+      }
+      if (option.type === "boolean" && typeof value !== "boolean") {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" must be a boolean`,
+          422,
+          false,
+        );
+      }
+      if (
+        (option.type === "integer" || option.type === "number") &&
+        (typeof value !== "number" || !Number.isFinite(value))
+      ) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" must be a number`,
+          422,
+          false,
+        );
+      }
+      if (option.type === "integer" && typeof value === "number" && !Number.isInteger(value)) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" must be an integer`,
+          422,
+          false,
+        );
+      }
+      if (option.values && !option.values.some((allowed) => allowed === value)) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" value ${JSON.stringify(value)} is not supported. Supported: ${option.values.join(", ")}`,
+          422,
+          false,
+        );
+      }
+      if (typeof value === "number" && option.min !== undefined && value < option.min) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" must be at least ${option.min}`,
+          422,
+          false,
+        );
+      }
+      if (typeof value === "number" && option.max !== undefined && value > option.max) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${name}" must be at most ${option.max}`,
+          422,
+          false,
+        );
+      }
+    }
+
+    for (const option of declared) {
+      if (option.required && (values[option.name] === undefined || values[option.name] === "")) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: option "${option.name}" is required`,
+          422,
+          false,
+        );
+      }
+    }
+
+    const requirements = cfg.inputRequirements ?? [];
+    if (inputMedia.length > 0 && requirements.length === 0) {
+      throw new ProviderError(
+        provider as import("./core.js").ProviderName,
+        `${model}: media input is not supported`,
+        422,
+        false,
+      );
+    }
+
+    for (const media of inputMedia) {
+      if (
+        requirements.length > 0 &&
+        !requirements.some((entry) => entry.modality === media.modality)
+      ) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: ${media.modality} input is not supported`,
+          422,
+          false,
+        );
+      }
+    }
+
+    for (const requirement of requirements) {
+      const count = inputMedia.filter((media) => media.modality === requirement.modality).length;
+      const min = requirement.min ?? (requirement.required ? 1 : 0);
+      if (count < min) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: requires at least ${min} ${requirement.modality} input${min === 1 ? "" : "s"}`,
+          422,
+          false,
+        );
+      }
+      if (requirement.max !== undefined && count > requirement.max) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: accepts at most ${requirement.max} ${requirement.modality} input${requirement.max === 1 ? "" : "s"}`,
           422,
           false,
         );

@@ -15,7 +15,7 @@ import { BaseProvider } from "./base.js";
 import { MockProvider } from "./mock.js";
 
 export { BaseProvider } from "./base.js";
-export type { ProviderCallOptions } from "./base.js";
+export type { ProviderCallOptions, StreamTextIterable } from "./base.js";
 
 // ---------------------------------------------------------------------------
 // Concrete provider imports and re-exports
@@ -29,6 +29,7 @@ import { CustomProvider } from "./custom.js";
 import { LumaAIProvider } from "./lumaai.js";
 import { RunwayProvider } from "./runway.js";
 import { VibevoiceProvider } from "./vibevoice.js";
+import { PikaProvider } from "./pika.js";
 
 export { MockProvider } from "./mock.js";
 export { OpenAiProvider } from "./openai.js";
@@ -39,6 +40,7 @@ export { CustomProvider } from "./custom.js";
 export { LumaAIProvider } from "./lumaai.js";
 export { RunwayProvider } from "./runway.js";
 export { VibevoiceProvider } from "./vibevoice.js";
+export { PikaProvider } from "./pika.js";
 
 // ---------------------------------------------------------------------------
 // Provider registry
@@ -55,6 +57,7 @@ const REGISTRY = new Map<ProviderName, ProviderConstructor>([
   ["custom", CustomProvider],
   ["lumaai", LumaAIProvider],
   ["runway", RunwayProvider],
+  ["pika", PikaProvider],
   ["vibevoice", VibevoiceProvider],
 ]);
 

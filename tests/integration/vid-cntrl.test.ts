@@ -16,6 +16,7 @@
 import * as http from "node:http";
 import { vi, describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
+import { PikaProvider } from "../../src/ai-powered/providers/pika.js";
 import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { createServer } from "../../src/ai-powered/server/index.js";
 import { _clearFileRefStore, storeFileRef } from "../../src/ai-powered/server/file-handler.js";
@@ -327,10 +328,100 @@ describe("V2-06: POST /video — all five controls forwarded, response has modal
 });
 
 // ---------------------------------------------------------------------------
-// V2-07 — Venice /video route dispatches image-keyframe requests to Venice
+// V2-07 — direct inputMedia routes through Pika
 // ---------------------------------------------------------------------------
 
-describe("V2-07: POST /video — Venice image-keyframe requests reach generateVideoFromImage", () => {
+describe("V2-07: POST /video — direct inputMedia routes through PikaProvider.generateVideo", () => {
+  let pikaServer: http.Server;
+  let pikaPort: number;
+  let originalVeniceApiKey: string | undefined;
+  let originalPublicBaseUrl: string | undefined;
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        originalVeniceApiKey = process.env["VENICE_API_KEY"];
+        originalPublicBaseUrl = process.env["PROXY_PUBLIC_BASE_URL"];
+        process.env["VENICE_API_KEY"] = "venice-test-key";
+        process.env["PROXY_PUBLIC_BASE_URL"] = "https://public.example.test";
+
+        const app = createServer({
+          mock: false,
+          configOverrides: {
+            provider: "pika",
+            apiKey: "pika-test-key",
+          },
+        });
+        pikaServer = app.listen(0, "127.0.0.1", () => {
+          pikaPort = (pikaServer.address() as { port: number }).port;
+          resolve();
+        });
+      }),
+    15_000,
+  );
+
+  afterAll(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        if (originalVeniceApiKey === undefined) {
+          delete process.env["VENICE_API_KEY"];
+        } else {
+          process.env["VENICE_API_KEY"] = originalVeniceApiKey;
+        }
+        if (originalPublicBaseUrl === undefined) {
+          delete process.env["PROXY_PUBLIC_BASE_URL"];
+        } else {
+          process.env["PROXY_PUBLIC_BASE_URL"] = originalPublicBaseUrl;
+        }
+        pikaServer.close((err) => (err ? reject(err) : resolve()));
+      }),
+  );
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _clearFileRefStore();
+  });
+
+  it("routes direct inputMedia through PikaProvider.generateVideo and preserves the payload", async () => {
+    const videoUrl = "https://cdn.example.test/video-clip.mp4";
+    const inputMedia = [{ url: videoUrl, mimeType: "video/mp4" }];
+    const pikaSpy = vi.spyOn(PikaProvider.prototype, "generateVideo").mockResolvedValue({
+      modality: "video",
+      provider: "pika",
+      model: "pika/pika-2.5/text-to-video",
+      data: "data:video/mp4;base64,AAAAAA==",
+      mimeType: "video/mp4",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      cost: { totalUsd: 0, isEstimate: false },
+      latencyMs: 1,
+    } as VideoResult);
+
+    const { status, text } = await postRaw(pikaPort, "/video", {
+      provider: "venice",
+      prompt: "a camera push-in over a launch pad",
+      inputMedia,
+    });
+
+    expect(status).toBe(200);
+    expect(pikaSpy).toHaveBeenCalledOnce();
+    expect(pikaSpy).toHaveBeenCalledWith(
+      "a camera push-in over a launch pad",
+      expect.objectContaining({
+        inputMedia,
+      }),
+    );
+
+    const body = JSON.parse(text) as { provider?: string; modality?: string };
+    expect(body.provider).toBe("pika");
+    expect(body.modality).toBe("video");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V2-08 — Venice /video route dispatches image-keyframe requests to Venice
+// ---------------------------------------------------------------------------
+
+describe("V2-08: POST /video — Venice image-keyframe requests reach generateVideoFromImage", () => {
   let veniceServer: http.Server;
   let venicePort: number;
   let originalVeniceApiKey: string | undefined;

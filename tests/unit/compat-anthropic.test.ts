@@ -25,6 +25,7 @@
  */
 
 import {
+  AnthropicMessagesBodySchema,
   normaliseAnthropicContent,
   toAnthropicResponse,
 } from "../../src/ai-powered/server/compat/anthropic.js";
@@ -36,17 +37,17 @@ import type { TextResult } from "../../src/ai-powered/types.js";
 
 function makeTextResult(overrides: Partial<TextResult> = {}): TextResult {
   return {
-    modality:     "text",
-    provider:     "mock",
-    model:        "claude-3-5-sonnet-20241022",
-    content:      "The answer is 42.",
+    modality: "text",
+    provider: "mock",
+    model: "claude-3-5-sonnet-20241022",
+    content: "The answer is 42.",
     finishReason: "end_turn",
-    latencyMs:    55,
-    cost:         { totalUsd: 0.002, isEstimate: false },
+    latencyMs: 55,
+    cost: { totalUsd: 0.002, isEstimate: false },
     usage: {
-      promptTokens:     15,
+      promptTokens: 15,
       completionTokens: 25,
-      totalTokens:      40,
+      totalTokens: 40,
     },
     ...overrides,
   };
@@ -95,6 +96,92 @@ describe("normaliseAnthropicContent — block array input", () => {
       { type: "text", text: "C" },
     ]);
     expect(result).toBe("ABC");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AnthropicMessagesBodySchema — multimodal content
+// ---------------------------------------------------------------------------
+
+describe("AnthropicMessagesBodySchema — multimodal content", () => {
+  it("accepts text-plus-image blocks", () => {
+    const parsed = AnthropicMessagesBodySchema.safeParse({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: "image/png",
+                data: "iVBORw0KGgo=",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts text-plus-document blocks", () => {
+    const parsed = AnthropicMessagesBodySchema.safeParse({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Summarise this document." },
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: "JVBERi0xLjQK",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects unsupported block types with a clear discriminator message", () => {
+    const parsed = AnthropicMessagesBodySchema.safeParse({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "audio",
+              source: {
+                type: "base64",
+                media_type: "audio/mpeg",
+                data: "AAA=",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join("; ");
+      expect(message).toBe(
+        "Unsupported Anthropic content block type. Supported block types: text, image, document.",
+      );
+    }
   });
 });
 
@@ -155,17 +242,26 @@ describe("toAnthropicResponse — id", () => {
 
 describe("toAnthropicResponse — model and stop_reason", () => {
   it("model matches TextResult.model", () => {
-    const env = toAnthropicResponse(makeTextResult({ model: "claude-3-haiku-20240307" })) as Record<string, unknown>;
+    const env = toAnthropicResponse(makeTextResult({ model: "claude-3-haiku-20240307" })) as Record<
+      string,
+      unknown
+    >;
     expect(env.model).toBe("claude-3-haiku-20240307");
   });
 
   it("stop_reason maps from TextResult.finishReason", () => {
-    const env = toAnthropicResponse(makeTextResult({ finishReason: "end_turn" })) as Record<string, unknown>;
+    const env = toAnthropicResponse(makeTextResult({ finishReason: "end_turn" })) as Record<
+      string,
+      unknown
+    >;
     expect(env.stop_reason).toBe("end_turn");
   });
 
   it("stop_reason 'max_tokens' propagates correctly", () => {
-    const env = toAnthropicResponse(makeTextResult({ finishReason: "max_tokens" })) as Record<string, unknown>;
+    const env = toAnthropicResponse(makeTextResult({ finishReason: "max_tokens" })) as Record<
+      string,
+      unknown
+    >;
     expect(env.stop_reason).toBe("max_tokens");
   });
 });
@@ -188,7 +284,10 @@ describe("toAnthropicResponse — content", () => {
   });
 
   it("content[0].text equals TextResult.content", () => {
-    const env = toAnthropicResponse(makeTextResult({ content: "Test answer" })) as Record<string, unknown>;
+    const env = toAnthropicResponse(makeTextResult({ content: "Test answer" })) as Record<
+      string,
+      unknown
+    >;
     const block = (env.content as Record<string, unknown>[])[0];
     expect(block.text).toBe("Test answer");
   });
@@ -221,4 +320,3 @@ describe("toAnthropicResponse — usage", () => {
     expect(Object.keys(usage).sort()).toEqual(["input_tokens", "output_tokens"].sort());
   });
 });
-

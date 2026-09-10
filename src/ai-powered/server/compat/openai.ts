@@ -27,6 +27,7 @@ import {
   AllProvidersExhaustedError,
   ProviderCapabilityError,
 } from "../../types.js";
+import type { StreamTextIterable } from "../../providers/index.js";
 import type { ServeOptions } from "../index.js";
 import { inferProviderFromModel } from "./model-router.js";
 
@@ -36,6 +37,243 @@ import { inferProviderFromModel } from "./model-router.js";
 
 function openAiError(res: Response, status: number, message: string, type: string): void {
   res.status(status).json({ error: { message, type, code: String(status) } });
+}
+
+function readFinishReason(source: { finishReason?: unknown } | null | undefined): string | null {
+  return typeof source?.finishReason === "string" ? source.finishReason : null;
+}
+
+class UnsupportedJsonSchemaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnsupportedJsonSchemaError";
+  }
+}
+
+const JSON_SCHEMA_ALLOWED_KEYS = new Set([
+  "type",
+  "enum",
+  "const",
+  "properties",
+  "required",
+  "items",
+  "additionalProperties",
+  "title",
+  "description",
+  "default",
+  "examples",
+  "$schema",
+  "$id",
+  "$comment",
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function unsupportedJsonSchema(path: string, detail: string): never {
+  throw new UnsupportedJsonSchemaError(`${path}: ${detail}`);
+}
+
+function ensureSupportedJsonSchemaKeys(schema: Record<string, unknown>, path: string): void {
+  for (const key of Object.keys(schema)) {
+    if (!JSON_SCHEMA_ALLOWED_KEYS.has(key)) {
+      unsupportedJsonSchema(path, `unsupported keyword '${key}'`);
+    }
+  }
+}
+
+function parseJsonSchemaType(
+  schema: Record<string, unknown>,
+  path: string,
+): { type: string; nullable: boolean } {
+  const rawType = schema["type"];
+  if (rawType === undefined) {
+    return { type: "unknown", nullable: false };
+  }
+
+  if (typeof rawType === "string") {
+    return { type: rawType, nullable: false };
+  }
+
+  if (Array.isArray(rawType) && rawType.every((value) => typeof value === "string")) {
+    const types = rawType as string[];
+    if (types.length === 0) {
+      unsupportedJsonSchema(path, "type array must not be empty");
+    }
+
+    const nonNullTypes = types.filter((type) => type !== "null");
+    if (types.length === 1 && types[0] === "null") {
+      return { type: "null", nullable: false };
+    }
+    if (types.includes("null")) {
+      if (nonNullTypes.length !== 1) {
+        unsupportedJsonSchema(path, `unsupported type union '${types.join("' | '")}'`);
+      }
+      return { type: nonNullTypes[0]!, nullable: true };
+    }
+    if (nonNullTypes.length === 1) {
+      return { type: nonNullTypes[0]!, nullable: false };
+    }
+    unsupportedJsonSchema(path, `unsupported type union '${types.join("' | '")}'`);
+  }
+
+  unsupportedJsonSchema(path, "type must be a string or an array of strings");
+}
+
+function buildJsonSchemaLiteral(
+  schema: Record<string, unknown>,
+  path: string,
+): z.ZodTypeAny | null {
+  if ("const" in schema) {
+    const value = schema["const"];
+    if (Array.isArray(value) || isPlainObject(value)) {
+      unsupportedJsonSchema(path, "const only supports primitive JSON values");
+    }
+    return z.literal(value as string | number | boolean | bigint | null);
+  }
+
+  if (!("enum" in schema)) {
+    return null;
+  }
+
+  const values = schema["enum"];
+  if (!Array.isArray(values) || values.length === 0) {
+    unsupportedJsonSchema(path, "enum must be a non-empty array");
+  }
+  if (values.some((value) => Array.isArray(value) || isPlainObject(value))) {
+    unsupportedJsonSchema(path, "enum only supports primitive JSON values");
+  }
+  const literals = values.map((value) =>
+    z.literal(value as string | number | boolean | bigint | null),
+  );
+  if (literals.length === 1) {
+    return literals[0]!;
+  }
+  return z.union(literals as unknown as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
+}
+
+function buildJsonSchemaObject(
+  schema: Record<string, unknown>,
+  path: string,
+  nullable: boolean,
+): z.ZodTypeAny {
+  const properties = schema["properties"];
+  if (properties !== undefined && !isPlainObject(properties)) {
+    unsupportedJsonSchema(path, "properties must be a JSON object");
+  }
+  const required = schema["required"];
+  if (
+    required !== undefined &&
+    (!Array.isArray(required) || required.some((value) => typeof value !== "string"))
+  ) {
+    unsupportedJsonSchema(path, "required must be an array of strings");
+  }
+
+  const shape: Record<string, z.ZodTypeAny> = Object.create(null) as Record<string, z.ZodTypeAny>;
+  if (properties) {
+    for (const [key, value] of Object.entries(properties)) {
+      shape[key] = jsonSchemaToZod(value, `${path}.properties.${key}`);
+    }
+  }
+
+  for (const key of required ?? []) {
+    if (!(key in shape)) {
+      shape[key] = z.unknown();
+    }
+  }
+
+  const objectSchema = z.object(shape);
+  const additionalProperties = schema["additionalProperties"];
+  if (additionalProperties === undefined || additionalProperties === true) {
+    const passthroughSchema = objectSchema.passthrough();
+    return nullable ? passthroughSchema.nullable() : passthroughSchema;
+  } else if (additionalProperties === false) {
+    const strictSchema = objectSchema.strict();
+    return nullable ? strictSchema.nullable() : strictSchema;
+  } else {
+    unsupportedJsonSchema(path, "additionalProperties must be a boolean");
+  }
+}
+
+function buildJsonSchemaArray(
+  schema: Record<string, unknown>,
+  path: string,
+  nullable: boolean,
+): z.ZodTypeAny {
+  const items = schema["items"];
+  if (items !== undefined && !isPlainObject(items)) {
+    unsupportedJsonSchema(path, "items must be a JSON object");
+  }
+  const arraySchema: z.ZodTypeAny = z.array(
+    items === undefined ? z.unknown() : jsonSchemaToZod(items, `${path}.items`),
+  );
+  return nullable ? arraySchema.nullable() : arraySchema;
+}
+
+function jsonSchemaToZod(
+  schemaInput: unknown,
+  path = "response_format.json_schema.schema",
+): z.ZodTypeAny {
+  if (!isPlainObject(schemaInput)) {
+    unsupportedJsonSchema(path, "schema must be a JSON object");
+  }
+
+  ensureSupportedJsonSchemaKeys(schemaInput, path);
+
+  const hasObjectKeywords =
+    "properties" in schemaInput ||
+    "required" in schemaInput ||
+    "additionalProperties" in schemaInput;
+  const hasArrayKeywords = "items" in schemaInput;
+  const literalSchema = buildJsonSchemaLiteral(schemaInput, path);
+  if (literalSchema) {
+    if (hasObjectKeywords || hasArrayKeywords) {
+      unsupportedJsonSchema(path, "enum/const cannot be combined with object or array keywords");
+    }
+    return literalSchema;
+  }
+
+  const { type: parsedType, nullable } = parseJsonSchemaType(schemaInput, path);
+  const inferredType =
+    parsedType === "unknown"
+      ? hasObjectKeywords
+        ? "object"
+        : hasArrayKeywords
+          ? "array"
+          : "unknown"
+      : parsedType;
+
+  if (hasObjectKeywords && inferredType !== "object") {
+    unsupportedJsonSchema(
+      path,
+      "properties, required, and additionalProperties require type 'object'",
+    );
+  }
+  if (hasArrayKeywords && inferredType !== "array") {
+    unsupportedJsonSchema(path, "items require type 'array'");
+  }
+
+  switch (inferredType) {
+    case "string":
+      return nullable ? z.string().nullable() : z.string();
+    case "number":
+      return nullable ? z.number().nullable() : z.number();
+    case "integer":
+      return nullable ? z.number().int().nullable() : z.number().int();
+    case "boolean":
+      return nullable ? z.boolean().nullable() : z.boolean();
+    case "null":
+      return z.null();
+    case "object":
+      return buildJsonSchemaObject(schemaInput, path, nullable);
+    case "array":
+      return buildJsonSchemaArray(schemaInput, path, nullable);
+    case "unknown":
+      return z.unknown();
+    default:
+      unsupportedJsonSchema(path, `unsupported type '${inferredType}'`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +418,8 @@ export function toOpenAiImageResponse(
  * Factory returning an Express handler for POST /v1/chat/completions.
  *
  * Handles both streaming (SSE) and non-streaming responses.
- * Routes to generateStructured() when response_format is json_object or json_schema.
+ * Routes to generateStructured() when response_format is json_object or a supported json_schema.
+ * Unsupported json_schema shapes are rejected with the standard OpenAI error envelope.
  * Applies inferProviderFromModel() for automatic provider selection.
  */
 export function handleChatCompletions(opts: ServeOptions) {
@@ -222,26 +461,50 @@ export function handleChatCompletions(opts: ServeOptions) {
     const isStructured = rfType === "json_object" || rfType === "json_schema";
 
     try {
+      let structuredSchema: z.ZodTypeAny = z.record(z.unknown());
+      if (
+        rfType === "json_schema" &&
+        body.response_format &&
+        "json_schema" in body.response_format
+      ) {
+        structuredSchema = jsonSchemaToZod(body.response_format.json_schema.schema);
+      }
+
       const client = await getAiClient("compat-chat", overrides as never);
 
-      if (body.stream && !isStructured) {
+      if (body.stream) {
         // Streaming path — SSE
         const streamId = `chatcmpl-${randomUUID()}`;
         res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        let finishReason = "stop";
-        for await (const chunk of client.streamText(prompt)) {
+        let finishReason: string | null = null;
+        if (isStructured) {
+          const result = await client.generateStructured(prompt, structuredSchema);
+          const content =
+            typeof result.data === "string" ? result.data : JSON.stringify(result.data);
+          finishReason = readFinishReason(result as { finishReason?: unknown });
           const event = {
             id: streamId,
             object: "chat.completion.chunk",
-            choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+            choices: [{ index: 0, delta: { content }, finish_reason: null }],
           };
           res.write(`data: ${JSON.stringify(event)}\n\n`);
-          void chunk;
+        } else {
+          const stream = client.streamText(prompt) as StreamTextIterable;
+          for await (const chunk of stream) {
+            const event = {
+              id: streamId,
+              object: "chat.completion.chunk",
+              choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+            };
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+            void chunk;
+          }
+          finishReason = readFinishReason(stream);
         }
-        // Final chunk with finish_reason
+        // Final chunk with the best available finish_reason; unknown states stay null.
         const finalEvent = {
           id: streamId,
           object: "chat.completion.chunk",
@@ -252,16 +515,7 @@ export function handleChatCompletions(opts: ServeOptions) {
         res.end();
       } else if (isStructured) {
         // Structured output path
-        const { z: zod } = await import("zod");
-        let schema: import("zod").ZodType<unknown> = zod.record(zod.unknown());
-        if (
-          rfType === "json_schema" &&
-          body.response_format &&
-          "json_schema" in body.response_format
-        ) {
-          schema = zod.record(zod.unknown()); // runtime validation — use open schema
-        }
-        const result = await client.generateStructured(prompt, schema);
+        const result = await client.generateStructured(prompt, structuredSchema);
         res.json(
           toOpenAiChatResponse({
             modality: "text",
@@ -280,7 +534,9 @@ export function handleChatCompletions(opts: ServeOptions) {
         res.json(toOpenAiChatResponse(result));
       }
     } catch (err) {
-      if (err instanceof BudgetExceededError) {
+      if (err instanceof UnsupportedJsonSchemaError) {
+        openAiError(res, 400, err.message, "invalid_request_error");
+      } else if (err instanceof BudgetExceededError) {
         openAiError(res, 402, err.message, "insufficient_quota");
       } else if (err instanceof AllProvidersExhaustedError) {
         openAiError(res, 503, err.message, "server_error");
@@ -544,10 +800,16 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
 }
 
 // ---------------------------------------------------------------------------
-// bd-andh: handleModels() — static aggregate of all provider model IDs
+// bd-andh: handleModels() — static aggregate of public compat-visible model IDs
 // ---------------------------------------------------------------------------
 
-/** Flat list of every model ID across all registered providers. */
+/**
+ * Flat list of public model IDs exposed through the OpenAI compat surface.
+ *
+ * Intentional exclusions:
+ * - `mock-*` ids are test-only and remain internal.
+ * - `vibevoice-*` ids are local audio helpers and are not advertised here.
+ */
 const STATIC_MODELS: ReadonlyArray<{ id: string; owned_by: string }> = [
   // OpenAI — text
   { id: "gpt-4o", owned_by: "openai" },
@@ -559,6 +821,7 @@ const STATIC_MODELS: ReadonlyArray<{ id: string; owned_by: string }> = [
   // OpenAI — image
   { id: "dall-e-3", owned_by: "openai" },
   { id: "dall-e-2", owned_by: "openai" },
+  { id: "gpt-image-1", owned_by: "openai" },
   // OpenAI — audio
   { id: "whisper-1", owned_by: "openai" },
   { id: "tts-1", owned_by: "openai" },
@@ -575,17 +838,31 @@ const STATIC_MODELS: ReadonlyArray<{ id: string; owned_by: string }> = [
   { id: "grok-2-mini", owned_by: "xai" },
   { id: "grok-beta", owned_by: "xai" },
   { id: "grok-vision-beta", owned_by: "xai" },
+  { id: "aurora", owned_by: "xai" },
+  { id: "grok-2-image", owned_by: "xai" },
+  { id: "grok-imagine-video", owned_by: "xai" },
   // Venice
   { id: "llama-3.3-70b", owned_by: "venice" },
   { id: "mistral-31-24b", owned_by: "venice" },
   { id: "qwen-2.5-vl", owned_by: "venice" },
   { id: "venice-sd-3.5", owned_by: "venice" },
   { id: "fluently-xl", owned_by: "venice" },
+  { id: "wan-2.5-preview-image-to-video", owned_by: "venice" },
   // Luma AI
   { id: "ray-2", owned_by: "lumaai" },
   { id: "ray-2-720p", owned_by: "lumaai" },
   { id: "ray-flash-2", owned_by: "lumaai" },
   { id: "ray-flash-2-720p", owned_by: "lumaai" },
+  // Runway
+  { id: "gen4.5", owned_by: "runway" },
+  // Pika video endpoints
+  { id: "pika/pika-2.5/text-to-video", owned_by: "pika" },
+  { id: "pika/pika-2.5/image-to-video", owned_by: "pika" },
+  { id: "pika/pikaframes/image-to-video", owned_by: "pika" },
+  { id: "pika/pikadditions/video-to-video", owned_by: "pika" },
+  { id: "pika/pikaswaps/video-to-video", owned_by: "pika" },
+  { id: "pika/pikaffects/image-to-video", owned_by: "pika" },
+  { id: "pika/pikaffects/video-to-video", owned_by: "pika" },
 ];
 
 /**

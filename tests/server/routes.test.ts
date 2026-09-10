@@ -25,7 +25,9 @@
 import * as http from "node:http";
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import * as aiPowered from "../../src/ai-powered/index.js";
+import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { createServer } from "../../src/ai-powered/server/index.js";
+import { _clearFileRefStore, storeFileRef } from "../../src/ai-powered/server/file-handler.js";
 import { ProviderError } from "../../src/ai-powered/types.js";
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,32 @@ function postJson(path: string, body: unknown): Promise<http.IncomingMessage> {
       {
         hostname: "127.0.0.1",
         port,
+        path,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+        },
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+function postJsonTo(
+  targetPort: number,
+  path: string,
+  body: unknown,
+): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: targetPort,
         path,
         method: "POST",
         headers: {
@@ -432,5 +460,136 @@ describe("R13-R17 – GET /models diagnostics and regression coverage", () => {
       "serve-models",
       expect.objectContaining({ provider: "custom", mock: false }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R19 – POST /video requires PROXY_PUBLIC_BASE_URL for public keyframes
+// ---------------------------------------------------------------------------
+describe("R19 – POST /video requires PROXY_PUBLIC_BASE_URL for public keyframes", () => {
+  let originalPublicBaseUrl: string | undefined;
+
+  beforeEach(() => {
+    originalPublicBaseUrl = process.env["PROXY_PUBLIC_BASE_URL"];
+    delete process.env["PROXY_PUBLIC_BASE_URL"];
+  });
+
+  afterEach(() => {
+    if (originalPublicBaseUrl === undefined) {
+      delete process.env["PROXY_PUBLIC_BASE_URL"];
+    } else {
+      process.env["PROXY_PUBLIC_BASE_URL"] = originalPublicBaseUrl;
+    }
+    _clearFileRefStore();
+  });
+
+  it("returns a Render-friendly guidance error when the public media URL is missing", async () => {
+    const fileRef = storeFileRef({
+      filename: "frame.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+      base64Content: Buffer.from("render-frame").toString("base64"),
+      provider: "openai",
+    });
+
+    const res = await postJson("/video", {
+      provider: "venice",
+      prompt: "a slow cinematic reveal",
+      fileRef,
+    });
+    const body = (await readJson(res)) as Record<string, unknown>;
+
+    expect(res.statusCode).toBe(422);
+    expect(String(body.error)).toContain("PROXY_PUBLIC_BASE_URL");
+    expect(String(body.error)).toContain("public-facing HTTPS address");
+    expect(String(body.error)).toContain("Render service URL");
+    expect(String(body.error)).not.toContain("ngrok");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R18 — video inputMedia must not be treated as image-keyframe input
+// ---------------------------------------------------------------------------
+describe("R18 – POST /video modality routing regression", () => {
+  let veniceServer: http.Server;
+  let venicePort: number;
+  let originalVeniceApiKey: string | undefined;
+  let originalPublicBaseUrl: string | undefined;
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        originalVeniceApiKey = process.env["VENICE_API_KEY"];
+        originalPublicBaseUrl = process.env["PROXY_PUBLIC_BASE_URL"];
+        process.env["VENICE_API_KEY"] = "venice-test-key";
+        process.env["PROXY_PUBLIC_BASE_URL"] = "https://public.example.test";
+
+        const app = createServer({
+          mock: false,
+          configOverrides: {
+            provider: "venice",
+            apiKey: "venice-test-key",
+          },
+        });
+        veniceServer = app.listen(0, "127.0.0.1", () => {
+          venicePort = (veniceServer.address() as { port: number }).port;
+          resolve();
+        });
+      }),
+    15_000,
+  );
+
+  afterAll(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        if (originalVeniceApiKey === undefined) {
+          delete process.env["VENICE_API_KEY"];
+        } else {
+          process.env["VENICE_API_KEY"] = originalVeniceApiKey;
+        }
+        if (originalPublicBaseUrl === undefined) {
+          delete process.env["PROXY_PUBLIC_BASE_URL"];
+        } else {
+          process.env["PROXY_PUBLIC_BASE_URL"] = originalPublicBaseUrl;
+        }
+        veniceServer.close((err) => (err ? reject(err) : resolve()));
+      }),
+  );
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    _clearFileRefStore();
+  });
+
+  it("returns the existing capability error when video inputMedia is sent to an image-only provider", async () => {
+    const fileRef = storeFileRef({
+      filename: "frame.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+      base64Content: Buffer.from("venice-frame").toString("base64"),
+      provider: "openai",
+    });
+    const spy = vi.spyOn(VeniceProvider.prototype, "generateVideoFromImage").mockResolvedValue({
+      modality: "video",
+      provider: "venice",
+      model: "wan-2.5-preview-image-to-video",
+      data: "data:video/mp4;base64,AAAAAA==",
+      mimeType: "video/mp4",
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      cost: { totalUsd: 0, isEstimate: false },
+      latencyMs: 1,
+    } as never);
+
+    const res = await postJsonTo(venicePort, "/video", {
+      provider: "venice",
+      prompt: "a slow cinematic reveal",
+      fileRef,
+      inputMedia: [{ url: "https://cdn.example.test/clip.mp4", mimeType: "video/mp4" }],
+    });
+    const body = (await readJson(res)) as Record<string, unknown>;
+
+    expect(res.statusCode).toBe(422);
+    expect(body.error).toBe('Provider "venice" does not support modality "video".');
+    expect(spy).not.toHaveBeenCalled();
   });
 });

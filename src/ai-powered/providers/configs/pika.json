@@ -1,0 +1,200 @@
+{
+  "provider": "pika",
+  "updatedAt": "2026-09-09",
+  "reviewNote": "Current Pika video endpoints documented at https://dev.pika.art/models and https://mcp.pika.art/models/quick-start. Soundtrack is intentionally excluded because it returns audio, not VideoResult.",
+  "models": [
+    {
+      "id": "pika/pika-2.5/text-to-video",
+      "modalities": ["video"],
+      "resolutions": [
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "maxDurationSecs": 5,
+      "options": [
+        { "name": "resolution", "type": "enum", "values": ["720p", "1080p"] },
+        { "name": "seed", "type": "integer" },
+        { "name": "duration", "type": "enum", "values": [5] },
+        { "name": "negativePrompt", "type": "string" }
+      ]
+    },
+    {
+      "id": "pika/pika-2.5/image-to-video",
+      "modalities": ["video"],
+      "resolutions": [
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "maxDurationSecs": 10,
+      "options": [
+        { "name": "resolution", "type": "enum", "values": ["720p", "1080p"] },
+        { "name": "seed", "type": "integer" },
+        { "name": "duration", "type": "enum", "values": [5, 10] },
+        { "name": "negativePrompt", "type": "string" }
+      ],
+      "inputRequirements": [{ "modality": "image", "min": 1, "max": 1, "required": true }]
+    },
+    {
+      "id": "pika/pikaframes/image-to-video",
+      "modalities": ["video"],
+      "resolutions": [
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "options": [
+        { "name": "resolution", "type": "enum", "values": ["720p", "1080p"] },
+        { "name": "seed", "type": "integer" },
+        { "name": "transitionDuration", "type": "integer", "min": 1, "max": 10 },
+        { "name": "negativePrompt", "type": "string" }
+      ],
+      "inputRequirements": [{ "modality": "image", "min": 2, "max": 5, "required": true }]
+    },
+    {
+      "id": "pika/pikadditions/video-to-video",
+      "modalities": ["video"],
+      "resolutions": [
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "maxDurationSecs": 10,
+      "options": [
+        { "name": "resolution", "type": "enum", "values": ["720p", "1080p"] },
+        { "name": "seed", "type": "integer" },
+        { "name": "duration", "type": "enum", "values": [5, 10] },
+        { "name": "negativePrompt", "type": "string" }
+      ],
+      "inputRequirements": [
+        { "modality": "video", "min": 1, "max": 1, "required": true },
+        { "modality": "image", "min": 0, "max": 1 }
+      ]
+    },
+    {
+      "id": "pika/pikaswaps/video-to-video",
+      "modalities": ["video"],
+      "resolutions": [
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "maxDurationSecs": 10,
+      "options": [
+        { "name": "resolution", "type": "enum", "values": ["720p", "1080p"] },
+        { "name": "seed", "type": "integer" },
+        { "name": "duration", "type": "enum", "values": [5, 10] },
+        { "name": "negativePrompt", "type": "string" },
+        { "name": "modifyRegionRoi", "type": "string" },
+        { "name": "modifyRegionMask", "type": "string" }
+      ],
+      "inputRequirements": [
+        { "modality": "video", "min": 1, "max": 1, "required": true },
+        { "modality": "image", "min": 0, "max": 1 }
+      ]
+    },
+    {
+      "id": "pika/pikaffects/image-to-video",
+      "modalities": ["video"],
+      "resolutions": [
+        { "label": "720p", "width": 1280, "height": 720 },
+        { "label": "1080p", "width": 1920, "height": 1080 }
+      ],
+      "options": [
+        {
+          "name": "pikaffect",
+          "type": "enum",
+          "values": [
+            "90s Me",
+            "Action Me",
+            "Arcade Winner",
+            "Baby Me",
+            "Bald Me",
+            "Balloonify it",
+            "CCTV Me",
+            "Cake-ify",
+            "Captain Me",
+            "Choco Me",
+            "Classy Me",
+            "Clown Fit",
+            "Crazy in Love",
+            "Crumble",
+            "Crush",
+            "Cupid Strike",
+            "Decapitate",
+            "Deflate",
+            "Dissolve",
+            "Doom Stroll",
+            "Eat a Rat",
+            "Epic Me",
+            "Everythings Bonsai",
+            "Explode",
+            "Eye-pop",
+            "Eyes Zoom in",
+            "Fairytale Me",
+            "Goth Dream",
+            "Hazmat Fit",
+            "Hearts Bouquet",
+            "Hero Me",
+            "Human Pet",
+            "Inflate",
+            "Jungle Me",
+            "Labubu Style",
+            "Leprechaun Me",
+            "Levitate",
+            "Lo-Fi Me",
+            "Looong Hair",
+            "Love Bomb",
+            "Magic Polaroid",
+            "Make it Real",
+            "Melt",
+            "Mona Me",
+            "Mrs Me",
+            "Museum Me",
+            "Peel",
+            "Pick Me",
+            "Poke",
+            "Princess Me",
+            "Proposal",
+            "Puppy Me",
+            "Rose Royal",
+            "Squish",
+            "Ta-da",
+            "Tarot",
+            "Transform",
+            "Tear",
+            "VIP Me",
+            "Warrior Me",
+            "Yarn Charm",
+            "Zen Me"
+          ],
+          "required": true
+        },
+        { "name": "seed", "type": "integer" }
+      ],
+      "inputRequirements": [{ "modality": "image", "min": 1, "max": 1, "required": true }]
+    },
+    {
+      "id": "pika/pikaffects/video-to-video",
+      "modalities": ["video"],
+      "options": [
+        {
+          "name": "pikaffect",
+          "type": "enum",
+          "values": [
+            "Anime Cat",
+            "Cute",
+            "Shroom",
+            "Duplicate it",
+            "Happy",
+            "Asteroid",
+            "Its Alive",
+            "Its Computer",
+            "Pink Hair",
+            "Swan Head",
+            "Wizard Cat"
+          ],
+          "required": true
+        },
+        { "name": "seed", "type": "integer" }
+      ],
+      "inputRequirements": [{ "modality": "video", "min": 1, "max": 1, "required": true }]
+    }
+  ]
+}

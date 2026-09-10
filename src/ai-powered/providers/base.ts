@@ -113,9 +113,28 @@ export interface ProviderCallOptions {
    * not support image input ignore this field.
    */
   images?: string[];
+  /** Media URLs with their original MIME types, used by video providers. */
+  inputMedia?: Array<{ url: string; mimeType: string }>;
+  /** Provider-specific video options shared by the HTTP API and web UI. */
+  negativePrompt?: string;
+  seed?: number;
+  transitionDuration?: number;
+  pikaffect?: string;
+  modifyRegionRoi?: string;
+  modifyRegionMask?: string;
   /** Original MIME type of the media buffer (e.g. "video/mp4", "audio/mpeg"). */
   mimeType?: string;
 }
+
+/**
+ * Streamed text chunks plus optional terminal metadata.
+ *
+ * Providers can attach `finishReason` when their upstream streaming API
+ * exposes a terminal state. Callers that only care about chunks can ignore it.
+ */
+export type StreamTextIterable = AsyncIterable<string> & {
+  finishReason?: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // ImageCapability
@@ -197,7 +216,7 @@ export abstract class BaseProvider {
     throw new ProviderCapabilityError(this.name, "video");
   }
 
-  streamText(_prompt: string, _options?: ProviderCallOptions): AsyncIterable<string> {
+  streamText(_prompt: string, _options?: ProviderCallOptions): StreamTextIterable {
     throw new ProviderCapabilityError(this.name, "text");
   }
 

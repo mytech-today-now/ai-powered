@@ -14,6 +14,7 @@ import {
   ConfigError,
   CURRENT_VERSION,
   GLOBAL_CONFIG_PATH,
+  LOCAL_CONFIG_PATH,
   loadConfig,
 } from "../../src/ai-powered/core.js";
 import {
@@ -29,7 +30,13 @@ import { ConversationSession } from "../../src/ai-powered/client.js";
 
 afterEach(() => {
   fs.rmSync(path.dirname(GLOBAL_CONFIG_PATH), { recursive: true, force: true });
+  fs.rmSync(LOCAL_CONFIG_PATH, { force: true });
 });
+
+function writeConfigFile(filePath: string, config: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+}
 
 // ---------------------------------------------------------------------------
 // maskApiKey
@@ -171,6 +178,82 @@ describe("loadConfig with flags", () => {
 
   it("throws ConfigError when flags produce an invalid config", () => {
     expect(() => loadConfig({ flags: { temperature: 99 } })).toThrow(ConfigError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadConfig — profile resolution
+// ---------------------------------------------------------------------------
+
+describe("loadConfig profile resolution", () => {
+  it("uses a profile from local config when it is defined there", () => {
+    writeConfigFile(GLOBAL_CONFIG_PATH, { temperature: 0.1 });
+    writeConfigFile(LOCAL_CONFIG_PATH, {
+      profiles: {
+        shared: { temperature: 0.6 },
+      },
+    });
+
+    const cfg = loadConfig({ profileOverride: "shared", flags: { mock: true } });
+
+    expect(cfg.temperature).toBe(0.6);
+  });
+
+  it("uses the global profile when no local config exists", () => {
+    writeConfigFile(GLOBAL_CONFIG_PATH, {
+      profiles: {
+        shared: { temperature: 0.4 },
+      },
+    });
+
+    const cfg = loadConfig({ profileOverride: "shared", flags: { mock: true } });
+
+    expect(cfg.temperature).toBe(0.4);
+  });
+
+  it("prefers the local profile when both config files define the same name", () => {
+    writeConfigFile(GLOBAL_CONFIG_PATH, {
+      profiles: {
+        shared: { temperature: 0.2 },
+      },
+    });
+    writeConfigFile(LOCAL_CONFIG_PATH, {
+      profiles: {
+        shared: { temperature: 0.6 },
+      },
+    });
+
+    const cfg = loadConfig({ profileOverride: "shared", flags: { mock: true } });
+
+    expect(cfg.temperature).toBe(0.6);
+  });
+
+  it("falls back to the global profile when local config omits it", () => {
+    writeConfigFile(GLOBAL_CONFIG_PATH, {
+      profiles: {
+        shared: { maxTokens: 4096 },
+      },
+    });
+    writeConfigFile(LOCAL_CONFIG_PATH, {
+      temperature: 0.2,
+    });
+
+    const cfg = loadConfig({ profileOverride: "shared", flags: { mock: true } });
+
+    expect(cfg.temperature).toBe(0.2);
+    expect(cfg.maxTokens).toBe(4096);
+  });
+
+  it("still throws the current missing-profile ConfigError path", () => {
+    writeConfigFile(LOCAL_CONFIG_PATH, {
+      profiles: {
+        existing: { temperature: 0.6 },
+      },
+    });
+
+    expect(() => loadConfig({ profileOverride: "missing", flags: { mock: true } })).toThrow(
+      /Profile "missing" not found in config\./,
+    );
   });
 });
 

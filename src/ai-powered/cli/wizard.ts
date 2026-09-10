@@ -27,6 +27,7 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
   venice: "VENICE_API_KEY",
   lumaai: "LUMAAI_API_KEY",
   runway: "RUNWAYML_API_SECRET",
+  pika: "PIKA_API_KEY",
   custom: "AI_API_KEY",
   mock: "",
 };
@@ -39,6 +40,7 @@ const MODALITY_SUPPORT: Record<string, string[]> = {
   xai: ["text", "structured"],
   lumaai: ["video"],
   runway: ["video"],
+  pika: ["video"],
   custom: ["text", "image", "audio", "video", "structured"],
   mock: ["text", "image", "audio", "video", "structured"],
 };
@@ -51,6 +53,7 @@ const MODEL_DEFAULTS: Record<string, Partial<Record<string, string>>> = {
   xai: { text: "grok-2-1212", structured: "grok-2-1212" },
   lumaai: { video: "ray-2" },
   runway: { video: "gen4.5" },
+  pika: { video: "pika/pika-2.5/text-to-video" },
   custom: {},
   mock: {},
 };
@@ -154,6 +157,15 @@ async function validateApiKey(
           signal: AbortSignal.timeout(10_000),
         });
         if (res.ok) return { valid: true, message: "✓ Runway API key is valid." };
+        const body = await res.text().catch(() => "");
+        return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
+      }
+      case "pika": {
+        const res = await fetch("https://api.dev.pika.art/catalog/apis", {
+          headers: { "X-API-Key": apiKey },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) return { valid: true, message: "✓ Pika API key is valid." };
         const body = await res.text().catch(() => "");
         return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
       }
@@ -274,6 +286,11 @@ export async function runWizard(opts: { templateMode?: boolean } = {}): Promise<
         name: "Runway (Gen-4) — video generation only",
         value: "runway",
         disabled: notSupported("runway"),
+      },
+      {
+        name: "Pika (Pika 2.5, Pikaframes, Pikaffects) - video generation only",
+        value: "pika",
+        disabled: notSupported("pika"),
       },
       { name: "Custom / Self-hosted", value: "custom" },
       { name: "Mock (no API calls — for testing)", value: "mock" },

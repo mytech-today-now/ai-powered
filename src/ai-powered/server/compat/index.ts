@@ -32,6 +32,7 @@ import {
   BudgetExceededError,
   AllProvidersExhaustedError,
   ProviderCapabilityError,
+  ProviderError,
 } from "../../types.js";
 import type { Request, Response, NextFunction } from "express";
 
@@ -84,6 +85,15 @@ export function mountCompatRoutes(router: Router, opts: ServeOptions): void {
       const images = Array.isArray(body["images"])
         ? body["images"].filter((image): image is string => typeof image === "string")
         : [];
+      const inputMedia = Array.isArray(body["inputMedia"])
+        ? body["inputMedia"].filter(
+            (media): media is { url: string; mimeType: string } =>
+              typeof media === "object" &&
+              media !== null &&
+              typeof (media as Record<string, unknown>)["url"] === "string" &&
+              typeof (media as Record<string, unknown>)["mimeType"] === "string",
+          )
+        : [];
 
       const prompt = typeof body["prompt"] === "string" ? body["prompt"] : "";
       if (!prompt) {
@@ -93,9 +103,29 @@ export function mountCompatRoutes(router: Router, opts: ServeOptions): void {
 
       try {
         const client = await getAiClient("compat-video", overrides as never);
+        const videoOptions = {
+          ...(images.length > 0 ? { images } : {}),
+          ...(inputMedia.length > 0 ? { inputMedia } : {}),
+          ...(typeof body["resolution"] === "string" ? { resolution: body["resolution"] } : {}),
+          ...(typeof body["duration"] === "number" ? { duration: body["duration"] } : {}),
+          ...(typeof body["negativePrompt"] === "string"
+            ? { negativePrompt: body["negativePrompt"] }
+            : {}),
+          ...(typeof body["seed"] === "number" ? { seed: body["seed"] } : {}),
+          ...(typeof body["transitionDuration"] === "number"
+            ? { transitionDuration: body["transitionDuration"] }
+            : {}),
+          ...(typeof body["pikaffect"] === "string" ? { pikaffect: body["pikaffect"] } : {}),
+          ...(typeof body["modifyRegionRoi"] === "string"
+            ? { modifyRegionRoi: body["modifyRegionRoi"] }
+            : {}),
+          ...(typeof body["modifyRegionMask"] === "string"
+            ? { modifyRegionMask: body["modifyRegionMask"] }
+            : {}),
+        };
         const result = await client.generateVideo(
           prompt,
-          images.length > 0 ? { images } : undefined,
+          Object.keys(videoOptions).length ? videoOptions : undefined,
         );
         res.json(result);
       } catch (err) {
@@ -105,6 +135,8 @@ export function mountCompatRoutes(router: Router, opts: ServeOptions): void {
           res.status(503).json({ error: err.message, code: "ALL_PROVIDERS_EXHAUSTED" });
         } else if (err instanceof ProviderCapabilityError) {
           res.status(422).json({ error: err.message, code: "PROVIDER_CAPABILITY_ERROR" });
+        } else if (err instanceof ProviderError && err.statusCode !== undefined) {
+          res.status(err.statusCode).json({ error: err.message, code: err.code });
         } else {
           next(err);
         }

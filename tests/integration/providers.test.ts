@@ -9,9 +9,16 @@
  * network I/O), with the exception of LumaAIProvider which mocks the SDK.
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { z } from "zod";
 import { vi, afterEach } from "vitest";
-import { AiConfigSchema, loadConfig } from "../../src/ai-powered/core.js";
+import {
+  AiConfigSchema,
+  GLOBAL_CONFIG_PATH,
+  LOCAL_CONFIG_PATH,
+  loadConfig,
+} from "../../src/ai-powered/core.js";
 import { AiClient } from "../../src/ai-powered/client.js";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
@@ -28,6 +35,11 @@ import { _clearFileRefStore } from "../../src/ai-powered/server/file-handler.js"
 
 const mockGenerationsCreate = vi.hoisted(() => vi.fn());
 const mockGenerationsGet = vi.hoisted(() => vi.fn());
+
+function writeConfigFile(filePath: string, config: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+}
 
 vi.mock("lumaai", () => {
   /** Minimal APIError mirroring the real SDK shape. */
@@ -607,6 +619,30 @@ describe("createProvider — mock routing", () => {
     const result = await (provider as MockProvider).generateVideo("test prompt");
     expect(result.modality).toBe("video");
     expect(result.data).toMatch(/^data:video\//);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadConfig — non-profile layering baseline
+// ---------------------------------------------------------------------------
+
+describe("loadConfig non-profile layering", () => {
+  afterEach(() => {
+    fs.rmSync(path.dirname(GLOBAL_CONFIG_PATH), { recursive: true, force: true });
+    fs.rmSync(LOCAL_CONFIG_PATH, { force: true });
+  });
+
+  it("keeps local overrides above global settings for active config fields", () => {
+    writeConfigFile(GLOBAL_CONFIG_PATH, {
+      temperature: 0.1,
+    });
+    writeConfigFile(LOCAL_CONFIG_PATH, {
+      temperature: 0.7,
+    });
+
+    const cfg = loadConfig({ flags: { mock: true } });
+
+    expect(cfg.temperature).toBe(0.7);
   });
 });
 

@@ -16,7 +16,7 @@ import type { AiConfig, Modality } from "./core.js";
 import { createProvider } from "./providers/index.js";
 import { AiClient } from "./client.js";
 import { initLogger, maskApiKey, getLogger } from "./utils.js";
-import type { AiPlugin, ModelDescriptor } from "./types.js";
+import type { AiPlugin, InputModality, ModelDescriptor } from "./types.js";
 import { createAuditLogPlugin } from "./plugins/audit-log.js";
 import { createRateLimiterPlugin } from "./plugins/rate-limiter.js";
 import { createPromptShieldPlugin } from "./plugins/prompt-shield.js";
@@ -63,6 +63,7 @@ export {
   VeniceProvider,
   CustomProvider,
   VibevoiceProvider,
+  PikaProvider,
   createProvider,
   registerProvider,
 } from "./providers/index.js";
@@ -79,6 +80,8 @@ export type {
   VideoResult,
   StructuredResult,
   ModelDescriptor,
+  ModelOptionDescriptor,
+  ModelInputRequirement,
   InputModality,
   RequestContext,
   ResponseContext,
@@ -258,23 +261,27 @@ const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const _modelCache = new LRUCache<string, CachedModels>({ max: 50 });
 
-/**
- * Returns the list of models available for the given provider and modality.
- * Results are cached for `ttlMs` milliseconds (default 5 minutes).
- *
- * @param provider   Provider name (e.g. "openai").
- * @param modality   Optional modality filter (e.g. "text").
- * @param ttlMs      Cache TTL in milliseconds. Pass 0 to bypass cache.
- */
 export async function listAvailableModels(
   provider: string,
   modality?: Modality,
+  acceptsOrTtlMs?: InputModality | number,
   ttlMs = MODEL_CACHE_TTL_MS,
 ): Promise<ModelDescriptor[]> {
-  const cacheKey = `${provider}:${modality ?? "*"}`;
+  /**
+   * Returns the list of models available for the given provider and modality.
+   * Results are cached for `ttlMs` milliseconds (default 5 minutes).
+   *
+   * @param provider   Provider name (e.g. "openai").
+   * @param modality   Optional modality filter (e.g. "text").
+   * @param accepts    Optional structured-input filter (e.g. "image").
+   * @param ttlMs      Cache TTL in milliseconds. Pass 0 to bypass cache.
+   */
+  const accepts = typeof acceptsOrTtlMs === "string" ? acceptsOrTtlMs : undefined;
+  const resolvedTtlMs = typeof acceptsOrTtlMs === "number" ? acceptsOrTtlMs : ttlMs;
+  const cacheKey = `${provider}:${modality ?? "*"}:${accepts ?? "*"}`;
   const now = Date.now();
 
-  if (ttlMs > 0) {
+  if (resolvedTtlMs > 0) {
     const cached = _modelCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
       getLogger().debug({ cacheKey }, "listAvailableModels: cache hit");
@@ -284,10 +291,10 @@ export async function listAvailableModels(
 
   // Build a temporary client scoped to the target provider.
   const client = await getAiClient("list-models", { provider: provider as AiConfig["provider"] });
-  const models = await client.listModels(modality);
+  const models = await client.listModels(modality, accepts);
 
-  if (ttlMs > 0) {
-    _modelCache.set(cacheKey, { models, expiresAt: now + ttlMs });
+  if (resolvedTtlMs > 0) {
+    _modelCache.set(cacheKey, { models, expiresAt: now + resolvedTtlMs });
   }
 
   return models;

@@ -317,6 +317,15 @@ describe("I1-10: unsupported video aspect ratio — ProviderError listing valid 
 
 const BINARY = path.resolve("dist/ai-powered/cli/index.js");
 const MOCK_ENV: NodeJS.ProcessEnv = { ...process.env, AI_MOCK: "true", NO_COLOR: "1" };
+const CLI_TIMEOUT_MS = 30_000;
+
+function runCli(args: string[]) {
+  return spawnSync(process.execPath, [BINARY, ...args], {
+    encoding: "utf-8",
+    env: MOCK_ENV,
+    timeout: CLI_TIMEOUT_MS,
+  });
+}
 
 /** Build the CLI binary once before any CLI tests run (if not already built). */
 beforeAll(() => {
@@ -343,12 +352,15 @@ describe("I1-11 to I1-13: CLI flags — subprocess tests (bd-ocpj T14)", () => {
 
   it("I1-11: --aspect-ratio flag passed to generateImage (exits 0, file written)", () => {
     const outFile = path.join(tmpDir, "out.png");
-    const r = spawnSync(
-      "node",
-      [BINARY, "image", "--mock", "--aspect-ratio", "16:9", "--output", outFile, "A sunset"],
-      // 30 s: first subprocess spawn in a parallel fork incurs JIT cold-start overhead.
-      { encoding: "utf-8", env: MOCK_ENV, timeout: 30_000 },
-    );
+    const r = runCli([
+      "image",
+      "--mock",
+      "--aspect-ratio",
+      "16:9",
+      "--output",
+      outFile,
+      "A sunset",
+    ]);
     expect(r.status).toBe(0);
     expect(fs.existsSync(outFile)).toBe(true);
     expect(r.stderr).toContain("Saved to");
@@ -356,42 +368,33 @@ describe("I1-11 to I1-13: CLI flags — subprocess tests (bd-ocpj T14)", () => {
 
   it("I1-12: --width / --height flags passed to generateImage (exits 0)", () => {
     const outFile = path.join(tmpDir, "out-wh.png");
-    const r = spawnSync(
-      "node",
-      [
-        BINARY,
-        "image",
-        "--mock",
-        "--width",
-        "1280",
-        "--height",
-        "720",
-        "--output",
-        outFile,
-        "A landscape",
-      ],
-      { encoding: "utf-8", env: MOCK_ENV, timeout: 20_000 },
-    );
+    const r = runCli([
+      "image",
+      "--mock",
+      "--width",
+      "1280",
+      "--height",
+      "720",
+      "--output",
+      outFile,
+      "A landscape",
+    ]);
     expect(r.status).toBe(0);
     expect(fs.existsSync(outFile)).toBe(true);
-  });
+    expect(r.stderr).not.toContain("MaxListenersExceededWarning");
+  }, 35_000);
 
   it("I1-13: --duration flag passed to generateVideo (exits 0 with --json output)", () => {
-    const r = spawnSync(
-      "node",
-      [
-        BINARY,
-        "video",
-        "--mock",
-        "--aspect-ratio",
-        "9:16",
-        "--duration",
-        "5",
-        "--json",
-        "A waterfall",
-      ],
-      { encoding: "utf-8", env: MOCK_ENV, timeout: 20_000 },
-    );
+    const r = runCli([
+      "video",
+      "--mock",
+      "--aspect-ratio",
+      "9:16",
+      "--duration",
+      "5",
+      "--json",
+      "A waterfall",
+    ]);
     expect(r.status).toBe(0);
     const cleanStdout = r.stdout
       .split("\n")

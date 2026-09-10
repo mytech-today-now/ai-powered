@@ -81,8 +81,30 @@
     <!-- ── App Header ─────────────────────────────────────────────── -->
     <header class="app-header">
       <div class="header-title">
-        <h1>ai-powered · web demo</h1>
-        <span class="version-badge" id="lib-version">UMD</span>
+        <div class="header-title-copy">
+          <h1>ai-powered · web demo</h1>
+          <p class="header-subtitle">Persistent multi-modal browser workbench</p>
+        </div>
+        <div class="header-title-badges">
+          <span class="version-badge" id="lib-version">UMD</span>
+          <button class="style-badge" id="style-badge" type="button">Style</button>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button
+          id="btn-open-info"
+          class="icon-button"
+          type="button"
+          title="Open information page"
+          aria-label="Open information page"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 10.5v5"></path>
+            <path d="M12 7.25h.01"></path>
+          </svg>
+        </button>
       </div>
 
       <section class="mode-section">
@@ -143,6 +165,30 @@
       <button class="tab-btn"        data-tab="structured" role="tab" aria-selected="false">Structured</button>
     </nav>
 
+    <section id="history-panel-wrap" class="history-panel-wrap" aria-label="Persistent history">
+      <div id="history-panel-header" class="history-panel-header">
+        <button id="btn-history-toggle" class="btn btn--ghost" aria-expanded="false">
+          <span id="history-chevron">&#9658;</span>
+          <span id="history-panel-label">History</span>
+          (<span id="history-count">0</span>)
+        </button>
+        <div class="history-panel-actions">
+          <button id="btn-history-export-all" class="btn btn--ghost" title="Download the visible history">
+            Export All
+          </button>
+          <button
+            id="btn-history-clear-all"
+            class="btn btn--ghost btn--danger"
+            title="Delete the visible history"
+          >
+            Clear All
+          </button>
+        </div>
+      </div>
+      <div id="history-panel-body" class="history-panel-body hidden" role="list"></div>
+      <p id="history-panel-warning" class="hidden" aria-live="polite"></p>
+    </section>
+
     <main>
       <!-- ── TEXT TAB ──────────────────────────────────────────────── -->
       <section class="tab-panel" id="panel-text" role="tabpanel">
@@ -155,18 +201,6 @@
         </div>
         <div id="session-history" class="session-history"
              aria-live="polite" aria-label="Conversation history"></div>
-
-        <div id="history-panel-wrap">
-          <div id="history-panel-header">
-            <button id="btn-history-toggle" class="btn btn--ghost" aria-expanded="false">
-              <span id="history-chevron">&#9658;</span> Conversation History (<span id="history-count">0</span>)
-            </button>
-            <button id="btn-history-clear-all" class="btn btn--ghost btn--danger"
-                    title="Delete all archived conversations">Clear All</button>
-          </div>
-          <div id="history-panel-body" class="hidden" role="list"></div>
-          <p   id="history-panel-warning" class="hidden" aria-live="polite"></p>
-        </div>
 
         <div class="input-group">
           <div class="input-with-mic">
@@ -450,6 +484,20 @@
                 <option value="60">60</option>
               </select>
             </div>
+            <div id="batch-pika-options" class="pika-options hidden">
+              <label for="batch-negative-prompt">Negative prompt:</label>
+              <input id="batch-negative-prompt" type="text" placeholder="Optional" />
+              <label for="batch-seed">Seed:</label>
+              <input id="batch-seed" type="number" step="1" placeholder="Optional" />
+              <label for="batch-transition-duration">Transition (s):</label>
+              <input id="batch-transition-duration" type="number" min="1" max="10" step="1" placeholder="1-10" />
+              <label for="batch-pikaffect">Pikaffect:</label>
+              <select id="batch-pikaffect"><option value="">Default</option></select>
+              <label for="batch-modify-region-roi">Swap ROI:</label>
+              <input id="batch-modify-region-roi" type="text" placeholder="Optional" />
+              <label for="batch-modify-region-mask">Swap mask URL:</label>
+              <input id="batch-modify-region-mask" type="url" placeholder="Optional HTTPS URL" />
+            </div>
           </div><!-- /.batch-constraints -->
 
           <!-- ── Pre-flight panel (shown after file is loaded) ──── -->
@@ -529,9 +577,9 @@
 
           <!-- ── Reference images for image-to-video ─────────────── -->
           <div class="input-group file-input-group">
-            <label for="video-file-upload-input" class="file-label">Attach reference images (up to 2 for Luma AI)</label>
+            <label for="video-file-upload-input" class="file-label">Attach reference images or video</label>
             <input id="video-file-upload-input" type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,video/mp4,video/webm,video/quicktime,video/x-matroska"
               class="file-input" multiple />
             <span id="video-file-upload-status" class="filename-display">No files attached</span>
           </div>
@@ -588,6 +636,21 @@
               <option value="30">30</option>
               <option value="60">60</option>
             </select>
+          </div>
+
+          <div id="video-pika-options" class="pika-options hidden">
+            <label for="video-negative-prompt">Negative prompt:</label>
+            <input id="video-negative-prompt" type="text" placeholder="Optional" />
+            <label for="video-seed">Seed:</label>
+            <input id="video-seed" type="number" step="1" placeholder="Optional" />
+            <label for="video-transition-duration">Transition (s):</label>
+            <input id="video-transition-duration" type="number" min="1" max="10" step="1" placeholder="1-10" />
+            <label for="video-pikaffect">Pikaffect:</label>
+            <select id="video-pikaffect"><option value="">Default</option></select>
+            <label for="video-modify-region-roi">Swap ROI:</label>
+            <input id="video-modify-region-roi" type="text" placeholder="Optional" />
+            <label for="video-modify-region-mask">Swap mask URL:</label>
+            <input id="video-modify-region-mask" type="url" placeholder="Optional HTTPS URL" />
           </div>
 
           <div class="btn-row">

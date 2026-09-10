@@ -52,15 +52,19 @@ interface RunResult {
   exitCode: number;
 }
 
-function run(args: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } = {}): RunResult {
+function run(
+  args: string[],
+  opts: { input?: string; env?: NodeJS.ProcessEnv; cwd?: string } = {},
+): RunResult {
   const spawnOpts: SpawnSyncOptionsWithStringEncoding = {
     encoding: "utf-8",
     env: { ...MOCK_ENV, ...(opts.env ?? {}) },
+    cwd: opts.cwd ?? process.cwd(),
     // 30 s: first spawn in a parallel test-fork incurs cold-start JIT overhead.
     timeout: 30_000,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
   };
-  const result = spawnSync("node", [BINARY, ...args], spawnOpts);
+  const result = spawnSync(process.execPath, [BINARY, ...args], spawnOpts);
   // dotenv v17 prints an informational banner to stdout (e.g. "[dotenv@17.x]
   // injecting env…"). Strip those lines so JSON-parsing tests are not broken.
   const rawStdout = result.stdout ?? "";
@@ -73,6 +77,16 @@ function run(args: string[], opts: { input?: string; env?: NodeJS.ProcessEnv } =
     stderr: result.stderr ?? "",
     exitCode: result.status ?? -1,
   };
+}
+
+function initGitRepo(cwd: string): void {
+  const result = spawnSync("git", ["init", "--quiet"], {
+    cwd,
+    stdio: "ignore",
+  });
+  if (result.status !== 0) {
+    throw new Error(`git init failed with exit code ${result.status ?? -1}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +145,8 @@ describe("image --mock --output", () => {
     expect(exitCode).toBe(0);
     expect(fs.existsSync(outFile)).toBe(true);
     expect(stderr).toContain("Saved to");
-  });
+    expect(stderr).not.toContain("MaxListenersExceededWarning");
+  }, 35_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -255,6 +270,70 @@ describe("health-check --mock", () => {
     for (const line of checkLines) {
       expect(line).toMatch(/^✓/);
     }
+  });
+
+  it("reports unable to verify when git is unavailable", () => {
+    const emptyPath = path.join(tmpDir, "no-git");
+    fs.mkdirSync(emptyPath);
+    const env = { ...process.env };
+    delete env["PATH"];
+    delete env["Path"];
+    env["PATH"] = emptyPath;
+
+    const { stdout, exitCode } = run(["health-check", "--mock", "--json"], { env });
+    const checks = JSON.parse(stdout) as Array<{ check: string; status: string; message: string }>;
+    const gitCheck = checks.find((check) => check.check === "git-credentials");
+
+    expect(exitCode).toBe(2);
+    expect(gitCheck).toEqual({
+      check: "git-credentials",
+      status: "unavailable",
+      message: "Unable to verify tracked sensitive files: git unavailable or not a repository",
+    });
+    expect(stdout).not.toContain("No sensitive files tracked by git");
+  });
+
+  it("reports unable to verify when the cwd is not a git repository", () => {
+    const { stdout, exitCode } = run(["health-check", "--mock"], { cwd: tmpDir });
+    expect(exitCode).toBe(2);
+    expect(stdout).toContain(
+      "Unable to verify tracked sensitive files: git unavailable or not a repository",
+    );
+    expect(stdout).not.toContain("No sensitive files tracked by git");
+  });
+
+  it("reports a clean tracked-file scan for a git repository", () => {
+    initGitRepo(tmpDir);
+    const { stdout, exitCode } = run(["health-check", "--mock", "--json"], { cwd: tmpDir });
+    const checks = JSON.parse(stdout) as Array<{ check: string; status: string; message: string }>;
+    const gitCheck = checks.find((check) => check.check === "git-credentials");
+
+    expect(exitCode).toBe(0);
+    expect(gitCheck).toEqual({
+      check: "git-credentials",
+      status: "pass",
+      message: "No sensitive files tracked by git",
+    });
+  });
+
+  it("reports tracked sensitive filenames without exposing file contents", () => {
+    initGitRepo(tmpDir);
+    const secret = "sk-test-secret-value";
+    fs.writeFileSync(path.join(tmpDir, ".env"), `OPENAI_API_KEY=${secret}\n`, "utf-8");
+    const addResult = spawnSync("git", ["add", ".env"], { cwd: tmpDir, stdio: "ignore" });
+    expect(addResult.status).toBe(0);
+
+    const { stdout, exitCode } = run(["health-check", "--mock", "--json"], { cwd: tmpDir });
+    const checks = JSON.parse(stdout) as Array<{ check: string; status: string; message: string }>;
+    const gitCheck = checks.find((check) => check.check === "git-credentials");
+
+    expect(exitCode).toBe(2);
+    expect(gitCheck).toEqual({
+      check: "git-credentials",
+      status: "fail",
+      message: expect.stringContaining("Sensitive files tracked by git: .env"),
+    });
+    expect(stdout).not.toContain(secret);
   });
 });
 

@@ -7,13 +7,13 @@
  * No real API keys are required — the MockProvider handles all modalities.
  *
  * Covered routes (all seven /v1/ endpoints):
- *   POST /v1/chat/completions       bd-btk3  T-CHAT-01..05
- *   GET  /v1/models                 bd-q8cl  T-MOD-01..04
+ *   POST /v1/chat/completions       bd-btk3  T-CHAT-01..07
+ *   GET  /v1/models                 bd-q8cl  T-MOD-01..05
  *   POST /v1/video/generations      bd-q8cl  T-VID-01..04
  *   POST /v1/images/generations     bd-plui  T-IMG-01..05
  *   POST /v1/audio/transcriptions   bd-1f19  T-TRN-01..05
  *   POST /v1/audio/speech           bd-1f19  T-TTS-01..03
- *   POST /v1/messages               bd-0lw2  T-MSG-01..04
+ *   POST /v1/messages               bd-t8uf  T-MSG-01..06
  *   POST /v1/messages (cap mismatch) bd-m9qo  T-CAP-01
  *   Native route regression          bd-m9qo  T-REG-01..12
  */
@@ -22,9 +22,11 @@ import * as http from "node:http";
 import { vi } from "vitest";
 import { createServer } from "../../src/ai-powered/server/index.js";
 import { AiClient } from "../../src/ai-powered/client.js";
+import { AnthropicProvider } from "../../src/ai-powered/providers/anthropic.js";
 import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { ProviderCapabilityError } from "../../src/ai-powered/types.js";
 import type { VideoResult } from "../../src/ai-powered/types.js";
+import type { TextResult } from "../../src/ai-powered/types.js";
 
 // ---------------------------------------------------------------------------
 // Shared server (mock mode — no API keys required)
@@ -32,6 +34,8 @@ import type { VideoResult } from "../../src/ai-powered/types.js";
 
 let server: http.Server;
 let port: number;
+let anthropicServer: http.Server;
+let anthropicPort: number;
 
 beforeAll(
   () =>
@@ -49,6 +53,32 @@ afterAll(
   () =>
     new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
+    }),
+);
+
+beforeAll(
+  () =>
+    new Promise<void>((resolve) => {
+      const app = createServer({
+        mock: false,
+        configOverrides: {
+          mock: false,
+          provider: "anthropic",
+          apiKey: "test-anthropic-key",
+        },
+      });
+      anthropicServer = app.listen(0, "127.0.0.1", () => {
+        anthropicPort = (anthropicServer.address() as { port: number }).port;
+        resolve();
+      });
+    }),
+  15_000,
+);
+
+afterAll(
+  () =>
+    new Promise<void>((resolve, reject) => {
+      anthropicServer.close((err) => (err ? reject(err) : resolve()));
     }),
 );
 
@@ -211,6 +241,39 @@ function readSseLines(res: http.IncomingMessage): Promise<string[]> {
   });
 }
 
+/** Extract the JSON payload for the first SSE event with the requested type. */
+function readSseEvent(lines: string[], eventType: string): Record<string, unknown> {
+  const index = lines.indexOf(`event: ${eventType}`);
+  if (index < 0) {
+    throw new Error(`Missing SSE event: ${eventType}`);
+  }
+
+  const dataLine = lines[index + 1];
+  if (!dataLine?.startsWith("data: ")) {
+    throw new Error(`Missing SSE data line for event: ${eventType}`);
+  }
+
+  return JSON.parse(dataLine.slice("data: ".length)) as Record<string, unknown>;
+}
+
+/** Build a deterministic Anthropic TextResult fixture for provider-spy tests. */
+function makeAnthropicTextResult(content: string): TextResult {
+  return {
+    modality: "text",
+    provider: "anthropic",
+    model: "claude-3-5-sonnet-20241022",
+    content,
+    finishReason: "end_turn",
+    latencyMs: 12,
+    cost: { totalUsd: 0, isEstimate: false },
+    usage: {
+      promptTokens: 18,
+      completionTokens: 12,
+      totalTokens: 30,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // T-CHAT: POST /v1/chat/completions  (bd-btk3)
 // ---------------------------------------------------------------------------
@@ -227,7 +290,9 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
     expect(Array.isArray(body["choices"])).toBe(true);
     const choices = body["choices"] as Record<string, unknown>[];
     expect(choices.length).toBeGreaterThan(0);
-    const message = choices[0]!["message"] as Record<string, unknown>;
+    const choice = choices[0]!;
+    expect(choice["finish_reason"]).toBe("stop");
+    const message = choice["message"] as Record<string, unknown>;
     expect(typeof message["content"]).toBe("string");
     expect((message["content"] as string).length).toBeGreaterThan(0);
   });
@@ -244,6 +309,13 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
     expect(deltaLines.length).toBeGreaterThan(0);
     // Final sentinel must be present
     expect(dataLines).toContain("data: [DONE]");
+
+    const finalLine = deltaLines[deltaLines.length - 1]!;
+    const finalEvent = JSON.parse(finalLine.slice("data: ".length)) as {
+      choices: Array<{ delta: Record<string, unknown>; finish_reason: string | null }>;
+    };
+    expect(finalEvent.choices[0]!.delta).toEqual({});
+    expect(finalEvent.choices[0]!.finish_reason).toBeNull();
   });
 
   it("T-CHAT-03: response_format json_object returns 200 with parseable JSON content", async () => {
@@ -276,6 +348,109 @@ describe("POST /v1/chat/completions (bd-btk3)", () => {
     expect(res.statusCode).toBe(400);
     const body = (await readBody(res)) as { error: Record<string, unknown> };
     expect(body.error["type"]).toBe("invalid_request_error");
+  });
+
+  it("T-CHAT-06: response_format json_schema enforces the caller schema", async () => {
+    const res = await postJson("/v1/chat/completions", {
+      ...MINIMAL_BODY,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          schema: {
+            type: "object",
+            properties: {
+              answer: { type: "string" },
+            },
+            required: ["answer"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = (await readBody(res)) as Record<string, unknown>;
+    const choices = body["choices"] as Record<string, unknown>[];
+    const content = (choices[0]!["message"] as Record<string, unknown>)["content"] as string;
+    expect(JSON.parse(content)).toEqual({ answer: "mock-string" });
+  });
+
+  it("T-CHAT-07: unsupported json_schema keywords return 400 with invalid_request_error", async () => {
+    const res = await postJson("/v1/chat/completions", {
+      ...MINIMAL_BODY,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          schema: {
+            type: "object",
+            properties: {
+              answer: { type: "string", minLength: 5 },
+            },
+            required: ["answer"],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = (await readBody(res)) as { error: Record<string, unknown> };
+    expect(body.error["type"]).toBe("invalid_request_error");
+    expect(String(body.error["message"])).toContain("minLength");
+  });
+
+  it("T-CHAT-08: stream:true with json_object returns SSE with parseable JSON content", async () => {
+    const res = await postJson("/v1/chat/completions", {
+      ...MINIMAL_BODY,
+      stream: true,
+      response_format: { type: "json_object" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/event-stream/i);
+
+    const lines = await readSseLines(res);
+    const dataLines = lines.filter((l) => l.startsWith("data: "));
+    expect(dataLines).toContain("data: [DONE]");
+
+    const deltaLine = dataLines.find((l) => l !== "data: [DONE]");
+    expect(deltaLine).toBeDefined();
+    const event = JSON.parse(deltaLine!.slice(6)) as {
+      choices: Array<{ delta: { content?: string } }>;
+    };
+    const content = event.choices[0]!.delta.content;
+    expect(typeof content).toBe("string");
+    expect(() => JSON.parse(content!)).not.toThrow();
+  });
+
+  it("T-CHAT-09: stream:true with json_schema returns SSE with schema-constrained JSON content", async () => {
+    const res = await postJson("/v1/chat/completions", {
+      ...MINIMAL_BODY,
+      stream: true,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          schema: {
+            type: "object",
+            properties: {
+              answer: { type: "string" },
+            },
+            required: ["answer"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/event-stream/i);
+
+    const lines = await readSseLines(res);
+    const dataLines = lines.filter((l) => l.startsWith("data: "));
+    expect(dataLines).toContain("data: [DONE]");
+
+    const deltaLine = dataLines.find((l) => l !== "data: [DONE]");
+    expect(deltaLine).toBeDefined();
+    const event = JSON.parse(deltaLine!.slice(6)) as {
+      choices: Array<{ delta: { content?: string } }>;
+    };
+    const content = event.choices[0]!.delta.content;
+    expect(JSON.parse(content!)).toEqual({ answer: "mock-string" });
   });
 });
 
@@ -315,6 +490,51 @@ describe("GET /v1/models (bd-q8cl)", () => {
     const ids = body.data.map((m) => m.id);
     expect(ids).toContain("gpt-4o");
     expect(ids).toContain("claude-3-5-sonnet-20241022");
+  });
+
+  it("T-MOD-05: shipped image, video, and audio models are present in provider order", async () => {
+    const res = await getReq("/v1/models");
+    const body = (await readBody(res)) as { data: { id: string }[] };
+    const ids = body.data.map((m) => m.id);
+    const indexOf = (id: string) => ids.indexOf(id);
+
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "gpt-image-1",
+        "aurora",
+        "grok-2-image",
+        "grok-imagine-video",
+        "wan-2.5-preview-image-to-video",
+        "gen4.5",
+        "whisper-1",
+        "tts-1",
+        "tts-1-hd",
+      ]),
+    );
+
+    for (const hiddenId of [
+      "mock-text-v1",
+      "mock-image-v1",
+      "mock-whisper-v1",
+      "mock-tts-v1",
+      "mock-video-v1",
+      "mock-structured-v1",
+      "vibevoice-asr-7b",
+      "vibevoice-realtime-0.5b",
+      "vibevoice-tts-1.5b",
+    ]) {
+      expect(ids).not.toContain(hiddenId);
+    }
+
+    expect(indexOf("gpt-image-1")).toBeGreaterThan(indexOf("dall-e-2"));
+    expect(indexOf("gpt-image-1")).toBeLessThan(indexOf("whisper-1"));
+
+    expect(indexOf("aurora")).toBeGreaterThan(indexOf("grok-vision-beta"));
+    expect(indexOf("grok-imagine-video")).toBeLessThan(indexOf("llama-3.3-70b"));
+
+    expect(indexOf("wan-2.5-preview-image-to-video")).toBeGreaterThan(indexOf("fluently-xl"));
+    expect(indexOf("gen4.5")).toBeGreaterThan(indexOf("fluently-xl"));
+    expect(indexOf("gen4.5")).toBeLessThan(indexOf("pika/pika-2.5/text-to-video"));
   });
 });
 
@@ -619,12 +839,16 @@ describe("POST /v1/audio/speech (bd-1f19)", () => {
 // T-MSG: POST /v1/messages  (bd-0lw2)
 // ---------------------------------------------------------------------------
 
-describe("POST /v1/messages (bd-0lw2)", () => {
+describe("POST /v1/messages (bd-t8uf)", () => {
   const MINIMAL_BODY = {
     model: "claude-3-5-sonnet-20241022",
     messages: [{ role: "user", content: "Hello, mock!" }],
     max_tokens: 1024,
   };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("T-MSG-01: happy path returns 200 with content[0].text non-empty and stop_reason set", async () => {
     const res = await postJson("/v1/messages", MINIMAL_BODY);
@@ -641,9 +865,13 @@ describe("POST /v1/messages (bd-0lw2)", () => {
     // stop_reason must be present and non-empty (Anthropic uses "stop_reason", not "finish_reason")
     expect(typeof body["stop_reason"]).toBe("string");
     expect((body["stop_reason"] as string).length).toBeGreaterThan(0);
+    expect(body).toHaveProperty("usage");
+    const usage = body["usage"] as Record<string, unknown>;
+    expect(typeof usage["input_tokens"]).toBe("number");
+    expect(typeof usage["output_tokens"]).toBe("number");
   });
 
-  it("T-MSG-02: stream:true returns text/event-stream with all 6 Anthropic SSE event types", async () => {
+  it("T-MSG-02: stream:true returns text/event-stream with all 6 Anthropic SSE event types and unknown metadata stays unknown when unavailable", async () => {
     const res = await postJson("/v1/messages", { ...MINIMAL_BODY, stream: true });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/event-stream/i);
@@ -662,10 +890,24 @@ describe("POST /v1/messages (bd-0lw2)", () => {
     // At least one content_block_delta must be emitted carrying text
     const deltaCount = eventTypes.filter((e) => e === "content_block_delta").length;
     expect(deltaCount).toBeGreaterThan(0);
+
+    const messageStart = readSseEvent(lines, "message_start");
+    const startMessage = messageStart["message"] as Record<string, unknown>;
+    expect(startMessage["stop_reason"]).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(startMessage, "usage")).toBe(false);
+
+    const messageDelta = readSseEvent(lines, "message_delta");
+    const delta = messageDelta["delta"] as Record<string, unknown>;
+    expect(delta["stop_reason"]).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(messageDelta, "usage")).toBe(false);
   });
 
-  it("T-MSG-03: array content body is accepted and returns 200 with valid response shape", async () => {
-    const res = await postJson("/v1/messages", {
+  it("T-MSG-03: text-only array content still reaches the provider unchanged", async () => {
+    const spy = vi
+      .spyOn(AnthropicProvider.prototype, "generateText")
+      .mockResolvedValue(makeAnthropicTextResult("text-only ok"));
+
+    const body = {
       model: MINIMAL_BODY.model,
       messages: [
         {
@@ -677,17 +919,98 @@ describe("POST /v1/messages (bd-0lw2)", () => {
         },
       ],
       max_tokens: 1024,
-    });
+    };
+
+    const res = await postJsonTo(anthropicPort, "/v1/messages", body);
     expect(res.statusCode).toBe(200);
-    const body = (await readBody(res)) as Record<string, unknown>;
-    expect(body["type"]).toBe("message");
-    const content = body["content"] as Record<string, unknown>[];
+    const response = (await readBody(res)) as Record<string, unknown>;
+    expect(response["type"]).toBe("message");
+    const content = response["content"] as Record<string, unknown>[];
     expect(content.length).toBeGreaterThan(0);
-    // MockProvider always returns a response regardless of prompt content
-    expect(typeof content[0]!["text"]).toBe("string");
+    expect(content[0]!["text"]).toBe("text-only ok");
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [, options] = spy.mock.calls[0]!;
+    expect(options?.messages).toBeUndefined();
   });
 
-  it("T-MSG-04: missing max_tokens returns 400 with Anthropic error envelope", async () => {
+  it("T-MSG-04: text-plus-image content passes validation and reaches the provider unchanged", async () => {
+    const spy = vi
+      .spyOn(AnthropicProvider.prototype, "generateText")
+      .mockResolvedValue(makeAnthropicTextResult("image ok"));
+
+    const body = {
+      model: MINIMAL_BODY.model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: "image/png",
+                data: "iVBORw0KGgo=",
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 1024,
+    };
+
+    const res = await postJsonTo(anthropicPort, "/v1/messages", body);
+    expect(res.statusCode).toBe(200);
+    const response = (await readBody(res)) as Record<string, unknown>;
+    expect(response["type"]).toBe("message");
+    const content = response["content"] as Record<string, unknown>[];
+    expect(content[0]!["text"]).toBe("image ok");
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [, options] = spy.mock.calls[0]!;
+    expect(options?.messages).toEqual(body.messages);
+  });
+
+  it("T-MSG-05: text-plus-document content passes validation and reaches the provider unchanged", async () => {
+    const spy = vi
+      .spyOn(AnthropicProvider.prototype, "generateText")
+      .mockResolvedValue(makeAnthropicTextResult("document ok"));
+
+    const body = {
+      model: MINIMAL_BODY.model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Summarise this document." },
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: "JVBERi0xLjQK",
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 1024,
+    };
+
+    const res = await postJsonTo(anthropicPort, "/v1/messages", body);
+    expect(res.statusCode).toBe(200);
+    const response = (await readBody(res)) as Record<string, unknown>;
+    expect(response["type"]).toBe("message");
+    const content = response["content"] as Record<string, unknown>[];
+    expect(content[0]!["text"]).toBe("document ok");
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [, options] = spy.mock.calls[0]!;
+    expect(options?.messages).toEqual(body.messages);
+  });
+
+  it("T-MSG-06: missing max_tokens returns 400 with Anthropic error envelope", async () => {
     const res = await postJson("/v1/messages", {
       model: "claude-3-5-sonnet-20241022",
       messages: [{ role: "user", content: "Hello" }],

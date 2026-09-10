@@ -531,8 +531,33 @@ export function createLogger(options: AiLoggerOptions = {}): Logger {
 // Module-level logger singleton
 // ---------------------------------------------------------------------------
 
-/** The active logger instance. Replaced when createLogger() is called. */
-let _logger: Logger = createLogger();
+type LoggerTransportOptions = {
+  debug: boolean;
+  logFile?: string;
+  pretty: boolean;
+};
+
+const DEFAULT_PRETTY = process.env["NODE_ENV"] !== "production";
+
+function getLoggerTransportOptions(options: AiLoggerOptions): LoggerTransportOptions {
+  return {
+    debug: options.debug ?? false,
+    ...(options.logFile !== undefined ? { logFile: options.logFile } : {}),
+    pretty: options.pretty ?? DEFAULT_PRETTY,
+  };
+}
+
+function sameLoggerTransport(left: LoggerTransportOptions, right: LoggerTransportOptions): boolean {
+  return (
+    left.debug === right.debug && left.logFile === right.logFile && left.pretty === right.pretty
+  );
+}
+
+/** The active logger transport and component-specific child logger. */
+let _loggerTransportOptions = getLoggerTransportOptions({});
+let _loggerBase: Logger = createLogger();
+let _loggerName = "ai-powered";
+let _logger: Logger = _loggerBase;
 
 /** Returns the current module-level logger singleton. */
 export function getLogger(): Logger {
@@ -544,6 +569,23 @@ export function getLogger(): Logger {
  * provided options. Call this early in the CLI entry point after parsing flags.
  */
 export function initLogger(options: AiLoggerOptions): Logger {
-  _logger = createLogger(options);
+  const nextTransportOptions = getLoggerTransportOptions(options);
+  const nextName = options.name ?? "ai-powered";
+
+  // getAiClient() is called for every request by the proxy server. Reusing the
+  // stream prevents one Pino transport (and its process-exit listener) per
+  // request while retaining the component name in log output.
+  if (sameLoggerTransport(_loggerTransportOptions, nextTransportOptions)) {
+    if (_loggerName !== nextName) {
+      _logger = _loggerBase.child({ name: nextName });
+      _loggerName = nextName;
+    }
+    return _logger;
+  }
+
+  _loggerBase = createLogger(options);
+  _loggerTransportOptions = nextTransportOptions;
+  _loggerName = nextName;
+  _logger = _loggerBase;
   return _logger;
 }

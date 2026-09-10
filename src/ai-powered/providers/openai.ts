@@ -31,7 +31,7 @@ import type {
 import { ProviderError } from "../types.js";
 import { calculateCost, maskApiKey, getLogger } from "../utils.js";
 import { BaseProvider } from "./base.js";
-import type { ProviderCallOptions } from "./base.js";
+import type { ProviderCallOptions, StreamTextIterable } from "./base.js";
 import { z } from "zod";
 import { LimitsValidator } from "../limits-validator.js";
 import { AspectRatioService } from "../aspect-ratio.js";
@@ -298,10 +298,11 @@ export class OpenAiProvider extends BaseProvider {
   // Streaming text
   // -------------------------------------------------------------------------
 
-  override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
-    this.assertCapability("text");
-    const model = this.resolveModel(DEFAULT_TEXT_MODEL, options);
-    const systemPrompt = options?.systemPrompt ?? this.config.systemPrompt;
+  override streamText(prompt: string, options?: ProviderCallOptions): StreamTextIterable {
+    const self = this;
+    self.assertCapability("text");
+    const model = self.resolveModel(DEFAULT_TEXT_MODEL, options);
+    const systemPrompt = options?.systemPrompt ?? self.config.systemPrompt;
     // When a pre-built messages array is provided (e.g. multimodal content blocks
     // from POST /upload), use it directly.  Otherwise construct a plain user message.
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = options?.messages
@@ -311,22 +312,39 @@ export class OpenAiProvider extends BaseProvider {
       messages.unshift({ role: "system", content: systemPrompt });
     }
 
-    try {
-      const stream = await this._client.chat.completions.create({
-        model,
-        messages,
-        temperature: options?.temperature ?? this.config.temperature,
-        stream: true,
-        ...(options?.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
-      });
+    let finishReason: string | null = null;
+    const iterator = async function* (): AsyncGenerator<string> {
+      try {
+        const stream = await self._client.chat.completions.create({
+          model,
+          messages,
+          temperature: options?.temperature ?? self.config.temperature,
+          stream: true,
+          ...(options?.maxTokens !== undefined ? { max_tokens: options.maxTokens } : {}),
+        });
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta.content;
-        if (delta) yield delta;
+        for await (const chunk of stream) {
+          const choice = chunk.choices[0];
+          const choiceFinishReason = choice?.finish_reason;
+          if (typeof choiceFinishReason === "string") {
+            finishReason = choiceFinishReason;
+          }
+          const delta = choice?.delta.content;
+          if (delta) yield delta;
+        }
+      } catch (err) {
+        throw self._wrapError(err);
       }
-    } catch (err) {
-      throw this._wrapError(err);
-    }
+    }.call(self);
+
+    return {
+      get finishReason() {
+        return finishReason;
+      },
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+    };
   }
 
   // -------------------------------------------------------------------------

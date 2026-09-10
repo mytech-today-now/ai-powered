@@ -117,10 +117,30 @@ export type InputModality = "image" | "audio" | "video" | "document";
 /** Resolution label exposed to the UI (e.g. "480p", "720p", "1080p"). */
 export type ResolutionLabel = string;
 
+/** A provider option exposed to clients and validated before a request. */
+export interface ModelOptionDescriptor {
+  name: string;
+  type: "string" | "integer" | "number" | "boolean" | "enum";
+  values?: Array<string | number | boolean>;
+  min?: number;
+  max?: number;
+  required?: boolean;
+  description?: string;
+}
+
+/** Input count constraint for a model-specific media input. */
+export interface ModelInputRequirement {
+  modality: InputModality;
+  min?: number;
+  max?: number;
+  required?: boolean;
+}
+
 export interface ModelDescriptor {
   id: string;
   name: string;
   capabilities: Modality[];
+  [key: string]: unknown;
   contextWindow?: number;
   /**
    * Non-text input modalities this model can receive as structured input.
@@ -140,6 +160,10 @@ export interface ModelDescriptor {
   fpsOptions?: number[];
   /** Supported quality tier strings (e.g. ["standard", "high"]). */
   qualityOptions?: string[];
+  /** Provider-specific options supported by this model. */
+  options?: ModelOptionDescriptor[];
+  /** Media input counts supported by this model. */
+  inputRequirements?: ModelInputRequirement[];
 }
 
 // ---------------------------------------------------------------------------

@@ -40,6 +40,12 @@ import { z } from "zod";
 import { getAiClient, loadConfig, listPricing } from "../index.js";
 import { getTemplate, renderTemplate } from "../templates/index.js";
 import {
+  DISCOVERY_FALLBACK_POSTS,
+  DISCOVERY_SOURCE_URL,
+  README_SOURCE_URL,
+  normalizeDiscoveryPosts,
+} from "../web/info-content.js";
+import {
   BudgetExceededError,
   AllProvidersExhaustedError,
   ProviderCapabilityError,
@@ -105,7 +111,8 @@ const PROVIDER_META = [
     id: "venice",
     name: "Venice",
     envKey: "VENICE_API_KEY",
-    modalities: ["text", "image", "structured"],
+    // Venice supports image-to-video routing via generateVideoFromImage().
+    modalities: ["text", "image", "structured", "video"],
     inputModalities: ["image"],
   },
   {
@@ -121,6 +128,13 @@ const PROVIDER_META = [
     envKey: "RUNWAYML_API_SECRET",
     modalities: ["video"],
     inputModalities: [],
+  },
+  {
+    id: "pika",
+    name: "Pika",
+    envKey: "PIKA_API_KEY",
+    modalities: ["video"],
+    inputModalities: ["image", "video"],
   },
   {
     // VibeVoice is a local ASR/TTS server; active when VIBEVOICE_API_URL is set.
@@ -226,6 +240,14 @@ const VideoSizeSchema = z.object({
   duration: z.number().positive().optional(),
   fps: z.number().int().positive().optional(),
   quality: z.enum(["draft", "standard", "high"]).optional(),
+  images: z.array(z.string().url()).optional(),
+  inputMedia: z.array(z.object({ url: z.string().url(), mimeType: z.string().min(1) })).optional(),
+  negativePrompt: z.string().optional(),
+  seed: z.number().int().optional(),
+  transitionDuration: z.number().int().positive().optional(),
+  pikaffect: z.string().optional(),
+  modifyRegionRoi: z.string().optional(),
+  modifyRegionMask: z.string().url().optional(),
 });
 
 const VideoBodySchema = ClientOverrideSchema.merge(TemplateSchema)
@@ -338,6 +360,15 @@ function mapError(err: unknown, res: Response): boolean {
     res.status(503).json({ error: err.message, code: "ALL_PROVIDERS_EXHAUSTED" });
     return true;
   }
+  if (
+    err instanceof ProviderError &&
+    err.statusCode !== undefined &&
+    err.statusCode >= 400 &&
+    err.statusCode < 500
+  ) {
+    res.status(err.statusCode).json({ error: err.message, code: err.code });
+    return true;
+  }
   return false;
 }
 
@@ -355,6 +386,35 @@ function modelListErrorMessage(err: unknown): string {
     return err.message.replace(/^\[[^\]]+\]\s*/, "");
   }
   return "Model listing failed.";
+}
+
+async function fetchTextFromKnownUrls(urls: string[]): Promise<string> {
+  let lastError: unknown = null;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        lastError = new Error(`HTTP ${response.status}`);
+        continue;
+      }
+      return await response.text();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Unable to fetch remote content.");
+}
+
+async function fetchDiscoveryPosts(): Promise<ReturnType<typeof normalizeDiscoveryPosts>> {
+  try {
+    const response = await fetch(DISCOVERY_SOURCE_URL);
+    if (!response.ok) return DISCOVERY_FALLBACK_POSTS;
+    const json = await response.json();
+    const posts = normalizeDiscoveryPosts(json);
+    return posts.length > 0 ? posts : DISCOVERY_FALLBACK_POSTS;
+  } catch {
+    return DISCOVERY_FALLBACK_POSTS;
+  }
 }
 
 /**
@@ -575,6 +635,36 @@ export function createRouter(opts: ServeOptions): Router {
     }
   });
 
+  // --- GET /info/readme ---
+  // Proxies the published README so the standalone info page can render it
+  // without relying on cross-origin browser fetch permissions.
+  router.get(
+    "/info/readme",
+    wrap(async (_req, res) => {
+      try {
+        const markdown = await fetchTextFromKnownUrls([README_SOURCE_URL]);
+        res.setHeader("Cache-Control", "no-store");
+        res.type("text/markdown; charset=utf-8").send(markdown);
+      } catch (err) {
+        res.status(502).json({
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+  );
+
+  // --- GET /info/posts ---
+  // Returns a normalized set of discovery posts that the browser info page
+  // can render as semantic cards with working hyperlinks.
+  router.get(
+    "/info/posts",
+    wrap(async (_req, res) => {
+      const posts = await fetchDiscoveryPosts();
+      res.setHeader("Cache-Control", "no-store");
+      res.json(posts);
+    }),
+  );
+
   // --- GET /providers ---
   // Returns all known providers with an `active` flag (true when the
   // corresponding API key / URL env-var is set and non-empty after trimming,
@@ -698,7 +788,7 @@ export function createRouter(opts: ServeOptions): Router {
     const mimeType = file.mimetype;
     if (!validateMimeType(mimeType)) {
       res.status(415).json({
-        error: `Unsupported file type "${mimeType}". Accepted types: image/jpeg, image/png, image/gif, image/webp, application/pdf, text/plain, text/html, text/csv, and Office document formats.`,
+        error: `Unsupported file type "${mimeType}". Accepted types include image/jpeg, image/png, image/gif, image/webp, video/mp4, video/webm, video/quicktime, and video/x-matroska.`,
       });
       return;
     }
@@ -749,8 +839,8 @@ export function createRouter(opts: ServeOptions): Router {
   // Serves the raw binary of a stored uploaded file by its UUID token.
   // This endpoint is required by providers such as Luma AI that validate
   // keyframe URLs server-side and reject base64 data: URIs.
-  // Expose this server publicly (e.g. via ngrok) and set the
-  // PROXY_PUBLIC_BASE_URL environment variable so generated URLs are reachable.
+  // Expose this server publicly and set the PROXY_PUBLIC_BASE_URL environment
+  // variable so generated URLs are reachable.
   router.get("/files/:uuid", (req, res) => {
     const entry = lookupFileRef(req.params["uuid"] ?? "");
     if (!entry) {
@@ -969,10 +1059,16 @@ export function createRouter(opts: ServeOptions): Router {
       // require publicly accessible HTTPS URLs.  Build one public URL per
       // fileRef from PROXY_PUBLIC_BASE_URL pointing to GET /files/:uuid.
       // Other providers receive standard resolved content blocks (base64 data URIs).
+      const hasInputMedia = (body.inputMedia?.length ?? 0) > 0;
+      const hasVideoInputMedia =
+        body.inputMedia?.some((media) => media.mimeType.startsWith("video/")) ?? false;
+
       let publicImageUrls: string[] = [];
+      let publicMediaInputs: Array<{ url: string; mimeType: string }> = [];
       let fileBlock: Record<string, unknown> | undefined;
 
-      const liveVideoProviders = activeFileRefs.length
+      const shouldUseImageKeyframeRouting = activeFileRefs.length > 0 && !hasVideoInputMedia;
+      const liveVideoProviders = shouldUseImageKeyframeRouting
         ? opts.mock
           ? PROVIDER_META.filter((p) => (p.modalities as readonly string[]).includes("video")).map(
               (p) => p.id,
@@ -983,14 +1079,30 @@ export function createRouter(opts: ServeOptions): Router {
                 Boolean(process.env[p.envKey]),
             ).map((p) => p.id)
         : [];
-      const routingDecision = activeFileRefs.length
+      const routingDecision = shouldUseImageKeyframeRouting
         ? selectI2VProvider(effectiveProvider, activeFileRefs.length, liveVideoProviders)
-        : undefined;
+        : hasInputMedia && !activeFileRefs.length
+          ? { provider: "pika", effectiveImageCount: 0, truncated: false }
+          : undefined;
       const routedProvider = routingDecision?.provider ?? effectiveProvider;
-      const usesPublicImageUrls = routedProvider === "lumaai" || routedProvider === "venice";
+      if (hasVideoInputMedia) {
+        const providerMeta = PROVIDER_META.find((p) => p.id === routedProvider);
+        const providerInputModalities = providerMeta?.inputModalities as
+          | readonly string[]
+          | undefined;
+        if (!providerInputModalities?.includes("video")) {
+          res.status(422).json({
+            error: `Provider "${routedProvider}" does not support modality "video".`,
+          });
+          return;
+        }
+      }
+      const usesPublicMediaUrls =
+        shouldUseImageKeyframeRouting &&
+        (routedProvider === "lumaai" || routedProvider === "venice" || routedProvider === "pika");
 
       const refsToValidate =
-        activeFileRefs.length && usesPublicImageUrls
+        shouldUseImageKeyframeRouting && usesPublicMediaUrls && routedProvider !== "pika"
           ? activeFileRefs.slice(0, routingDecision?.effectiveImageCount ?? activeFileRefs.length)
           : activeFileRefs;
       const resolvedFileRefs = resolveFileRefs(
@@ -1003,18 +1115,25 @@ export function createRouter(opts: ServeOptions): Router {
         return;
       }
 
-      if (activeFileRefs.length && usesPublicImageUrls) {
+      if (shouldUseImageKeyframeRouting && usesPublicMediaUrls) {
         const baseUrl = (process.env["PROXY_PUBLIC_BASE_URL"] ?? "").replace(/\/+$/, "");
         if (!baseUrl) {
           res.status(422).json({
             error:
-              `${routedProvider === "venice" ? "Venice" : "Luma AI"} requires a publicly accessible image URL for image-to-video. ` +
+              `${routedProvider === "venice" ? "Venice" : routedProvider === "lumaai" ? "Luma AI" : "Pika"} requires a publicly accessible media URL for image-to-video or video-to-video. ` +
               "Set the PROXY_PUBLIC_BASE_URL environment variable to this server's public-facing " +
-              "address (e.g. https://abc123.ngrok.io) so the provider can fetch the uploaded image.",
+              "HTTPS address, such as your Render service URL, so the provider can fetch the uploaded media.",
           });
           return;
         }
-        publicImageUrls = resolvePublicFileUrls(resolvedFileRefs, baseUrl);
+        publicImageUrls = resolvePublicFileUrls(
+          resolvedFileRefs.filter((ref) => !ref.entry.mimeType.startsWith("video/")),
+          baseUrl,
+        );
+        publicMediaInputs = resolvedFileRefs.map((ref) => ({
+          url: `${baseUrl}/files/${ref.fileRef}`,
+          mimeType: ref.entry.mimeType,
+        }));
         getLogger().info(
           { fileRefs: activeFileRefs, publicImageUrls, provider: routedProvider },
           "POST /video: using public URLs for image keyframes",
@@ -1027,7 +1146,7 @@ export function createRouter(opts: ServeOptions): Router {
 
       // Build messages content for non-Luma providers.
       const allFileBlocks =
-        activeFileRefs.length && !usesPublicImageUrls ? resolveFileBlocks(resolvedFileRefs) : [];
+        activeFileRefs.length && !usesPublicMediaUrls ? resolveFileBlocks(resolvedFileRefs) : [];
       const messages = allFileBlocks.length
         ? [{ role: "user" as const, content: [{ type: "text", text: prompt }, ...allFileBlocks] }]
         : undefined;
@@ -1040,9 +1159,20 @@ export function createRouter(opts: ServeOptions): Router {
         ...(body.duration !== undefined ? { duration: body.duration } : {}),
         ...(body.fps !== undefined ? { fps: body.fps } : {}),
         ...(body.quality !== undefined ? { quality: body.quality } : {}),
+        ...(body.images?.length ? { images: body.images } : {}),
+        ...(body.inputMedia?.length ? { inputMedia: body.inputMedia } : {}),
+        ...(body.negativePrompt !== undefined ? { negativePrompt: body.negativePrompt } : {}),
+        ...(body.seed !== undefined ? { seed: body.seed } : {}),
+        ...(body.transitionDuration !== undefined
+          ? { transitionDuration: body.transitionDuration }
+          : {}),
+        ...(body.pikaffect !== undefined ? { pikaffect: body.pikaffect } : {}),
+        ...(body.modifyRegionRoi !== undefined ? { modifyRegionRoi: body.modifyRegionRoi } : {}),
+        ...(body.modifyRegionMask !== undefined ? { modifyRegionMask: body.modifyRegionMask } : {}),
         // For Venice and Luma AI: pass public image URLs as the images array so
         // the provider can route to its image-keyframe API.
         ...(publicImageUrls.length ? { images: publicImageUrls } : {}),
+        ...(publicMediaInputs.length ? { inputMedia: publicMediaInputs } : {}),
         // For non-image-keyframe providers: pass fileContentBlock (single ref, legacy compat)
         // and the full messages array for multimodal input.
         ...(fileBlock && !publicImageUrls.length ? { fileContentBlock: fileBlock } : {}),
@@ -1196,6 +1326,20 @@ export function createRouter(opts: ServeOptions): Router {
               ...(item.duration !== undefined ? { duration: item.duration } : {}),
               ...(item.fps !== undefined ? { fps: item.fps } : {}),
               ...(item.quality !== undefined ? { quality: item.quality } : {}),
+              ...(item.images?.length ? { images: item.images } : {}),
+              ...(item.inputMedia?.length ? { inputMedia: item.inputMedia } : {}),
+              ...(item.negativePrompt !== undefined ? { negativePrompt: item.negativePrompt } : {}),
+              ...(item.seed !== undefined ? { seed: item.seed } : {}),
+              ...(item.transitionDuration !== undefined
+                ? { transitionDuration: item.transitionDuration }
+                : {}),
+              ...(item.pikaffect !== undefined ? { pikaffect: item.pikaffect } : {}),
+              ...(item.modifyRegionRoi !== undefined
+                ? { modifyRegionRoi: item.modifyRegionRoi }
+                : {}),
+              ...(item.modifyRegionMask !== undefined
+                ? { modifyRegionMask: item.modifyRegionMask }
+                : {}),
               // item.images takes precedence over fileRef when both are present.
               ...(itemFileBlock && !hasImages ? { fileContentBlock: itemFileBlock } : {}),
               ...(itemMessages && !hasImages ? { messages: itemMessages } : {}),

@@ -12,6 +12,7 @@
  */
 
 import { withRetryFetch, CircuitBreaker } from "../shared/resilience.js";
+import { estimateCost } from "../shared/cost.js";
 import { BudgetExceededError } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,17 @@ export interface WebVideoOptions extends WebCallOptions {
    * video generation request (image-to-video).
    */
   fileRef?: string;
+  /** UUID tokens returned by POST /upload for multi-media generation. */
+  fileRefs?: string[];
+  /** Public image URLs for image-to-video models. */
+  images?: string[];
+  /** Provider-specific video options. */
+  negativePrompt?: string;
+  seed?: number;
+  transitionDuration?: number;
+  pikaffect?: string;
+  modifyRegionRoi?: string;
+  modifyRegionMask?: string;
   /** Override the provider for this request (e.g. "lumaai"). */
   provider?: string;
   /** Override the model for this request (e.g. "ray-2"). */
@@ -91,6 +103,12 @@ export interface WebModelInfo {
   id: string;
   name: string;
   capabilities: string[];
+  [key: string]: unknown;
+  inputCapabilities?: string[];
+  resolutions?: string[];
+  durationRange?: { min: number; max: number; default?: number };
+  options?: Array<Record<string, unknown>>;
+  inputRequirements?: Array<Record<string, unknown>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +573,15 @@ export class WebAiClient {
     }
   }
 
+  /** Browser-safe estimate helper shared with the server-side cost model. */
+  private _estimateProjectedCost(model: string, promptText: string): number {
+    try {
+      return estimateCost(model, promptText).totalUsd;
+    } catch {
+      return 0;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Internal helpers
   // -------------------------------------------------------------------------
@@ -625,6 +652,97 @@ export class WebAiClient {
     return this._breaker.call(() => withRetryFetch(fn, retryOpts, signal));
   }
 
+  /**
+   * Shared direct-mode text helper.
+   *
+   * The structured-output path reuses this so the pre-call estimate is applied
+   * exactly once and still uses the original prompt for budgeting.
+   */
+  private async _generateDirectText(
+    prompt: string,
+    options?: WebCallOptions,
+    budgetPromptText = prompt,
+  ): Promise<WebTextResult> {
+    if (this.opts.mode !== "direct") {
+      throw new Error("Not in direct mode");
+    }
+    const { provider } = this.opts;
+    const model = this.resolveModel("text", options?.model);
+    const messages: Array<{ role: string; content: string }> = [];
+    if (options?.systemPrompt) messages.push({ role: "system", content: options.systemPrompt });
+    messages.push({ role: "user", content: prompt });
+
+    const reqBody: Record<string, unknown> = { model, messages };
+    if (options?.temperature !== undefined) reqBody["temperature"] = options.temperature;
+    if (options?.maxTokens !== undefined) {
+      reqBody["max_tokens"] = options.maxTokens;
+    }
+
+    this._checkBudget(this._estimateProjectedCost(model, budgetPromptText));
+    const endpoint = `${PROVIDER_BASE_URLS[provider]}/messages`;
+    const res = await this.fetchWithResilience(
+      () =>
+        fetch(
+          provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
+          {
+            method: "POST",
+            headers: this.directHeaders(),
+            body: JSON.stringify(reqBody),
+            signal: options?.signal ?? null,
+          },
+        ),
+      options?.signal,
+    );
+    await this.assertOk(res);
+
+    if (provider === "anthropic") {
+      const data = (await res.json()) as {
+        content: Array<{ type: string; text?: string }>;
+        model: string;
+        stop_reason?: string;
+        usage?: { input_tokens: number; output_tokens: number };
+      };
+      const text = data.content.find((b) => b.type === "text")?.text ?? "";
+      const anthropicResult: WebTextResult = {
+        content: text,
+        model: data.model,
+        provider,
+        ...(data.stop_reason !== undefined && { finishReason: data.stop_reason }),
+        ...(data.usage !== undefined && {
+          usage: {
+            promptTokens: data.usage.input_tokens,
+            completionTokens: data.usage.output_tokens,
+            totalTokens: data.usage.input_tokens + data.usage.output_tokens,
+          },
+        }),
+      };
+      this._accumulateCost(anthropicResult);
+      return anthropicResult;
+    }
+
+    const data = (await res.json()) as {
+      choices: Array<{ message: { content: string }; finish_reason?: string }>;
+      model: string;
+      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+    };
+    const choice = data.choices[0];
+    const openaiResult: WebTextResult = {
+      content: choice?.message.content ?? "",
+      model: data.model,
+      provider,
+      ...(choice?.finish_reason !== undefined && { finishReason: choice.finish_reason }),
+      ...(data.usage !== undefined && {
+        usage: {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens,
+        },
+      }),
+    };
+    this._accumulateCost(openaiResult);
+    return openaiResult;
+  }
+
   // -------------------------------------------------------------------------
   // generateText
   // -------------------------------------------------------------------------
@@ -669,83 +787,7 @@ export class WebAiClient {
     }
 
     // Direct mode — OpenAI-compatible chat completions (all four providers use this format)
-    const { provider } = this.opts;
-    const model = this.resolveModel("text", options?.model);
-    const messages: Array<{ role: string; content: string }> = [];
-    if (options?.systemPrompt) messages.push({ role: "system", content: options.systemPrompt });
-    messages.push({ role: "user", content: prompt });
-
-    const reqBody: Record<string, unknown> = { model, messages };
-    if (options?.temperature !== undefined) reqBody["temperature"] = options.temperature;
-    if (options?.maxTokens !== undefined) {
-      // Anthropic uses max_tokens; others use max_tokens too (OpenAI-compat)
-      reqBody["max_tokens"] = options.maxTokens;
-    }
-
-    this._checkBudget();
-    const endpoint = `${PROVIDER_BASE_URLS[provider]}/messages`;
-    const res = await this.fetchWithResilience(
-      () =>
-        fetch(
-          provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-          {
-            method: "POST",
-            headers: this.directHeaders(),
-            body: JSON.stringify(reqBody),
-            signal: options?.signal ?? null,
-          },
-        ),
-      options?.signal,
-    );
-    await this.assertOk(res);
-
-    if (provider === "anthropic") {
-      const data = (await res.json()) as {
-        content: Array<{ type: string; text?: string }>;
-        model: string;
-        stop_reason?: string;
-        usage?: { input_tokens: number; output_tokens: number };
-      };
-      const text = data.content.find((b) => b.type === "text")?.text ?? "";
-      const anthropicResult: WebTextResult = {
-        content: text,
-        model: data.model,
-        provider,
-        ...(data.stop_reason !== undefined && { finishReason: data.stop_reason }),
-        ...(data.usage !== undefined && {
-          usage: {
-            promptTokens: data.usage.input_tokens,
-            completionTokens: data.usage.output_tokens,
-            totalTokens: data.usage.input_tokens + data.usage.output_tokens,
-          },
-        }),
-      };
-      this._accumulateCost(anthropicResult);
-      return anthropicResult;
-    }
-
-    // OpenAI-compatible response
-    const data = (await res.json()) as {
-      choices: Array<{ message: { content: string }; finish_reason?: string }>;
-      model: string;
-      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-    };
-    const choice = data.choices[0];
-    const openaiResult: WebTextResult = {
-      content: choice?.message.content ?? "",
-      model: data.model,
-      provider,
-      ...(choice?.finish_reason !== undefined && { finishReason: choice.finish_reason }),
-      ...(data.usage !== undefined && {
-        usage: {
-          promptTokens: data.usage.prompt_tokens,
-          completionTokens: data.usage.completion_tokens,
-          totalTokens: data.usage.total_tokens,
-        },
-      }),
-    };
-    this._accumulateCost(openaiResult);
-    return openaiResult;
+    return this._generateDirectText(prompt, options);
   }
 
   // -------------------------------------------------------------------------
@@ -910,9 +952,9 @@ export class WebAiClient {
     }
 
     // Direct mode — OpenAI / Venice images endpoint
-    this._checkBudget();
     const { provider, apiKey } = this.opts;
     const model = this.resolveModel("image", options?.model);
+    this._checkBudget(this._estimateProjectedCost(model, prompt));
     const res = await this.fetchWithResilience(
       () =>
         fetch(`${PROVIDER_BASE_URLS[provider]}/images/generations`, {
@@ -1038,9 +1080,9 @@ export class WebAiClient {
     }
 
     // Direct mode — OpenAI TTS endpoint
-    this._checkBudget();
     const { provider, apiKey } = this.opts;
-    const model = this.resolveModel("audio", options?.model) || "tts-1";
+    const model = options?.model ?? this.opts.model ?? "tts-1";
+    this._checkBudget(this._estimateProjectedCost(model, text));
     const res = await this.fetchWithResilience(
       () =>
         fetch(`${PROVIDER_BASE_URLS[provider]}/audio/speech`, {
@@ -1067,11 +1109,21 @@ export class WebAiClient {
       if (options?.provider !== undefined) body["provider"] = options.provider;
       if (options?.model !== undefined) body["model"] = options.model;
       if (options?.fileRef !== undefined) body["fileRef"] = options.fileRef;
+      if (options?.fileRefs !== undefined) body["fileRefs"] = options.fileRefs;
+      if (options?.images !== undefined) body["images"] = options.images;
       if (options?.aspectRatio !== undefined) body["aspectRatio"] = options.aspectRatio;
       if (options?.resolution !== undefined) body["resolution"] = options.resolution;
       if (options?.quality !== undefined) body["quality"] = options.quality;
       if (options?.duration !== undefined) body["duration"] = options.duration;
       if (options?.fps !== undefined) body["fps"] = options.fps;
+      if (options?.negativePrompt !== undefined) body["negativePrompt"] = options.negativePrompt;
+      if (options?.seed !== undefined) body["seed"] = options.seed;
+      if (options?.transitionDuration !== undefined)
+        body["transitionDuration"] = options.transitionDuration;
+      if (options?.pikaffect !== undefined) body["pikaffect"] = options.pikaffect;
+      if (options?.modifyRegionRoi !== undefined) body["modifyRegionRoi"] = options.modifyRegionRoi;
+      if (options?.modifyRegionMask !== undefined)
+        body["modifyRegionMask"] = options.modifyRegionMask;
       const res = await this.fetchWithResilience(
         () =>
           fetch(`${this.proxyBase}/video`, {
@@ -1113,7 +1165,8 @@ export class WebAiClient {
       }
       throw new Error("generateVideo: no video data in proxy response");
     }
-    this._checkBudget();
+    const model = options?.model ?? this.opts.model ?? "";
+    this._checkBudget(this._estimateProjectedCost(model, prompt));
     throw new Error("generateVideo is not supported in direct mode. Use proxy mode instead.");
   }
 
@@ -1159,13 +1212,17 @@ export class WebAiClient {
     }
 
     // Direct mode — instruct the model to return JSON
-    this._checkBudget();
     const jsonPrompt = `${prompt}\n\nRespond ONLY with valid JSON, no markdown or explanation.`;
-    const result = await this.generateText(jsonPrompt, {
-      ...options,
-      systemPrompt:
-        options?.systemPrompt ?? "You are a helpful assistant that responds only with valid JSON.",
-    });
+    const result = await this._generateDirectText(
+      jsonPrompt,
+      {
+        ...options,
+        systemPrompt:
+          options?.systemPrompt ??
+          "You are a helpful assistant that responds only with valid JSON.",
+      },
+      prompt,
+    );
 
     let parsed: T;
     try {
@@ -1184,13 +1241,26 @@ export class WebAiClient {
   // -------------------------------------------------------------------------
 
   /** List models available from the configured provider or proxy. */
-  async listModels(modality?: string, options?: WebCallOptions): Promise<WebModelInfo[]> {
+  async listModels(
+    modality?: string,
+    accepts?: string,
+    options?: WebCallOptions,
+  ): Promise<WebModelInfo[]>;
+  async listModels(modality?: string, options?: WebCallOptions): Promise<WebModelInfo[]>;
+  async listModels(
+    modality?: string,
+    acceptsOrOptions?: string | WebCallOptions,
+    options?: WebCallOptions,
+  ): Promise<WebModelInfo[]> {
+    const accepts = typeof acceptsOrOptions === "string" ? acceptsOrOptions : undefined;
+    const callOptions = typeof acceptsOrOptions === "string" ? options : acceptsOrOptions;
     if (this.opts.mode === "proxy") {
       const url = new URL(`${this.proxyBase}/models`);
       if (modality) url.searchParams.set("modality", modality);
+      if (accepts) url.searchParams.set("accepts", accepts);
       const res = await this.fetchWithResilience(
-        () => fetch(url.toString(), { signal: options?.signal ?? null }),
-        options?.signal,
+        () => fetch(url.toString(), { signal: callOptions?.signal ?? null }),
+        callOptions?.signal,
       );
       await this.assertOk(res);
       return res.json() as Promise<WebModelInfo[]>;
@@ -1206,24 +1276,64 @@ export class WebAiClient {
       () =>
         fetch(endpoint, {
           headers: this.directHeaders(),
-          signal: options?.signal ?? null,
+          signal: callOptions?.signal ?? null,
         }),
-      options?.signal,
+      callOptions?.signal,
     );
     await this.assertOk(res);
 
     if (provider === "anthropic") {
-      const data = (await res.json()) as { data: Array<{ id: string; display_name?: string }> };
-      return data.data.map((m) => ({
-        id: m.id,
-        name: m.display_name ?? m.id,
-        capabilities: ["text", "structured"],
-      }));
+      const data = (await res.json()) as { data: Array<Record<string, unknown>> };
+      const models: WebModelInfo[] = data.data.map((m): WebModelInfo => {
+        const id = typeof m["id"] === "string" ? (m["id"] as string) : "";
+        const name = typeof m["display_name"] === "string" ? (m["display_name"] as string) : id;
+        return {
+          ...m,
+          id,
+          name,
+          capabilities: ["text", "structured"],
+          inputCapabilities: ["image"],
+        };
+      });
+      return accepts
+        ? models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false)
+        : models;
+    }
+
+    if (provider === "venice") {
+      const data = (await res.json()) as { data: Array<Record<string, unknown>> };
+      const models: WebModelInfo[] = data.data.map((m): WebModelInfo => {
+        const id = typeof m["id"] === "string" ? (m["id"] as string) : "";
+        const isImage = typeof m["type"] === "string" ? (m["type"] as string) === "image" : false;
+        const capabilities = isImage ? ["image"] : ["text", "structured"];
+        const model: WebModelInfo = {
+          ...m,
+          id,
+          name: id,
+          capabilities,
+        };
+        if (isImage) {
+          model.inputCapabilities = ["image"];
+        }
+        return model;
+      });
+      return accepts
+        ? models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false)
+        : models;
     }
 
     // OpenAI-compatible /models response
-    const data = (await res.json()) as { data: Array<{ id: string }> };
-    return data.data.map((m) => ({ id: m.id, name: m.id, capabilities: [] }));
+    const data = (await res.json()) as { data: Array<Record<string, unknown>> };
+    const models: WebModelInfo[] = data.data.map((m): WebModelInfo => {
+      const id = typeof m["id"] === "string" ? (m["id"] as string) : "";
+      return {
+        ...m,
+        id,
+        name: id,
+        capabilities: [],
+      };
+    });
+    return accepts ? models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false) : models;
   }
 
   // -------------------------------------------------------------------------

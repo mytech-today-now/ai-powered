@@ -134,3 +134,7 @@ Health-check SHALL NEVER make a billable generation call.
 #### Scenario: health-check fails with missing API key
 - **WHEN** no API key is configured for the active provider
 - **THEN** the key-check step reports fail and the command exits with code 2
+
+#### Scenario: health-check reports an unavailable git credential scan
+- **WHEN** `git` is unavailable or the current directory is not a git repository
+- **THEN** the git credential step reports `unavailable` with an explicit unable-to-verify message and the command exits with code 2

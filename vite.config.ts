@@ -112,6 +112,10 @@ export default defineConfig(({ command }) => {
       "/upload", // multipart file upload for reference images (mobile camera photos)
       "/files", // serves uploaded file blobs; required for Luma AI keyframe URLs
       "/v1",
+      // Proxy the concrete info endpoints only. A broader "/info" match would
+      // also catch "/info.html" and forward the browser to the API server.
+      "/info/readme",
+      "/info/posts",
       "/images",
       "/.well-known",
     ];

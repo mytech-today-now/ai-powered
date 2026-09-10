@@ -41,6 +41,74 @@ export {
 export type { Template } from "../templates/builtins.js";
 
 // ---------------------------------------------------------------------------
+// Browser demo helpers — persistent records, styles, and info-page content.
+// ---------------------------------------------------------------------------
+
+export {
+  DEFAULT_BROWSER_DB_NAME,
+  DEFAULT_BROWSER_DB_VERSION,
+  DEFAULT_REMOTE_CACHE_PREFIXES,
+  DEFAULT_STORAGE_PREFIXES,
+  DEFAULT_UI_KEYS,
+  buildSessionTitle,
+  clearPrefsByPrefix,
+  createBrowserRecordStore,
+  createObjectUrlRegistry,
+  listPrefsByPrefix,
+  readJsonPreference,
+  recordDownloadName,
+  recordDownloadPayload,
+  recordSummaryText,
+  recordToManifest,
+  recordToPlainText,
+  writeJsonPreference,
+} from "./browser-storage.js";
+export type {
+  BrowserModality,
+  BrowserRecord,
+  BrowserRecordDraft,
+  BrowserRecordKind,
+  BrowserRecordPatch,
+  BrowserRecordStatus,
+  BrowserRecordStore,
+  BrowserRecordSummary,
+  BrowserStorageOptions,
+  ObjectUrlRegistry,
+} from "./browser-storage.js";
+
+export {
+  buildRelevanceNote,
+  DISCOVERY_CACHE_KEY,
+  DISCOVERY_FALLBACK_POSTS,
+  DISCOVERY_SOURCE_URL,
+  loadDiscoveryPosts,
+  loadReadmeMarkdown,
+  normalizeDiscoveryPosts,
+  README_CACHE_KEY,
+  README_SOURCE_URL,
+  renderMarkdownToSemanticHtml,
+  sanitizeRenderedHtml,
+} from "./info-content.js";
+export type { DiscoveryPost, RemoteCacheLike, RemoteLoadOptions } from "./info-content.js";
+
+export {
+  STYLE_REGISTRY,
+  STYLE_STORAGE_KEY,
+  applyStyleDefinition,
+  chooseStyleId,
+  createStyleController,
+  getStyleById,
+  readStoredStyleId,
+  writeStoredStyleId,
+} from "./style-system.js";
+export type {
+  StyleController,
+  StyleControllerOptions,
+  StyleDefinition,
+  StyleTokens,
+} from "./style-system.js";
+
+// ---------------------------------------------------------------------------
 // Web client — bd-kms8 (createWebClient factory and WebAiClient)
 // ---------------------------------------------------------------------------
 

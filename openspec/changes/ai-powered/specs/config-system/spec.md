@@ -20,10 +20,21 @@ CLI flags. Each layer SHALL deep-merge with the layers below it.
 The system SHALL support multiple named profiles (`default`, `prod`, `dev`, etc.) within each
 config file. The active profile SHALL be selectable via `--profile <name>` or the
 `AI_PROFILE` environment variable. Profiles SHALL be stored under a `profiles` key in config.
+When the same profile name exists in multiple config files, the project-local profile SHALL
+override the global profile. If the project-local config does not define the requested profile,
+the system SHALL fall back to the global profile before reporting it missing.
 
 #### Scenario: Selecting a named profile
 - **WHEN** `--profile prod` is passed and a `prod` profile exists in config
 - **THEN** the system uses all settings from the `prod` profile as the base layer
+
+#### Scenario: Local profile overrides global
+- **WHEN** both global and project-local config define `profiles.prod`
+- **THEN** the project-local `prod` profile is used
+
+#### Scenario: Local config falls back to global profile
+- **WHEN** project-local config exists but does not define `profiles.prod` and global config does
+- **THEN** the global `prod` profile is used
 
 #### Scenario: Missing profile
 - **WHEN** `--profile nonexistent` is passed but that profile does not exist
@@ -93,4 +104,3 @@ wrapper hooks, update `.gitignore`, run the wizard if no config exists, and prin
 - **WHEN** `ai-powered --init` is run in a repo with no `.ai-powered/` directory
 - **THEN** the system creates `.ai-powered/config.json`, appends to `.gitignore`, and runs
   the wizard interactively
-
