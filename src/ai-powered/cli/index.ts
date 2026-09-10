@@ -1242,19 +1242,22 @@ addGlobalFlags(batchCmd);
 // serve command
 // ---------------------------------------------------------------------------
 const serveCmd = new Command("serve")
-  .description("Start a local HTTP proxy server for all ai-powered modalities")
+  .description("Start the HTTP proxy server for all ai-powered modalities")
   .addOption(
-    new Option("--port <n>", "Port to listen on (default 3001)")
-      .argParser((v) => parseInt(v, 10))
-      .default(3001),
+    new Option("--port <n>", "Port to listen on (default 3001; uses PORT when set)").argParser(
+      (v) => parseInt(v, 10),
+    ),
   )
   .addOption(
-    new Option("--host <addr>", "Host to bind to (default 127.0.0.1)").default("127.0.0.1"),
+    new Option(
+      "--host <addr>",
+      "Host to bind to (default 127.0.0.1; binds to 0.0.0.0 when PORT is set)",
+    ),
   )
   .addOption(
     new Option(
       "--cors-origin <o>",
-      "Allowed CORS origin or glob pattern, e.g. https://*.ngrok-free.dev (env: CORS_ORIGIN)",
+      "Allowed CORS origin or glob pattern (env: CORS_ORIGIN)",
     ).default(process.env["CORS_ORIGIN"] ?? "http://localhost:5173"),
   )
   .addOption(
@@ -1273,9 +1276,9 @@ const serveCmd = new Command("serve")
       fs.mkdirSync(LOCAL_LOGS_DIR, { recursive: true });
     }
     const profile = opts["profile"] as string | undefined;
-    await startServer({
-      port: opts["port"] as number,
-      host: opts["host"] as string,
+    const serveOptions = {
+      ...(typeof opts["port"] === "number" ? { port: opts["port"] as number } : {}),
+      ...(typeof opts["host"] === "string" ? { host: opts["host"] as string } : {}),
       corsOrigin: opts["corsOrigin"] as string,
       rateLimit: opts["rateLimit"] as number,
       mock: Boolean(opts["mock"]),
@@ -1283,11 +1286,18 @@ const serveCmd = new Command("serve")
       debug: Boolean(opts["debug"]),
       ...(logFile !== undefined ? { logFile } : {}),
       configOverrides: toConfigOverrides(opts) as never,
-    });
-    // Keep process alive until SIGINT/SIGTERM.
+    };
+    await startServer(serveOptions);
+    // Keep process alive until SIGINT/SIGTERM, removing both listeners when
+    // either signal arrives so repeated in-process runs do not accumulate them.
     await new Promise<void>((resolve) => {
-      process.once("SIGINT", resolve);
-      process.once("SIGTERM", resolve);
+      const onShutdown = (): void => {
+        process.off("SIGINT", onShutdown);
+        process.off("SIGTERM", onShutdown);
+        resolve();
+      };
+      process.once("SIGINT", onShutdown);
+      process.once("SIGTERM", onShutdown);
     });
   });
 addGlobalFlags(serveCmd);

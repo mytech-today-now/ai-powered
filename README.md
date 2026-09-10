@@ -186,8 +186,9 @@ The current video catalog includes these endpoint IDs:
 - `pika/pikaffects/video-to-video`
 
 Pika image and video references must be publicly reachable URLs. When using
-proxy file uploads, set `PROXY_PUBLIC_BASE_URL` so the provider can fetch the
-stored media. Pika's Soundtrack endpoint is not exposed because it returns
+proxy file uploads, set `PROXY_PUBLIC_BASE_URL` to the proxy's public HTTPS URL
+so the provider can fetch the stored media. On Render, use the service URL for
+that variable. Pika's Soundtrack endpoint is not exposed because it returns
 audio rather than a video result.
 
 ### VibeVoice (self-hosted ASR / TTS)
@@ -351,6 +352,11 @@ cat shots.jsonl | ai-powered batch video --input - --output - | jq .
 ai-powered serve --mock --port 3001
 # Exposes: GET /health, GET /config, GET /models, GET /pricing, POST /text, POST /stream, POST /image, POST /batch, and /v1/* compat routes
 ```
+
+For Render deployments, run `npm start` and set `CORS_ORIGIN` to the browser
+app origin that will call the proxy. If uploaded media needs to be fetched back
+by a provider, set `PROXY_PUBLIC_BASE_URL` to the Render service URL.
+If you still need the older ngrok-specific CORS default, use `npm run serve:ngrok`.
 
 ### `session` — Manage conversation sessions
 
@@ -1009,7 +1015,7 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 | **proxy**  | Production      | Key stays on your server — browser never sees it            |
 | **direct** | Dev / demo only | Key visible in DevTools — non-suppressible DOM banner shown |
 
-### Browser client features (v0.5.4)
+### Browser client features (v0.5.5)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
@@ -1030,6 +1036,11 @@ Start the proxy server on your backend:
 ```bash
 ai-powered serve --port 3001
 ```
+
+For Render, use the included Blueprint or `npm start`. The proxy binds to the
+deployment `PORT` automatically and keeps the browser-facing proxy contract the
+same. Set `CORS_ORIGIN` for the browser app origin and `PROXY_PUBLIC_BASE_URL`
+for public media URLs when needed.
 
 Then in your browser app:
 

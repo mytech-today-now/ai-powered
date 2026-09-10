@@ -1,7 +1,7 @@
 /**
  * @file src/ai-powered/server/index.ts
  *
- * Express-based local proxy server for all ai-powered modalities.
+ * Express-based proxy server for all ai-powered modalities.
  *
  * Middleware stack (in order):
  *   1. Pino HTTP request/response logger — structured JSON with masked keys
@@ -33,9 +33,9 @@ import type { AiConfig } from "../index.js";
 // ---------------------------------------------------------------------------
 
 export interface ServeOptions {
-  /** TCP port to listen on. Default: 3001 */
+  /** TCP port to listen on. Default: 3001 locally, or the deployment PORT when hosted. */
   port?: number;
-  /** Network interface to bind. Default: 127.0.0.1 */
+  /** Network interface to bind. Default: 127.0.0.1 locally. */
   host?: string;
   /**
    * Allowed CORS origin(s). Default: http://localhost:5173
@@ -55,6 +55,40 @@ export interface ServeOptions {
   debug?: boolean;
   /** Deep-merged on top of the resolved config for every request. */
   configOverrides?: Partial<AiConfig>;
+}
+
+export interface ResolvedServeBinding {
+  port: number;
+  host: string;
+}
+
+function parsePortValue(value: string | undefined, source: string): number | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid ${source} value "${value}". Expected a non-negative integer.`);
+  }
+  return parsed;
+}
+
+export function resolveServeBinding(
+  opts: Pick<ServeOptions, "host" | "port"> = {},
+  env: Partial<Pick<NodeJS.ProcessEnv, "HOST" | "PORT">> = process.env,
+): ResolvedServeBinding {
+  const explicitPort = opts.port;
+  if (explicitPort !== undefined && (!Number.isInteger(explicitPort) || explicitPort < 0)) {
+    throw new Error(
+      `Invalid port value "${String(explicitPort)}". Expected a non-negative integer.`,
+    );
+  }
+
+  const envPort = parsePortValue(env.PORT, "PORT");
+  const envHost = env.HOST?.trim();
+  const port = explicitPort ?? envPort ?? 3001;
+  const host = opts.host?.trim() || envHost || (envPort !== undefined ? "0.0.0.0" : "127.0.0.1");
+  return { port, host };
 }
 
 // ---------------------------------------------------------------------------
@@ -220,8 +254,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
  * address.  The returned Promise resolves once the server is listening.
  */
 export function startServer(opts: ServeOptions = {}): Promise<void> {
-  const port = opts.port ?? 3001;
-  const host = opts.host ?? "127.0.0.1";
+  const { port, host } = resolveServeBinding(opts);
   const app = createServer(opts);
   return new Promise((resolve) => {
     app.listen(port, host, () => {

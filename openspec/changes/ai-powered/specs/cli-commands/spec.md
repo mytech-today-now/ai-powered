@@ -46,6 +46,26 @@ Every command SHALL accept: `--provider`, `--model`, `--api-key`, `--temperature
 
 ---
 
+### Requirement: Hosted serve startup
+`ai-powered serve` SHALL keep the local default of `127.0.0.1:3001` when no deployment
+environment variables are set. When `PORT` is set and no explicit `--host` is supplied, the
+server SHALL bind to `0.0.0.0` and listen on that port. Explicit `--port` and `--host` flags
+SHALL override any deployment-derived defaults.
+
+#### Scenario: Local default stays local
+- **WHEN** `ai-powered serve` is run with no host or port environment variables
+- **THEN** the proxy listens on `127.0.0.1:3001`
+
+#### Scenario: Hosted deployment uses PORT
+- **WHEN** `PORT=10000` and `ai-powered serve` is run without `--host`
+- **THEN** the proxy listens on `0.0.0.0:10000`
+
+#### Scenario: Explicit flags override deployment env vars
+- **WHEN** `PORT=10000 ai-powered serve --host 127.0.0.1 --port 3001` is run
+- **THEN** the proxy listens on `127.0.0.1:3001`
+
+---
+
 ### Requirement: Syntax guidance for mistyped flags and commands
 The CLI SHALL detect unambiguous syntax mistakes where a flag is entered as a bare command or
 a command/subcommand is entered with `--`. In those cases the CLI SHALL print the canonical

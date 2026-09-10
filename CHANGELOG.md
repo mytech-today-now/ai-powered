@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.5] – 2026-09-10
 
+### Added
+
+- Render Blueprint support via `render.yaml` for deploying the proxy as a
+  continuously running web service with `npm start` and `/health`.
+
+### Changed
+
+- `serve` now binds to `PORT` when one is provided and defaults to
+  `0.0.0.0:PORT` on hosted platforms like Render while keeping the local
+  `127.0.0.1:3001` default unchanged.
+- `serve:ngrok` preserves the older ngrok-specific CORS convenience, and the
+  README now points public media URL guidance at any public HTTPS proxy URL.
+
 ### Fixed
 
 - Smart-default image-to-video routing now only keeps a requested provider when that provider

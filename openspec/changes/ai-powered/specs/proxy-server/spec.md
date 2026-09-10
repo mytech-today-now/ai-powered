@@ -88,6 +88,18 @@ SHALL return HTTP 429; all providers exhausted SHALL return HTTP 503.
 
 ---
 
+### Requirement: Public media URL guidance
+When image-to-video or video-to-video routes require uploaded media to be fetched by a provider,
+the server SHALL require `PROXY_PUBLIC_BASE_URL` to point at a public HTTPS URL. The error
+message SHALL stay generic and SHALL not hard-code a tunnel-specific hostname.
+
+#### Scenario: Missing public media URL returns a hosted-service hint
+- **WHEN** `POST /video` needs public media URLs and `PROXY_PUBLIC_BASE_URL` is absent
+- **THEN** the server returns HTTP 422 with a message that instructs the caller to set
+  `PROXY_PUBLIC_BASE_URL` to a public HTTPS address, such as a Render service URL
+
+---
+
 ### Requirement: Server integrates core features
 The proxy server SHALL fully integrate: provider fallback/failover, budget limits, plugin
 pipeline, prompt templates, mock mode, and Pino structured logging. All proxied requests
