@@ -19,10 +19,18 @@
         vertical-align: middle;
         color: #fff;
       }
-      .modality-badge--video  { background: #2563eb; }
-      .modality-badge--image  { background: #7c3aed; }
-      .modality-badge--text   { background: #16a34a; }
-      .modality-badge--audio  { background: #ea580c; }
+      .modality-badge--video {
+        background: #2563eb;
+      }
+      .modality-badge--image {
+        background: #7c3aed;
+      }
+      .modality-badge--text {
+        background: #16a34a;
+      }
+      .modality-badge--audio {
+        background: #ea580c;
+      }
 
       /* Multi-file thumbnail gallery */
       .file-thumbs {
@@ -31,7 +39,9 @@
         gap: 8px;
         margin-top: 8px;
       }
-      .file-thumbs.hidden { display: none; }
+      .file-thumbs.hidden {
+        display: none;
+      }
       .file-thumb {
         position: relative;
         width: 64px;
@@ -51,7 +61,7 @@
         position: absolute;
         top: 2px;
         right: 2px;
-        background: rgba(0,0,0,0.6);
+        background: rgba(0, 0, 0, 0.6);
         color: #fff;
         border: none;
         border-radius: 50%;
@@ -63,12 +73,23 @@
         cursor: pointer;
         padding: 0;
       }
-      .file-thumb-remove:hover { background: rgba(220,38,38,0.85); }
+      .file-thumb-remove:hover {
+        background: rgba(220, 38, 38, 0.85);
+      }
 
       /* Global error banner — severity modifiers */
-      .global-error--error   { background: #bf2600; color: #fff; }
-      .global-error--warning { background: #ff991f; color: #172b4d; }
-      .global-error--info    { background: #0065ff; color: #fff; }
+      .global-error--error {
+        background: #bf2600;
+        color: #fff;
+      }
+      .global-error--warning {
+        background: #ff991f;
+        color: #172b4d;
+      }
+      .global-error--info {
+        background: #0065ff;
+        color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -88,23 +109,20 @@
         <div class="header-title-badges">
           <span class="version-badge" id="lib-version">UMD</span>
           <button class="style-badge" id="style-badge" type="button">Style</button>
+          <button
+            id="btn-open-info"
+            class="icon-button"
+            type="button"
+            title="Open information page"
+            aria-label="Open information page"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M12 10.5v5"></path>
+              <path d="M12 7.25h.01"></path>
+            </svg>
+          </button>
         </div>
-      </div>
-
-      <div class="header-actions">
-        <button
-          id="btn-open-info"
-          class="icon-button"
-          type="button"
-          title="Open information page"
-          aria-label="Open information page"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="9"></circle>
-            <path d="M12 10.5v5"></path>
-            <path d="M12 7.25h.01"></path>
-          </svg>
-        </button>
       </div>
 
       <section class="mode-section">
@@ -115,19 +133,20 @@
             <option value="proxy">Proxy (recommended)</option>
             <option value="direct">Direct (dev only)</option>
           </select>
+          <label for="proxy-url">Proxy URL:</label>
+          <input
+            id="proxy-url"
+            type="text"
+            value="http://localhost:3001"
+            placeholder="http://localhost:3001"
+            spellcheck="false"
+          />
         </div>
 
         <!-- Proxy config -->
-        <div id="proxy-config" class="connection-config">
-          <label for="proxy-url">Proxy URL:</label>
-          <input id="proxy-url" type="text" value="http://localhost:3001"
-                 placeholder="http://localhost:3001" spellcheck="false" />
-          <label for="proxy-provider-select">Provider:</label>
-          <select id="proxy-provider-select" title="Active providers from server .env">
-            <option value="">Default</option>
-          </select>
+        <div id="proxy-config" class="connection-config proxy-config">
           <span class="hint">Run <code>npm run serve</code> to start the proxy server.</span>
-          <small id="attachment-notice" style="color:#888;display:block;margin-top:4px"></small>
+          <small id="attachment-notice" style="color: #888"></small>
         </div>
 
         <!-- Direct config (shown only when Direct is selected) -->
@@ -141,16 +160,27 @@
               <option value="xai">xAI</option>
             </select>
             <label for="api-key-input">API Key:</label>
-            <input id="api-key-input" type="password" placeholder="sk-…"
-                   spellcheck="false" autocomplete="off" style="width:220px" />
+            <input
+              id="api-key-input"
+              type="password"
+              placeholder="sk-…"
+              spellcheck="false"
+              autocomplete="off"
+              style="width: 220px"
+            />
             <label for="direct-budget">Budget (USD):</label>
-            <input id="direct-budget" type="number" min="0" step="0.01"
-                   placeholder="∞ (no limit)" style="width:8rem">
+            <input
+              id="direct-budget"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="∞ (no limit)"
+              style="width: 8rem"
+            />
           </div>
           <div class="security-warning" role="alert">
-            ⚠ WARNING: Direct mode exposes your API key in browser DevTools and
-            network traffic. Never use a production key here. Use proxy mode in
-            production environments.
+            ⚠ WARNING: Direct mode exposes your API key in browser DevTools and network traffic.
+            Never use a production key here. Use proxy mode in production environments.
           </div>
         </div>
       </section>
@@ -158,11 +188,13 @@
 
     <!-- ── Modality Tab Bar ───────────────────────────────────────── -->
     <nav class="tab-bar" role="tablist" aria-label="Modality">
-      <button class="tab-btn active" data-tab="text"       role="tab" aria-selected="true">Text</button>
-      <button class="tab-btn"        data-tab="image"      role="tab" aria-selected="false">Image</button>
-      <button class="tab-btn"        data-tab="audio"      role="tab" aria-selected="false">Audio</button>
-      <button class="tab-btn"        data-tab="video"      role="tab" aria-selected="false">Video</button>
-      <button class="tab-btn"        data-tab="structured" role="tab" aria-selected="false">Structured</button>
+      <button class="tab-btn active" data-tab="text" role="tab" aria-selected="true">Text</button>
+      <button class="tab-btn" data-tab="image" role="tab" aria-selected="false">Image</button>
+      <button class="tab-btn" data-tab="audio" role="tab" aria-selected="false">Audio</button>
+      <button class="tab-btn" data-tab="video" role="tab" aria-selected="false">Video</button>
+      <button class="tab-btn" data-tab="structured" role="tab" aria-selected="false">
+        Structured
+      </button>
     </nav>
 
     <section id="history-panel-wrap" class="history-panel-wrap" aria-label="Persistent history">
@@ -173,7 +205,11 @@
           (<span id="history-count">0</span>)
         </button>
         <div class="history-panel-actions">
-          <button id="btn-history-export-all" class="btn btn--ghost" title="Download the visible history">
+          <button
+            id="btn-history-export-all"
+            class="btn btn--ghost"
+            title="Download the visible history"
+          >
             Export All
           </button>
           <button
@@ -194,29 +230,54 @@
       <section class="tab-panel" id="panel-text" role="tabpanel">
         <div class="session-history-header">
           <span class="section-label">Session History</span>
-          <button id="btn-session-clear" class="btn-ghost btn-sm"
-                  title="Discard this conversation without saving">Clear Session</button>
-          <button id="btn-new-conversation" class="btn btn--ghost"
-                  title="Archive this conversation and start fresh">New Conversation</button>
+          <button
+            id="btn-session-clear"
+            class="btn-ghost btn-sm"
+            title="Discard this conversation without saving"
+          >
+            Clear Session
+          </button>
+          <button
+            id="btn-new-conversation"
+            class="btn btn--ghost"
+            title="Archive this conversation and start fresh"
+          >
+            New Conversation
+          </button>
         </div>
-        <div id="session-history" class="session-history"
-             aria-live="polite" aria-label="Conversation history"></div>
+        <div
+          id="session-history"
+          class="session-history"
+          aria-live="polite"
+          aria-label="Conversation history"
+        ></div>
 
         <div class="input-group">
           <div class="input-with-mic">
-            <textarea id="text-prompt" rows="3"
-              placeholder="Enter your prompt…">Explain quantum entanglement in two sentences.</textarea>
-            <button class="btn-mic" data-target="text-prompt"
-                    title="Click to start voice input"
-                    aria-label="Start voice input for text prompt"
-                    type="button">
-              <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8"  y1="23" x2="16" y2="23"/>
+            <textarea id="text-prompt" rows="3" placeholder="Enter your prompt…">
+Explain quantum entanglement in two sentences.</textarea
+            >
+            <button
+              class="btn-mic"
+              data-target="text-prompt"
+              title="Click to start voice input"
+              aria-label="Start voice input for text prompt"
+              type="button"
+            >
+              <svg
+                class="mic-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
               <span class="mic-timer" aria-live="polite"></span>
             </button>
@@ -229,18 +290,23 @@
         </div>
         <div class="model-row">
           <label for="text-model-select">Model:</label>
-          <select id="text-model-select"><option value="">Default</option></select>
+          <select id="text-model-select">
+            <option value="">Default</option>
+          </select>
         </div>
         <div class="input-group file-input-group">
           <label for="file-upload-input" class="file-label">Attach file</label>
-          <input id="file-upload-input" type="file"
+          <input
+            id="file-upload-input"
+            type="file"
             accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain,text/html,text/csv,.html,.docx,.xlsx,.pptx"
-            class="file-input" />
+            class="file-input"
+          />
           <span id="file-upload-status" class="filename-display">No file attached</span>
         </div>
         <div class="btn-row">
           <button id="btn-text-generate" class="btn-primary">Generate</button>
-          <button id="btn-text-stream"   class="btn-primary">Stream</button>
+          <button id="btn-text-stream" class="btn-primary">Stream</button>
         </div>
         <div id="text-output" class="output-box" aria-live="polite"></div>
         <div id="text-usage" class="usage-bar"></div>
@@ -250,19 +316,30 @@
       <section class="tab-panel hidden" id="panel-image" role="tabpanel">
         <div class="input-group">
           <div class="input-with-mic">
-            <textarea id="image-prompt" rows="2"
-              placeholder="Describe the image to generate…">A serene mountain lake at sunrise, photorealistic, 4k</textarea>
-            <button class="btn-mic" data-target="image-prompt"
-                    title="Click to start voice input"
-                    aria-label="Start voice input for image prompt"
-                    type="button">
-              <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8"  y1="23" x2="16" y2="23"/>
+            <textarea id="image-prompt" rows="2" placeholder="Describe the image to generate…">
+A serene mountain lake at sunrise, photorealistic, 4k</textarea
+            >
+            <button
+              class="btn-mic"
+              data-target="image-prompt"
+              title="Click to start voice input"
+              aria-label="Start voice input for image prompt"
+              type="button"
+            >
+              <svg
+                class="mic-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
               <span class="mic-timer" aria-live="polite"></span>
             </button>
@@ -275,7 +352,9 @@
         </div>
         <div class="model-row">
           <label for="image-model-select">Model:</label>
-          <select id="image-model-select"><option value="">Default</option></select>
+          <select id="image-model-select">
+            <option value="">Default</option>
+          </select>
         </div>
 
         <!-- ── Image size controls ───────────────────────────────── -->
@@ -313,19 +392,37 @@
         <!-- Custom width/height (shown only when Category = Custom) -->
         <div id="image-custom-dims" class="size-controls-row hidden">
           <label for="image-width">Width (px):</label>
-          <input id="image-width" type="number" min="64" max="4096" step="64"
-                 placeholder="e.g. 1280" class="dim-input" />
+          <input
+            id="image-width"
+            type="number"
+            min="64"
+            max="4096"
+            step="64"
+            placeholder="e.g. 1280"
+            class="dim-input"
+          />
           <label for="image-height">Height (px):</label>
-          <input id="image-height" type="number" min="64" max="4096" step="64"
-                 placeholder="e.g. 720" class="dim-input" />
+          <input
+            id="image-height"
+            type="number"
+            min="64"
+            max="4096"
+            step="64"
+            placeholder="e.g. 720"
+            class="dim-input"
+          />
           <span id="image-dims-hint" class="hint"></span>
         </div>
 
         <div class="input-group file-input-group">
           <label for="image-file-upload-input" class="file-label">Attach reference images</label>
-          <input id="image-file-upload-input" type="file"
+          <input
+            id="image-file-upload-input"
+            type="file"
             accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
-            class="file-input" multiple />
+            class="file-input"
+            multiple
+          />
           <span id="image-file-upload-status" class="filename-display">No files attached</span>
         </div>
         <div id="image-file-thumbs" class="file-thumbs hidden"></div>
@@ -347,19 +444,30 @@
           <h2 class="subsection-title">Text → Speech</h2>
           <div class="input-group">
             <div class="input-with-mic">
-              <textarea id="tts-text" rows="2"
-                placeholder="Text to synthesize…">Hello! This demonstrates text-to-speech synthesis.</textarea>
-              <button class="btn-mic" data-target="tts-text"
-                      title="Click to start voice input"
-                      aria-label="Start voice input for TTS text"
-                      type="button">
-                <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
-                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/>
-                  <line x1="8"  y1="23" x2="16" y2="23"/>
+              <textarea id="tts-text" rows="2" placeholder="Text to synthesize…">
+Hello! This demonstrates text-to-speech synthesis.</textarea
+              >
+              <button
+                class="btn-mic"
+                data-target="tts-text"
+                title="Click to start voice input"
+                aria-label="Start voice input for TTS text"
+                type="button"
+              >
+                <svg
+                  class="mic-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
                 <span class="mic-timer" aria-live="polite"></span>
               </button>
@@ -368,7 +476,9 @@
           </div>
           <div class="model-row">
             <label for="tts-model-select">Model:</label>
-            <select id="tts-model-select"><option value="">Default</option></select>
+            <select id="tts-model-select">
+              <option value="">Default</option>
+            </select>
           </div>
           <div class="btn-row">
             <button id="btn-tts-speak" class="btn-primary">Synthesize Speech</button>
@@ -383,14 +493,19 @@
           <h2 class="subsection-title">Audio → Text (Transcription)</h2>
           <div class="input-group file-input-group">
             <label for="audio-file-input" class="file-label">Choose audio or video file</label>
-            <input id="audio-file-input" type="file"
+            <input
+              id="audio-file-input"
+              type="file"
               accept="audio/*,video/mp4,video/x-matroska,video/quicktime,video/x-msvideo,video/webm"
-              class="file-input" />
+              class="file-input"
+            />
             <span id="audio-filename" class="filename-display">No file selected</span>
           </div>
           <div class="model-row">
             <label for="transcribe-model-select">Model:</label>
-            <select id="transcribe-model-select"><option value="">Default</option></select>
+            <select id="transcribe-model-select">
+              <option value="">Default</option>
+            </select>
           </div>
           <div class="btn-row">
             <button id="btn-transcribe" class="btn-primary" disabled>Transcribe</button>
@@ -413,25 +528,34 @@
             <option value="">Default</option>
           </select>
           <label for="video-model-select">Model:</label>
-          <select id="video-model-select"><option value="">Default</option></select>
+          <select id="video-model-select">
+            <option value="">Default</option>
+          </select>
         </div>
 
         <!-- ── Video sub-tab navigation ───────────────────────────────── -->
         <div class="video-tabs" role="tablist" aria-label="Video mode">
-          <button class="video-tab-btn active" data-vtab="batch"
-                  role="tab" aria-selected="true">Batch</button>
-          <button class="video-tab-btn" data-vtab="single"
-                  role="tab" aria-selected="false">Single Video</button>
+          <button class="video-tab-btn active" data-vtab="batch" role="tab" aria-selected="true">
+            Batch
+          </button>
+          <button class="video-tab-btn" data-vtab="single" role="tab" aria-selected="false">
+            Single Video
+          </button>
         </div>
 
         <!-- ── Batch sub-panel (default active; no hidden class) ────── -->
         <div class="video-sub-panel" data-vtab="batch">
-
           <!-- ── Batch drop zone ──────────────────────────────────── -->
-          <div id="batch-drop-zone" class="batch-drop-zone" role="region" aria-label="Batch file drop zone">
+          <div
+            id="batch-drop-zone"
+            class="batch-drop-zone"
+            role="region"
+            aria-label="Batch file drop zone"
+          >
             <span class="drop-icon" aria-hidden="true">📂</span>
             <span class="drop-text">
-              Drop a <strong>.json</strong>, <strong>.jsonl</strong>, or <strong>.md</strong> shot-list here
+              Drop a <strong>.json</strong>, <strong>.jsonl</strong>, or
+              <strong>.md</strong> shot-list here
             </span>
             <span class="drop-or">— or —</span>
             <label for="batch-file-input" class="file-label">Choose file</label>
@@ -473,8 +597,15 @@
             </div>
             <div class="size-controls-row">
               <label for="batch-duration">Duration (s):</label>
-              <input id="batch-duration" type="number" min="1" max="60" step="1"
-                     placeholder="e.g. 5" class="dim-input" />
+              <input
+                id="batch-duration"
+                type="number"
+                min="1"
+                max="60"
+                step="1"
+                placeholder="e.g. 5"
+                class="dim-input"
+              />
 
               <label for="batch-fps">FPS:</label>
               <select id="batch-fps">
@@ -490,15 +621,25 @@
               <label for="batch-seed">Seed:</label>
               <input id="batch-seed" type="number" step="1" placeholder="Optional" />
               <label for="batch-transition-duration">Transition (s):</label>
-              <input id="batch-transition-duration" type="number" min="1" max="10" step="1" placeholder="1-10" />
+              <input
+                id="batch-transition-duration"
+                type="number"
+                min="1"
+                max="10"
+                step="1"
+                placeholder="1-10"
+              />
               <label for="batch-pikaffect">Pikaffect:</label>
-              <select id="batch-pikaffect"><option value="">Default</option></select>
+              <select id="batch-pikaffect">
+                <option value="">Default</option>
+              </select>
               <label for="batch-modify-region-roi">Swap ROI:</label>
               <input id="batch-modify-region-roi" type="text" placeholder="Optional" />
               <label for="batch-modify-region-mask">Swap mask URL:</label>
               <input id="batch-modify-region-mask" type="url" placeholder="Optional HTTPS URL" />
             </div>
-          </div><!-- /.batch-constraints -->
+          </div>
+          <!-- /.batch-constraints -->
 
           <!-- ── Pre-flight panel (shown after file is loaded) ──── -->
           <div id="batch-preflight" class="batch-preflight hidden">
@@ -507,7 +648,7 @@
               <button id="btn-batch-clear" class="btn-ghost btn-sm">✕ Clear</button>
             </div>
             <div id="batch-summary" class="batch-summary"></div>
-            <div class="btn-row" style="margin-top:.5rem">
+            <div class="btn-row" style="margin-top: 0.5rem">
               <button id="btn-batch-run" class="btn-primary" disabled>▶ Run Batch</button>
             </div>
           </div>
@@ -519,10 +660,10 @@
               <span id="batch-progress-counter" class="progress-counter">0 / 0</span>
             </div>
             <div class="progress-bar-track">
-              <div id="batch-progress-bar" class="progress-bar-fill" style="width:0%"></div>
+              <div id="batch-progress-bar" class="progress-bar-fill" style="width: 0%"></div>
             </div>
             <p id="batch-cost-tally" class="batch-cost-tally hidden"></p>
-            <button id="btn-cancel-batch" class="btn btn--danger" style="display:none">
+            <button id="btn-cancel-batch" class="btn btn--danger" style="display: none">
               Cancel
             </button>
           </div>
@@ -534,7 +675,9 @@
               <div class="results-actions">
                 <button id="btn-download-results" class="btn-ghost btn-sm">⬇ Download HTML</button>
                 <button id="btn-download-zip" class="btn-ghost btn-sm">⬇ Download ZIP</button>
-                <button id="btn-download-combined" class="btn-ghost btn-sm" hidden>⬇ Combined Video</button>
+                <button id="btn-download-combined" class="btn-ghost btn-sm" hidden>
+                  ⬇ Combined Video
+                </button>
               </div>
             </div>
             <span id="zip-status" aria-live="polite"></span>
@@ -542,32 +685,46 @@
             <div id="combined-video-section" class="combined-video-section" hidden>
               <div class="combined-video-header">
                 <span class="section-label">Combined Video</span>
-                <span id="combined-video-status" class="combined-video-status" aria-live="polite"></span>
+                <span
+                  id="combined-video-status"
+                  class="combined-video-status"
+                  aria-live="polite"
+                ></span>
               </div>
               <video id="combined-video-player" class="combined-video-player" controls></video>
             </div>
           </div>
-
-        </div><!-- /.video-sub-panel[data-vtab="batch"] -->
+        </div>
+        <!-- /.video-sub-panel[data-vtab="batch"] -->
 
         <!-- ── Single-video sub-panel (hidden by default) ──────────── -->
         <div class="video-sub-panel hidden" data-vtab="single">
-
           <div class="input-group">
             <div class="input-with-mic">
-              <textarea id="video-prompt" rows="2"
-                placeholder="Describe the video to generate…">A time-lapse of clouds drifting over mountain peaks at golden hour</textarea>
-              <button class="btn-mic" data-target="video-prompt"
-                      title="Click to start voice input"
-                      aria-label="Start voice input for video prompt"
-                      type="button">
-                <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
-                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/>
-                  <line x1="8"  y1="23" x2="16" y2="23"/>
+              <textarea id="video-prompt" rows="2" placeholder="Describe the video to generate…">
+A time-lapse of clouds drifting over mountain peaks at golden hour</textarea
+              >
+              <button
+                class="btn-mic"
+                data-target="video-prompt"
+                title="Click to start voice input"
+                aria-label="Start voice input for video prompt"
+                type="button"
+              >
+                <svg
+                  class="mic-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
                 <span class="mic-timer" aria-live="polite"></span>
               </button>
@@ -577,20 +734,26 @@
 
           <!-- ── Reference images for image-to-video ─────────────── -->
           <div class="input-group file-input-group">
-            <label for="video-file-upload-input" class="file-label">Attach reference images or video</label>
-            <input id="video-file-upload-input" type="file"
+            <label for="video-file-upload-input" class="file-label"
+              >Attach reference images or video</label
+            >
+            <input
+              id="video-file-upload-input"
+              type="file"
               accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,video/mp4,video/webm,video/quicktime,video/x-matroska"
-              class="file-input" multiple />
+              class="file-input"
+              multiple
+            />
             <span id="video-file-upload-status" class="filename-display">No files attached</span>
           </div>
           <div id="video-file-thumbs" class="file-thumbs hidden"></div>
           <!-- Shown when Luma AI is selected with an image but PROXY_PUBLIC_BASE_URL is not set -->
           <div id="video-luma-tunnel-warn" class="warn-box hidden">
-            ⚠ <strong>Public tunnel required.</strong>
-            Luma AI image-to-video needs a publicly accessible URL for the keyframe image.
-            Restart the proxy with an ngrok tunnel:<br>
-            <code>.\scripts\cycle-service.ps1 -Ngrok</code><br>
-            Or set <code>PROXY_PUBLIC_BASE_URL</code> to your server's public address before starting.
+            ⚠ <strong>Public tunnel required.</strong> Luma AI image-to-video needs a publicly
+            accessible URL for the keyframe image. Restart the proxy with an ngrok tunnel:<br />
+            <code>.\scripts\cycle-service.ps1 -Ngrok</code><br />
+            Or set <code>PROXY_PUBLIC_BASE_URL</code> to your server's public address before
+            starting.
           </div>
 
           <!-- ── Video size / duration controls ───────────────────── -->
@@ -626,8 +789,15 @@
 
           <div class="size-controls-row">
             <label for="video-duration">Duration (s):</label>
-            <input id="video-duration" type="number" min="1" max="60" step="1"
-                   placeholder="e.g. 5" class="dim-input" />
+            <input
+              id="video-duration"
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              placeholder="e.g. 5"
+              class="dim-input"
+            />
 
             <label for="video-fps">FPS:</label>
             <select id="video-fps">
@@ -644,9 +814,18 @@
             <label for="video-seed">Seed:</label>
             <input id="video-seed" type="number" step="1" placeholder="Optional" />
             <label for="video-transition-duration">Transition (s):</label>
-            <input id="video-transition-duration" type="number" min="1" max="10" step="1" placeholder="1-10" />
+            <input
+              id="video-transition-duration"
+              type="number"
+              min="1"
+              max="10"
+              step="1"
+              placeholder="1-10"
+            />
             <label for="video-pikaffect">Pikaffect:</label>
-            <select id="video-pikaffect"><option value="">Default</option></select>
+            <select id="video-pikaffect">
+              <option value="">Default</option>
+            </select>
             <label for="video-modify-region-roi">Swap ROI:</label>
             <input id="video-modify-region-roi" type="text" placeholder="Optional" />
             <label for="video-modify-region-mask">Swap mask URL:</label>
@@ -658,27 +837,38 @@
           </div>
           <div id="video-output" class="output-box video-output" aria-live="polite"></div>
           <div id="video-usage" class="usage-bar"></div>
-
-        </div><!-- /.video-sub-panel[data-vtab="single"] -->
+        </div>
+        <!-- /.video-sub-panel[data-vtab="single"] -->
       </section>
 
       <!-- ── STRUCTURED TAB ────────────────────────────────────────── -->
       <section class="tab-panel hidden" id="panel-structured" role="tabpanel">
         <div class="input-group">
           <div class="input-with-mic">
-            <textarea id="structured-prompt" rows="4"
-              placeholder="Ask for structured JSON output…">List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea>
-            <button class="btn-mic" data-target="structured-prompt"
-                    title="Click to start voice input"
-                    aria-label="Start voice input for structured prompt"
-                    type="button">
-              <svg class="mic-icon" xmlns="http://www.w3.org/2000/svg"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8"  y1="23" x2="16" y2="23"/>
+            <textarea id="structured-prompt" rows="4" placeholder="Ask for structured JSON output…">
+List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string).</textarea
+            >
+            <button
+              class="btn-mic"
+              data-target="structured-prompt"
+              title="Click to start voice input"
+              aria-label="Start voice input for structured prompt"
+              type="button"
+            >
+              <svg
+                class="mic-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
               <span class="mic-timer" aria-live="polite"></span>
             </button>
@@ -691,7 +881,9 @@
         </div>
         <div class="model-row">
           <label for="structured-model-select">Model:</label>
-          <select id="structured-model-select"><option value="">Default</option></select>
+          <select id="structured-model-select">
+            <option value="">Default</option>
+          </select>
         </div>
         <div class="btn-row">
           <button id="btn-structured-generate" class="btn-primary">Generate JSON</button>
@@ -730,4 +922,3 @@
     <script src="app.js"></script>
   </body>
 </html>
-

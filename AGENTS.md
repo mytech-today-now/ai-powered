@@ -1,5 +1,22 @@
 # Repository Guide
 
+# Codex Working Instructions
+
+## Command Execution
+
+- Act as my implementation agent.
+- When a task requires shell, PowerShell, Git, npm, Python, Docker, testing, or other commands, execute those commands yourself using the available integrated terminal or Codex tools.
+- Do not ask me to copy and paste commands into a terminal.
+- Do not merely provide commands for me to run.
+- Keep the command, output, diagnosis, and result in this Codex chat.
+- Before running a command, briefly state its purpose.
+- After running it, inspect the output and continue working.
+- If a command fails, diagnose the failure, correct the command or code, and retry.
+- Do not claim that a command succeeded unless you actually executed it and verified the result.
+- Run relevant tests, builds, linters, and validation commands after making changes.
+- Ask for confirmation only before destructive actions, credential changes, external communication, or actions blocked by permissions.
+- At the end, summarize commands executed, files changed, tests performed, and any remaining issues.
+
 ## Working Rules
 
 - Treat `C:\GitHub\ai-powered` as the source of truth.

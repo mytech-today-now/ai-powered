@@ -72,7 +72,7 @@
     const _detected = window.__AI_PROXY_URL__ || (_isLocal ? null : window.location.origin);
     if (_detected) proxyUrlInput.value = _detected;
   }
-  const proxyProviderSelect = $("proxy-provider-select");
+
   const providerSelect = $("provider-select");
   const apiKeyInput = $("api-key-input");
 
@@ -592,11 +592,6 @@
   }
 
   /** @see populateProviderSelect */
-  function refreshProviderDropdown(modality) {
-    populateProviderSelect(proxyProviderSelect, modality);
-  }
-
-  /** @see populateProviderSelect */
   function refreshVideoProviderDropdown() {
     populateProviderSelect(videoProviderSelect, "video");
   }
@@ -742,9 +737,7 @@
       const value = values[option.name];
       if (value === undefined || value === "") continue;
       if (option.values && !option.values.some((allowed) => allowed === value)) {
-        throw new Error(
-          `${option.name} must be one of: ${option.values.join(", ")}`,
-        );
+        throw new Error(`${option.name} must be one of: ${option.values.join(", ")}`);
       }
       if (option.min !== undefined && value < option.min) {
         throw new Error(`${option.name} must be at least ${option.min}`);
@@ -1284,9 +1277,7 @@
   /* ── Proxy fetch helpers ─────────────────────────────────── */
   async function proxyPost(endpoint, body) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-    const provider = proxyProviderSelect.value || undefined;
     const payload = { ...body };
-    if (provider && !payload.provider) payload.provider = provider;
 
     let resp;
     try {
@@ -1427,9 +1418,9 @@
    * @param {File} file - The File object from an <input type="file"> element.
    * @returns {Promise<string>} The fileRef UUID token.
    */
-  async function uploadFile(file) {
+  async function uploadFile(file, providerOverride) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-    const provider = proxyProviderSelect.value || undefined;
+    const provider = providerOverride || tabState.get("text")?.provider || undefined;
     const formData = new FormData();
     formData.append("file", file);
     if (provider) formData.append("provider", provider);
@@ -1512,12 +1503,7 @@
    */
   async function uploadFileRaw(file, providerOverride) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-    const provider =
-      providerOverride ||
-      (videoFileUploadInput
-        ? videoProviderSelect?.value
-        : proxyProviderSelect.value) ||
-      undefined;
+    const provider = providerOverride || undefined;
     const formData = new FormData();
     formData.append("file", file);
     if (provider) formData.append("provider", provider);
@@ -1614,7 +1600,8 @@
         if (onDone) onDone();
         return;
       }
-      const truncatedNotice = files.length < selectedFiles.length ? ` (limited to ${files.length})` : "";
+      const truncatedNotice =
+        files.length < selectedFiles.length ? ` (limited to ${files.length})` : "";
       statusEl.textContent = `Uploading ${files.length} file${files.length > 1 ? "s" : ""}${truncatedNotice}…`;
       let successCount = 0;
       let lastErr = null;
@@ -1623,7 +1610,7 @@
           const uploadReady = await compressImageForUpload(file);
           const ref = await uploadFileRaw(
             uploadReady,
-            inputEl === videoFileUploadInput ? videoProviderSelect?.value : undefined,
+            tabState.get(inputEl === videoFileUploadInput ? "video" : "image")?.provider,
           );
           refsArray.push(ref);
           addThumb(file, ref);
@@ -1661,11 +1648,12 @@
    * @param {string}      modality        - "text" | "image" | "audio" | "video" | "structured"
    * @param {HTMLElement} selectEl        - The <select> to populate.
    * @param {string}      [providerHint]  - Explicit provider id to pass to /models?provider=.
-   *                                        Overrides the global proxyProviderSelect when given.
+   *                                        Overrides the tabState provider when given.
    */
   async function loadModels(modality, selectEl, providerHint) {
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
-    const provider = providerHint !== undefined ? providerHint : proxyProviderSelect.value;
+    const provider =
+      providerHint !== undefined ? providerHint : tabState.get(modality)?.provider || "";
     const acceptsImage = hasImageAttached && providerSupportsInputModality(provider, "image");
     let url = base + "/models?modality=" + modality;
     if (provider) url += "&provider=" + provider;
@@ -1988,7 +1976,7 @@
     try {
       const data = await fetch(base + "/providers").then((r) => r.json());
       allProviders = data; // cache full list (including inactive) for modality filtering
-      refreshProviderDropdown(TAB_MODALITY[activeTab()] ?? "text");
+
       // TASK-13 (Phase 4): Populate all five per-tab provider <select> elements as
       // soon as the provider list is available (REQ-PM-01, S-01, S-02, S-03).
       // initTabSelections() below sets each .value after restoring or defaulting;
@@ -2068,10 +2056,10 @@
   }
 
   /**
-   * Re-populates the provider dropdown and the active tab's model dropdown to
-   * reflect the current `hasImageAttached` state.  Called whenever the user
-   * attaches or removes a reference image so that only models compatible with
-   * the new input set are shown.
+   * Re-populates the active tab's model dropdown to reflect the current
+   * `hasImageAttached` state.  Called whenever the user attaches or removes a
+   * reference image so that only models compatible with the new input set are
+   * shown.
    *
    * Only runs when the app is in proxy mode and providers have been loaded;
    * a no-op otherwise so it is safe to call unconditionally.
@@ -2079,7 +2067,6 @@
   async function retriggerAttachmentDropdowns() {
     if (modeSelect.value !== "proxy" || allProviders.length === 0) return;
     const modality = TAB_MODALITY[activeTab()] ?? "text";
-    refreshProviderDropdown(modality);
     await loadModels(modality, activeModelSelect());
     updateAttachmentNotice();
   }
@@ -2122,14 +2109,6 @@
   proxyUrlInput.addEventListener("input", () => {
     clearTimeout(_proxyUrlTimer);
     _proxyUrlTimer = setTimeout(loadProviders, 600);
-  });
-
-  // Reload models when the global provider selection changes.
-  // Per-tab provider selects wired in TASK-09 supersede this listener for
-  // individual tabs.  While both exist, scope the reload to the active tab
-  // only so no sibling tab is affected (Design D5 — no cross-tab pollution).
-  proxyProviderSelect.addEventListener("change", () => {
-    loadTabModels(TAB_MODALITY[activeTab()] ?? "text");
   });
 
   // ── Per-tab provider change listeners (TASK-09) ──────────────────────────────
@@ -2221,13 +2200,11 @@
     });
     tabPanels.forEach((p) => p.classList.toggle("hidden", p.id !== "panel-" + target));
 
-    // Update provider dropdown to only show providers that support this tab's modality.
-    // Then reload models scoped to the newly activated tab only (Design D5 — no
+    // Reload models scoped to the newly activated tab only (Design D5 — no
     // cross-tab pollution; replaces old loadAllModels() that reloaded every tab).
     // T-22: loadTabModels falls back to an empty placeholder list when no models
     // are compatible (e.g. Audio / Structured tabs with certain providers).
     if (modeSelect.value === "proxy" && allProviders.length > 0) {
-      refreshProviderDropdown(TAB_MODALITY[target] ?? "text");
       loadTabModels(target);
     }
 
@@ -2275,10 +2252,9 @@
   function syncHistoryPanelWarning() {
     const el = historyPanelWarning;
     if (!el) return;
-    const msg =
-      sessionStorageWarningActive
-        ? SESSION_TEMP_WARNING
-        : historyPanelWarningMessage || browserStore.warning || "";
+    const msg = sessionStorageWarningActive
+      ? SESSION_TEMP_WARNING
+      : historyPanelWarningMessage || browserStore.warning || "";
     el.setAttribute("role", "status");
     el.setAttribute("aria-live", "polite");
     if (!msg) {
@@ -2441,7 +2417,9 @@
     }
 
     const drafts = await browserStore.listRecords("text");
-    const firstDraft = drafts.find((record) => record.kind === "session" && record.status === "draft");
+    const firstDraft = drafts.find(
+      (record) => record.kind === "session" && record.status === "draft",
+    );
     if (firstDraft && firstDraft.messages.length > 0) {
       sessionMessages = firstDraft.messages.map((message) => ({ ...message }));
       saveSessionMessages(sessionMessages);
@@ -2503,10 +2481,7 @@
 
   function buildArtifactRecordDraft(modality, prompt, resultText, artifactBlob, extra = {}) {
     const { provider, model } = tabState.get(modality) ?? {};
-    const title =
-      extra.title ||
-      summarizeText(resultText || prompt, 80) ||
-      `${modality} result`;
+    const title = extra.title || summarizeText(resultText || prompt, 80) || `${modality} result`;
     return {
       modality,
       kind: "artifact",
@@ -2551,7 +2526,9 @@
       return await saveArtifactRecord(modality, prompt, resultText, artifactBlob, extra);
     } catch (error) {
       console.error(`[browser-history] Failed to persist ${modality} record:`, error);
-      showHistoryPanelWarning(`Saved output could not be written to browser storage for ${modality}.`);
+      showHistoryPanelWarning(
+        `Saved output could not be written to browser storage for ${modality}.`,
+      );
       return null;
     }
   }
@@ -2690,9 +2667,7 @@
       const empty = document.createElement("p");
       empty.className = "history-empty";
       empty.textContent =
-        modality === "text"
-          ? "No saved text sessions yet."
-          : `No saved ${modality} records yet.`;
+        modality === "text" ? "No saved text sessions yet." : `No saved ${modality} records yet.`;
       body.appendChild(empty);
     } else {
       for (const record of visibleRecords) {
@@ -2779,14 +2754,18 @@
     details.className = "history-transcript hidden";
 
     const text = recordToPlainText(record);
-    const previewUrl = record.artifact || record.preview ? objectUrlRegistry.create(record.preview ?? record.artifact) : "";
+    const previewUrl =
+      record.artifact || record.preview
+        ? objectUrlRegistry.create(record.preview ?? record.artifact)
+        : "";
 
     createReplyToolbar(details, {
       modality: record.modality,
       text,
       dataUrl: null,
       srcUrl: previewUrl || null,
-      mimeType: record.mimeType || (record.modality === "text" ? "text/plain" : "application/octet-stream"),
+      mimeType:
+        record.mimeType || (record.modality === "text" ? "text/plain" : "application/octet-stream"),
       filename: recordDownloadName(record),
     });
 
@@ -3154,7 +3133,7 @@
     try {
       const fullPrompt = buildHistoryPrompt();
       if (modeSelect.value === "proxy") {
-        // TASK-12: Read provider + model from tabState instead of proxyProviderSelect (REQ-PM-01, S-09).
+        // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
         const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
         const payload = { prompt: fullPrompt, stream: true };
         if (tabProvider) payload.provider = tabProvider;
@@ -3641,7 +3620,9 @@
 
       const duration = resolveDuration(entry);
       const roundedDuration =
-        typeof duration === "number" && !Number.isInteger(duration) ? Math.round(duration) : duration;
+        typeof duration === "number" && !Number.isInteger(duration)
+          ? Math.round(duration)
+          : duration;
       const durationCoercion =
         typeof duration === "number" && !Number.isInteger(duration)
           ? { raw: duration, rounded: roundedDuration }
@@ -3890,9 +3871,7 @@
       "Unresolved Markdown reference key" +
       (unresolved.length === 1 ? "" : "s") +
       ": " +
-      unresolved
-        .map(({ name, missing }) => `${name}: ${missing.join(", ")}`)
-      .join("; ")
+      unresolved.map(({ name, missing }) => `${name}: ${missing.join(", ")}`).join("; ")
     );
   }
 
@@ -4098,8 +4077,8 @@
 
     // Determine the provider currently selected in the video-tab UI
     const selectedProvider =
+      tabState.get("video")?.provider ||
       (videoProviderSelect ? videoProviderSelect.value : null) ||
-      (proxyProviderSelect ? proxyProviderSelect.value : null) ||
       "openai";
 
     let hasBlockingError = false;
