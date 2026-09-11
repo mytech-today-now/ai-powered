@@ -110,6 +110,25 @@
           <span class="version-badge" id="lib-version">UMD</span>
           <button class="style-badge" id="style-badge" type="button">Style</button>
           <button
+            id="btn-open-config"
+            class="icon-button"
+            type="button"
+            title="Open config page"
+            aria-label="Open config page"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="2.6"></circle>
+              <path d="M12 4.5v2.1"></path>
+              <path d="M12 17.4v2.1"></path>
+              <path d="M4.5 12h2.1"></path>
+              <path d="M17.4 12h2.1"></path>
+              <path d="M6.1 6.1l1.5 1.5"></path>
+              <path d="M16.4 16.4l1.5 1.5"></path>
+              <path d="M17.9 6.1l-1.5 1.5"></path>
+              <path d="M7.6 16.4l-1.5 1.5"></path>
+            </svg>
+          </button>
+          <button
             id="btn-open-info"
             class="icon-button"
             type="button"
@@ -151,36 +170,38 @@
 
         <!-- Direct config (shown only when Direct is selected) -->
         <div id="direct-config" class="connection-config hidden">
-          <div class="direct-row">
-            <label for="provider-select">Provider:</label>
-            <select id="provider-select">
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="venice">Venice</option>
-              <option value="xai">xAI</option>
-            </select>
-            <label for="api-key-input">API Key:</label>
-            <input
-              id="api-key-input"
-              type="password"
-              placeholder="sk-…"
-              spellcheck="false"
-              autocomplete="off"
-              style="width: 220px"
-            />
-            <label for="direct-budget">Budget (USD):</label>
-            <input
-              id="direct-budget"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="∞ (no limit)"
-              style="width: 8rem"
-            />
+          <div class="hint">
+            Direct mode settings live on the Config page. Open it from the header to change your
+            provider, API key, or budget.
           </div>
-          <div class="security-warning" role="alert">
-            ⚠ WARNING: Direct mode exposes your API key in browser DevTools and network traffic.
-            Never use a production key here. Use proxy mode in production environments.
+          <div hidden aria-hidden="true">
+            <div class="direct-row">
+              <label for="provider-select">Provider:</label>
+              <select id="provider-select">
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="venice">Venice</option>
+                <option value="xai">xAI</option>
+              </select>
+              <label for="api-key-input">API Key:</label>
+              <input
+                id="api-key-input"
+                type="password"
+                placeholder="sk-…"
+                spellcheck="false"
+                autocomplete="off"
+                style="width: 220px"
+              />
+              <label for="direct-budget">Budget (USD):</label>
+              <input
+                id="direct-budget"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="∞ (no limit)"
+                style="width: 8rem"
+              />
+            </div>
           </div>
         </div>
       </section>

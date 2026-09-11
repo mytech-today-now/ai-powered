@@ -75,6 +75,58 @@
 
   const providerSelect = $("provider-select");
   const apiKeyInput = $("api-key-input");
+  const directConfigStorageKeys = {
+    provider: "ai-powered:direct:provider",
+    apiKey: "ai-powered:direct:api-key",
+    budget: "ai-powered:direct:budget-usd",
+  };
+
+  function syncDirectConfigFromStorage() {
+    const storedProvider = localStorage.getItem(directConfigStorageKeys.provider);
+    const storedApiKey = localStorage.getItem(directConfigStorageKeys.apiKey);
+    const storedBudget = localStorage.getItem(directConfigStorageKeys.budget);
+
+    if (providerSelect && storedProvider !== null) {
+      providerSelect.value = storedProvider || providerSelect.value;
+    }
+    if (apiKeyInput && storedApiKey !== null) {
+      apiKeyInput.value = storedApiKey;
+    }
+    if (directBudgetInput && storedBudget !== null) {
+      directBudgetInput.value = storedBudget;
+    }
+  }
+
+  function syncDirectConfigToStorage() {
+    if (providerSelect) {
+      localStorage.setItem(directConfigStorageKeys.provider, providerSelect.value || "");
+    }
+    if (apiKeyInput) {
+      localStorage.setItem(directConfigStorageKeys.apiKey, apiKeyInput.value.trim());
+    }
+    if (directBudgetInput) {
+      localStorage.setItem(directConfigStorageKeys.budget, directBudgetInput.value.trim());
+    }
+  }
+
+  syncDirectConfigFromStorage();
+
+  if (providerSelect) {
+    providerSelect.addEventListener("change", syncDirectConfigToStorage);
+  }
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener("input", syncDirectConfigToStorage);
+  }
+  if (directBudgetInput) {
+    directBudgetInput.addEventListener("input", syncDirectConfigToStorage);
+  }
+
+  window.addEventListener("storage", (event) => {
+    if (!event.key) return;
+    if (Object.values(directConfigStorageKeys).includes(event.key)) {
+      syncDirectConfigFromStorage();
+    }
+  });
 
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
@@ -198,6 +250,13 @@
     styleBadgeEl.addEventListener("click", () => {
       const nextStyle = styleController.rotate();
       syncStyleBadge(nextStyle);
+    });
+  }
+
+  const btnOpenConfig = $("btn-open-config");
+  if (btnOpenConfig) {
+    btnOpenConfig.addEventListener("click", () => {
+      window.open("config.html", "_blank", "noopener,noreferrer");
     });
   }
 
@@ -888,7 +947,9 @@
     }
     const apiKey = apiKeyInput.value.trim();
     if (!apiKey) throw new Error("API key is required for Direct mode.");
-    const budgetUsd = parseFloat(directBudgetInput?.value) || Infinity;
+    const budgetValue = directBudgetInput?.value ?? "";
+    const parsedBudget = Number.parseFloat(budgetValue);
+    const budgetUsd = Number.isFinite(parsedBudget) ? parsedBudget : Infinity;
     return createWebClient({
       mode: "direct",
       provider: providerSelect.value,
