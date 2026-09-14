@@ -27,16 +27,16 @@ console.log(result.content);
 
 **Key features at a glance:**
 
-| Feature           | Detail                                                                                                   |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
-| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                      |
-| **Providers**     | OpenAI · Anthropic · xAI (Grok) · Venice.ai · Luma AI · Runway · Pika · VibeVoice · Custom/Ollama · Mock |
-| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                         |
-| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings      |
-| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                                  |
-| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners            |
-| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents                |
-| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                           |
+| Feature           | Detail                                                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                                   |
+| **Providers**     | OpenAI · Anthropic · xAI (Grok) · OpenRouter · Venice.ai · Luma AI · Runway · Pika · VibeVoice · Custom/Ollama · Mock |
+| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                                      |
+| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings                   |
+| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                                               |
+| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners                         |
+| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents                             |
+| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                                        |
 
 ---
 
@@ -94,20 +94,21 @@ npm run build
 
 Config is loaded from multiple layers and merged in priority order (lowest → highest):
 
-| Layer            | Path                           | Notes                                     |
-| ---------------- | ------------------------------ | ----------------------------------------- |
-| Schema defaults  | —                              | Zod defaults apply first                  |
-| Global config    | `~/.ai-powered/config.json`    | Shared across all projects                |
-| Local config     | `./.ai-powered/config.json`    | Per-project overrides                     |
-| Named profile    | `config.profiles[name]`        | Selected by `profile` key or `AI_PROFILE` |
-| Environment vars | `AI_*`, `OPENAI_API_KEY`, etc. | See table below                           |
-| CLI flags        | `--provider`, `--model`, etc.  | Highest precedence                        |
+| Layer            | Path                                                 | Notes                                     |
+| ---------------- | ---------------------------------------------------- | ----------------------------------------- |
+| Schema defaults  | —                                                    | Zod defaults apply first                  |
+| Global config    | `~/.ai-powered/config.json`                          | Shared across all projects                |
+| Local config     | `./.ai-powered/config.json`                          | Per-project overrides                     |
+| Named profile    | `config.profiles[name]`                              | Selected by `profile` key or `AI_PROFILE` |
+| Environment vars | `AI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, etc. | See table below                           |
+| CLI flags        | `--provider`, `--model`, etc.                        | Highest precedence                        |
 
 ### Environment variables
 
 | Variable                | Config key            | Example                 |
 | ----------------------- | --------------------- | ----------------------- |
 | `OPENAI_API_KEY`        | `apiKey` (OpenAI)     | `sk-…`                  |
+| `OPENROUTER_API_KEY`    | `apiKey` (OpenRouter) | `sk-or-v1-…`            |
 | `ANTHROPIC_API_KEY`     | `apiKey` (Anthropic)  | `sk-ant-…`              |
 | `XAI_API_KEY`           | `apiKey` (xAI)        | `xai-…`                 |
 | `VENICE_API_KEY`        | `apiKey` (Venice)     | `ven-…`                 |
@@ -122,6 +123,8 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 | `AI_BUDGET_SESSION`     | `budgetSession`       | `1.00`                  |
 | `AI_FALLBACK_PROVIDERS` | `fallbackProviders`   | `anthropic,mock`        |
 | `LOG_LEVEL`             | `debug`               | `debug`                 |
+
+`AIPOWERED_REDIS_URL` enables Redis-backed idempotency for single-shot work. Leave it unset to keep idempotency disabled. If you set it in production, make sure `ioredis` is installed and loadable; otherwise idempotent calls fail with an explicit `PROVIDER_ERROR` instead of silently downgrading to per-process memory.
 
 ### Example config file
 
@@ -162,6 +165,17 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 ```
 
 Supported `customProviderType` values: `"openai-compatible"` · `"ollama"` · `"other"`
+
+### OpenRouter
+
+Set `OPENROUTER_API_KEY` in the environment or select OpenRouter in `ai-powered --init`. Use `model: "openrouter/auto"` to let OpenRouter route requests automatically.
+
+```json
+{
+  "provider": "openrouter",
+  "model": "openrouter/auto"
+}
+```
 
 ### Pika video generation
 
@@ -232,19 +246,19 @@ All examples use `--mock` to avoid real API calls. Remove `--mock` and set your 
 
 ### Global flags
 
-| Flag                | Description                                                                                              |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `venice`, `lumaai`, `runway`, `pika`, `custom`, `mock`) |
-| `--model <id>`      | Override model identifier                                                                                |
-| `--profile <name>`  | Use named profile from config                                                                            |
-| `--mock`            | Force mock provider                                                                                      |
-| `--dry-run`         | Estimate cost; skip API call                                                                             |
-| `--quiet`           | Print raw content only (no decorators)                                                                   |
-| `--json`            | Print JSON envelope                                                                                      |
-| `--session <id>`    | Attach request to a named conversation session                                                           |
-| `--log <path>`      | Write structured JSONL log to file                                                                       |
-| `--debug`           | Enable verbose debug logging                                                                             |
-| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                                                  |
+| Flag                | Description                                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>` | Override provider (`openai`, `anthropic`, `xai`, `openrouter`, `venice`, `lumaai`, `runway`, `pika`, `vibevoice`, `custom`, `mock`) |
+| `--model <id>`      | Override model identifier                                                                                                           |
+| `--profile <name>`  | Use named profile from config                                                                                                       |
+| `--mock`            | Force mock provider                                                                                                                 |
+| `--dry-run`         | Estimate cost; skip API call                                                                                                        |
+| `--quiet`           | Print raw content only (no decorators)                                                                                              |
+| `--json`            | Print JSON envelope                                                                                                                 |
+| `--session <id>`    | Attach request to a named conversation session                                                                                      |
+| `--log <path>`      | Write structured JSONL log to file                                                                                                  |
+| `--debug`           | Enable verbose debug logging                                                                                                        |
+| `--no-color`        | Disable ANSI colors (also `NO_COLOR=1`)                                                                                             |
 
 ### `text` — Generate text
 
@@ -406,7 +420,7 @@ ai-powered wizard               # guided provider/model/API key setup with live 
 
 ## File Input
 
-The proxy server and web demo support batch file input on the **Video tab**. Drop (or click-to-browse) a `.json`, `.jsonl`, or `.md` shot-list file onto the batch drop zone. The app parses it into shots, shows a pre-flight preview, and then sends every shot to `POST /batch` sequentially. Results appear as live shot cards with play buttons, individual download links, a downloadable HTML results page, and a ZIP export of all video files.
+The proxy server and the web demo in proxy mode support batch file input on the **Video tab**. Drop (or click-to-browse) a `.json`, `.jsonl`, or `.md` shot-list file onto the batch drop zone. The app parses it into shots, shows a pre-flight preview, and then sends every shot to the proxy's `POST /batch` endpoint sequentially. Results appear as live shot cards with play buttons, individual download links, a downloadable HTML results page, and a ZIP export of all video files.
 
 ### JSONL format (one shot per line)
 
@@ -440,14 +454,7 @@ filmbuff-project object form — all three are accepted:
 {"name":"Shot 3","prompt":"Drone flyover","modality":"video","duration":{"seconds":15,"formatted":"0:15"}}
 ```
 
-After all shots have been generated the **⬡ Stitch** button combines every clip into a single combined MP4 using ffmpeg.wasm — no server required. The stitch operation runs entirely in the browser and works correctly under any origin, including ngrok tunnels.
-
-**Audio / TTS**
-
-```jsonl
-{"name":"Intro VO","prompt":"Welcome to the future of AI-powered video production."}
-{"name":"Outro VO","prompt":"Thank you for watching. Subscribe for more.","model":"tts-1-hd"}
-```
+After all shots have been generated, the **⬡ Stitch** button sends the successful video clips to the proxy's `/stitch` endpoint, where ffmpeg concatenates them into a single combined MP4 for preview and download.
 
 **Structured**
 
@@ -952,7 +959,7 @@ All endpoints accept per-request overrides (`provider`, `model`, `temperature`, 
 | openai    |  ✅  |  ✅   |  ✅   |   —   |      ✅      |
 | anthropic |  ✅  |   —   |   —   |   —   |      ✅      |
 | xai       |  ✅  |   —   |   —   |  ✅   |      ✅      |
-| venice    |  ✅  |  ✅   |   —   |   —   |      —       |
+| venice    |  ✅  |  ✅   |   —   |  ✅   |      ✅      |
 | lumaai    |  —   |   —   |   —   |  ✅   |      —       |
 | runway    |  —   |   —   |   —   |  ✅   |      —       |
 | pika      |  -   |   -   |   -   |  ✅   | image, video |
@@ -1015,19 +1022,21 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 | **proxy**  | Production      | Key stays on your server — browser never sees it            |
 | **direct** | Dev / demo only | Key visible in DevTools — non-suppressible DOM banner shown |
 
-### Browser client features (v0.5.5)
+Open the built-in Info page at `info.html#settings-configuration` from the demo header to manage direct-mode credentials. The Settings / Configuration tab now includes OpenRouter in the provider selector, a dedicated Pika API key field for video workflows, and local tab-synced storage for those demo credentials. The Overview tab renders the repository README live from the remote `main` branch.
+
+### Browser client features (v0.5.6)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
-| Feature                  | Detail                                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------ |
-| **Circuit breaker**      | Opens after N consecutive failures; probes after a configurable reset window (App-008)     |
-| **Automatic retry**      | Exponential back-off with jitter on transient errors (App-008)                             |
-| **Budget enforcement**   | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown  |
-| **Typed `ProxyError`**   | Structured error object with `code`, `message`, `severity`; severity-aware UI banners      |
-| **Conversation history** | `localStorage`-backed session history; soft-reset keeps context while clearing the display |
-| **Archive toolbar**      | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference       |
-| **Provider dropdown**    | Populated dynamically from `GET /models`; per-request provider and model overrides         |
+| Feature                  | Detail                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| **Circuit breaker**      | Opens after N consecutive failures; probes after a configurable reset window (App-008)    |
+| **Automatic retry**      | Exponential back-off with jitter on transient errors (App-008)                            |
+| **Budget enforcement**   | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown |
+| **Typed `ProxyError`**   | Structured error object with `code`, `message`, `severity`; severity-aware UI banners     |
+| **Conversation history** | Session history with soft reset; clearing the display does not drop context               |
+| **Archive toolbar**      | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference      |
+| **Provider dropdown**    | Populated dynamically from `GET /providers`; per-request provider and model overrides     |
 
 ### Proxy mode (recommended)
 

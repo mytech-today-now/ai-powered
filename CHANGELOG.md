@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.6] – 2026-09-14
+
+### Added
+
+- OpenRouter provider support across CLI setup, browser direct mode, server routing, and model metadata plumbing.
+- OpenRouter now appears in direct provider selection and initialization help.
+- The web demo Info page now renders the repository README live from the remote `main` branch, and the Settings / Configuration tab now includes OpenRouter in the provider selector plus a dedicated Pika API key field for video workflows.
+
+### Changed
+
+- The README and package metadata now expose OpenRouter alongside the existing providers.
+
 ## [0.5.5] – 2026-09-10
 
 ### Added
