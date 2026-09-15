@@ -140,15 +140,15 @@ export interface ModelDescriptor {
   id: string;
   name: string;
   capabilities: Modality[];
+  /**
+   * Input modalities this model can consume in addition to plain text.
+   * `"text"` is implicit and therefore excluded from this list.
+   * When absent or undefined, the model accepts plain text only.
+   */
+  inputCapabilities?: InputModality[];
   costPerUnit?: number | null;
   [key: string]: unknown;
   contextWindow?: number;
-  /**
-   * Non-text input modalities this model can receive as structured input.
-   * `"text"` is implicit and therefore excluded from this list.
-   * When absent or undefined the model accepts plain text only.
-   */
-  inputCapabilities?: InputModality[];
   /** Whether this model is deprecated by the provider. */
   deprecated?: boolean;
   /** Aspect ratios accepted by this model in "W:H" notation (e.g. "16:9"). */
