@@ -20,6 +20,7 @@ import type { ProviderName } from "../../index.js";
  *   dream-shaper* | fluently* | flux* → "venice"  (Venice image models)
  *   ray-* | photon-*     → "lumaai"
  *   pika/*               → "pika"
+ *   namespaced slugs     → "openrouter"
  *   (no match)           → undefined  (fall through to configured default)
  *
  * This function is intentionally side-effect-free: it performs only regex
@@ -33,5 +34,6 @@ export function inferProviderFromModel(model: string): ProviderName | undefined 
   if (/^dream-shaper|^fluently|^flux/.test(model)) return "venice";
   if (/^ray-|^photon-/.test(model)) return "lumaai";
   if (/^pika\//.test(model)) return "pika";
+  if (model.includes("/")) return "openrouter";
   return undefined;
 }

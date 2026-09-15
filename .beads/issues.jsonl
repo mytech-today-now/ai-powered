@@ -3802,3 +3802,11 @@
 {"id":"bd-04qf","title":"[web-demo] /info.html must not be caught by the /info API proxy","status":"open","priority":1,"issue_type":"task","description":"The Vite dev server currently proxies the /info prefix, which also matches /info.html and forwards the browser to the API server. That produces a 404 Cannot GET /info.html instead of loading the standalone info page. Tighten the proxy match so the web demo page remains reachable on the public ngrok URL.","labels":[],"dependencies":[],"claimed_by":"","close_reason":"","created_at":"2026-09-10T17:30:23Z","updated_at":"2026-09-10T17:30:23Z"}
 {"id":"bd-04qf","updated_at":"2026-09-10T17:30:35Z","status":"in-progress","claimed_by":"kyle_"}
 {"id":"bd-04qf","status":"closed","close_reason":"done","updated_at":"2026-09-10T17:31:47Z"}
+{"id":"bd-uuex","updated_at":"2026-09-11T21:07:09Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-uuex","status":"closed","close_reason":"done","updated_at":"2026-09-11T21:11:00Z"}
+{"id":"bd-uisa","updated_at":"2026-09-12T15:07:06Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-uisa","status":"closed","close_reason":"done","updated_at":"2026-09-12T15:08:03Z"}
+{"id":"bd-romr","updated_at":"2026-09-14T12:08:46Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-6ite","updated_at":"2026-09-14T12:09:04Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-vike","updated_at":"2026-09-15T11:22:33Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-vike","status":"closed","close_reason":"\\","updated_at":"2026-09-15T11:27:16Z"}

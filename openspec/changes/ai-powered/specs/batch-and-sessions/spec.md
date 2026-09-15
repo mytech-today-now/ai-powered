@@ -8,12 +8,21 @@ written to a JSONL output file where each line includes: original prompt, respon
 cost, and any error. `--output` SHALL be required for batch mode. Progress SHALL be shown
 via a `cli-progress` bar unless `--quiet` is set. Concurrency SHALL be controlled by
 `--concurrency <n>` (default 3). Per-row errors SHALL be recorded in the output without
-aborting the entire batch.
+aborting the entire batch. Input files that cannot be read or that yield no valid JSONL rows
+SHALL fail with a non-zero exit code and a clear stderr message instead of producing an empty
+batch result.
 
 #### Scenario: Batch processes all rows
 - **WHEN** `ai-powered batch text --input prompts.jsonl --output results.jsonl --mock` is run
   with a 5-row input file
 - **THEN** `results.jsonl` contains exactly 5 result rows, one per input row
+
+#### Scenario: Malformed batch input fails visibly
+- **WHEN** `ai-powered batch text --input broken.jsonl --output results.jsonl --mock` is run and
+  `broken.jsonl` contains only malformed JSONL content
+- **THEN** the process exits with code `1`
+- **AND** stderr contains a message that no valid batch items were read
+- **AND** `results.jsonl` is not created
 
 #### Scenario: Row error captured without abort
 - **WHEN** one row's prompt causes a provider error during batch processing
@@ -63,4 +72,5 @@ This enables programmatic multi-turn usage from TypeScript/JavaScript code witho
 #### Scenario: ConversationSession clear
 - **WHEN** `session.clear()` is called after messages have been appended
 - **THEN** `session.getHistory()` returns an empty array
+
 

@@ -74,6 +74,32 @@ describe("Venice live model lists", () => {
       }),
     );
   });
+
+  it("keeps statically known Venice image models selectable when the live payload omits type", async () => {
+    const fetchMock = vi.fn(async (_url: string) =>
+      jsonResponse({
+        data: [{ id: "qwen-2.5-vl" }, { id: "llama-3.3-70b" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new VeniceProvider(
+      AiConfigSchema.parse({ provider: "venice", apiKey: "ven-test-key" }),
+    );
+
+    const allModels = await provider.listModels();
+    expect(allModels.find((m) => m.id === "qwen-2.5-vl")?.inputCapabilities).toEqual(["image"]);
+
+    const imageModels = await provider.listModels(undefined, "image" as never);
+    expect(imageModels.map((m) => m.id)).toEqual(["qwen-2.5-vl"]);
+    expect(imageModels[0]?.inputCapabilities).toEqual(["image"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.venice.ai/api/v1/models",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer ven-test-key" },
+      }),
+    );
+  });
 });
 
 describe("Custom provider live model lists", () => {
@@ -82,7 +108,7 @@ describe("Custom provider live model lists", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps openai-compatible discovery working without image capability metadata", async () => {
+  it("returns image-capable openai-compatible models when accepts=image is requested", async () => {
     mockOpenAiModelsList.mockResolvedValue({
       data: [
         { id: "llava-1", object: "model" },
@@ -100,15 +126,43 @@ describe("Custom provider live model lists", () => {
 
     const allModels = await provider.listModels();
     expect(allModels.map((m) => m.id)).toEqual(["llava-1", "mistral-7b"]);
+    expect(allModels.find((m) => m.id === "llava-1")?.inputCapabilities).toEqual(["image"]);
 
     const imageModels = await provider.listModels(undefined, "image" as never);
-    expect(imageModels).toHaveLength(0);
+    expect(imageModels.map((m) => m.id)).toEqual(["llava-1"]);
+    expect(imageModels[0]?.inputCapabilities).toEqual(["image"]);
+  });
+
+  it("preserves explicit inputModalities on openai-compatible live models", async () => {
+    mockOpenAiModelsList.mockResolvedValue({
+      data: [
+        { id: "vision-prototype", object: "model", inputModalities: ["image"] },
+        { id: "text-only", object: "model" },
+      ],
+    });
+
+    const provider = new CustomProvider(
+      AiConfigSchema.parse({
+        provider: "custom",
+        baseUrl: "https://example.com/v1",
+        apiKey: "custom-test-key",
+      }),
+    );
+
+    const allModels = await provider.listModels();
+    expect(allModels.find((m) => m.id === "vision-prototype")?.inputCapabilities).toEqual([
+      "image",
+    ]);
+
+    const imageModels = await provider.listModels(undefined, "image" as never);
+    expect(imageModels.map((m) => m.id)).toEqual(["vision-prototype"]);
+    expect(imageModels[0]?.inputCapabilities).toEqual(["image"]);
   });
 
   it("keeps ollama discovery working without image capability metadata", async () => {
     const fetchMock = vi.fn(async (_url: string) =>
       jsonResponse({
-        models: [{ name: "llava" }, { name: "mistral" }],
+        models: [{ name: "mistral" }, { name: "mixtral" }],
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -121,7 +175,7 @@ describe("Custom provider live model lists", () => {
     );
 
     const allModels = await provider.listModels();
-    expect(allModels.map((m) => m.id)).toEqual(["llava", "mistral"]);
+    expect(allModels.map((m) => m.id)).toEqual(["mistral", "mixtral"]);
 
     const imageModels = await provider.listModels(undefined, "image" as never);
     expect(imageModels).toHaveLength(0);

@@ -76,6 +76,53 @@ function authHeader(apiKey: string | undefined): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+/** Best-effort image-input inference for live discovery responses. */
+function inferImageInputCapabilities(
+  model: ModelDescriptor,
+  providerType: "openai-compatible" | "ollama",
+): InputModality[] | undefined {
+  const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const declared = (value: unknown): InputModality[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+    const capabilities = value.filter(
+      (entry): entry is InputModality =>
+        entry === "image" || entry === "audio" || entry === "video" || entry === "document",
+    );
+    return capabilities.length > 0 ? capabilities : undefined;
+  };
+
+  const explicit =
+    declared(model.inputCapabilities) ??
+    declared(model["inputModalities"]) ??
+    declared(model["modalities"]);
+  if (explicit) return explicit;
+
+  const type = typeof model["type"] === "string" ? model["type"].toLowerCase() : "";
+  if (type === "image") return ["image"];
+
+  const id = normalize(model.id);
+  if (providerType === "openai-compatible" || providerType === "ollama") {
+    if (
+      id === "gpt4o" ||
+      id === "gpt4omini" ||
+      id === "gpt4turbo" ||
+      id === "gptimage1" ||
+      id === "grokvisionbeta" ||
+      id === "grokimaginevideo" ||
+      id.includes("llava") ||
+      id.includes("vision") ||
+      (id.includes("qwen") && id.includes("vl")) ||
+      id.includes("gemma3") ||
+      id.includes("phi4") ||
+      id.includes("minicpm")
+    ) {
+      return ["image"];
+    }
+  }
+
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // CustomProvider
 // ---------------------------------------------------------------------------
@@ -321,6 +368,12 @@ export class CustomProvider extends BaseProvider {
           name: m.id,
           capabilities: ["text", "structured"] as Modality[],
         }));
+        for (const descriptor of descriptors) {
+          const inferred = inferImageInputCapabilities(descriptor, "openai-compatible");
+          if (inferred && descriptor.inputCapabilities === undefined) {
+            descriptor.inputCapabilities = inferred;
+          }
+        }
         let filtered = modality
           ? descriptors.filter((d) => d.capabilities.includes(modality))
           : descriptors;
@@ -363,6 +416,12 @@ export class CustomProvider extends BaseProvider {
         name: m.name,
         capabilities: ["text", "structured"] as Modality[],
       }));
+      for (const descriptor of descriptors) {
+        const inferred = inferImageInputCapabilities(descriptor, "ollama");
+        if (inferred && descriptor.inputCapabilities === undefined) {
+          descriptor.inputCapabilities = inferred;
+        }
+      }
       let filtered = modality
         ? descriptors.filter((d) => d.capabilities.includes(modality))
         : descriptors;

@@ -512,18 +512,16 @@ export class AiClient {
   }
 
   /**
-   * Calls every plugin's `onError` hook.
-   * Every failure is normalized to `AiPoweredError` before dispatch so plain
-   * runtime errors are still observable by plugins. Original thrown values are
-   * preserved on `cause` for telemetry-style hooks. Plugin errors thrown inside
-   * `onError` are silently ignored to prevent infinite error loops.
+   * Calls every plugin's `onError` hook with a normalized `AiPoweredError`.
+   * Plain runtime errors are converted at the catch site so plugins always see
+   * the same envelope. Plugin errors thrown inside `onError` are silently
+   * ignored to prevent infinite error loops.
    */
-  private async runOnError(error: unknown): Promise<void> {
-    const normalized = this._normalizeErrorForPlugins(error);
+  private async runOnError(error: AiPoweredError): Promise<void> {
     for (const plugin of this._plugins) {
       if (!plugin.onError) continue;
       try {
-        await plugin.onError(normalized);
+        await plugin.onError(error);
       } catch {
         /* ignore */
       }
@@ -768,7 +766,7 @@ export class AiClient {
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
+      await this.runOnError(this._normalizeErrorForPlugins(err));
       throw error;
     }
     // Post-call guard validates actual reported cost (estimate may differ).
@@ -801,7 +799,7 @@ export class AiClient {
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
+      await this.runOnError(this._normalizeErrorForPlugins(err));
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -835,7 +833,7 @@ export class AiClient {
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
+      await this.runOnError(this._normalizeErrorForPlugins(err));
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -868,7 +866,7 @@ export class AiClient {
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
+      await this.runOnError(this._normalizeErrorForPlugins(err));
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -899,7 +897,7 @@ export class AiClient {
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
+      await this.runOnError(this._normalizeErrorForPlugins(err));
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);
@@ -952,7 +950,7 @@ export class AiClient {
       } catch (err) {
         finishReason = null;
         const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-        await client.runOnError(err);
+        await client.runOnError(client._normalizeErrorForPlugins(err));
         throw error;
       }
     })();
@@ -996,7 +994,7 @@ export class AiClient {
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
-      await this.runOnError(err);
+      await this.runOnError(this._normalizeErrorForPlugins(err));
       throw error;
     }
     this.checkBudget(result.cost.totalUsd);

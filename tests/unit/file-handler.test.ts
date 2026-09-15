@@ -14,10 +14,14 @@ import {
   FILE_REF_TTL_MS,
   _clearFileRefStore,
   _getFileRefStoreSize,
+  deleteFileRef,
+  getFileRefCacheStats,
+  lookupFileRef,
+  normalizeStoredFilename,
+  readFileRefBuffer,
+  storeFileRef,
   validateMimeType,
   validateFileSize,
-  storeFileRef,
-  lookupFileRef,
 } from "../../src/ai-powered/server/file-handler.js";
 import { ProviderCapabilityError } from "../../src/ai-powered/types.js";
 import { vi } from "vitest";
@@ -31,6 +35,7 @@ const PDF_MIME = "application/pdf";
 const CSV_MIME = "text/csv";
 const HTML_MIME = "text/html";
 const TXT_MIME = "text/plain";
+const VIDEO_MIME = "video/mp4";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 const B64 = "dGVzdA=="; // base64("test")
@@ -41,6 +46,7 @@ const pdfFile = { filename: "doc.pdf", mimeType: PDF_MIME };
 const csvFile = { filename: "data.csv", mimeType: CSV_MIME };
 const htmlFile = { filename: "page.html", mimeType: HTML_MIME };
 const txtFile = { filename: "notes.txt", mimeType: TXT_MIME };
+const videoFile = { filename: "clip.mp4", mimeType: VIDEO_MIME };
 const docxFile = { filename: "report.docx", mimeType: DOCX_MIME };
 
 // ---------------------------------------------------------------------------
@@ -204,6 +210,31 @@ describe("buildFileContentBlock — Luma AI", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildFileContentBlock — Pika
+// ---------------------------------------------------------------------------
+
+describe("buildFileContentBlock — Pika", () => {
+  it("U-PI-1: image MIME → image_url block", () => {
+    const block = buildFileContentBlock("pika", "", pngFile, B64);
+    expect(block).toEqual({
+      type: "image_url",
+      image_url: { url: `data:${PNG_MIME};base64,${B64}` },
+    });
+  });
+
+  it("U-PI-2: video MIME → video_url block", () => {
+    const block = buildFileContentBlock("pika", "", videoFile, B64);
+    expect(block).toEqual({
+      type: "video_url",
+      video_url: { url: `data:${VIDEO_MIME};base64,${B64}` },
+    });
+  });
+
+  it("U-PI-3: PDF MIME → throws ProviderCapabilityError", () => {
+    expect(() => buildFileContentBlock("pika", "", pdfFile, B64)).toThrow(ProviderCapabilityError);
+  });
+});
+
 // buildFileContentBlock — Unknown provider
 // ---------------------------------------------------------------------------
 
@@ -445,5 +476,83 @@ describe("storeFileRef / lookupFileRef TTL behaviour", () => {
     expect(_getFileRefStoreSize()).toBe(1);
     expect(lookupFileRef(staleToken)).toBeUndefined();
     expect(lookupFileRef(freshToken)).toEqual(freshEntry);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// file ref cache + path safety
+// ---------------------------------------------------------------------------
+
+describe("file ref cache + path safety", () => {
+  beforeEach(() => {
+    _clearFileRefStore();
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    _clearFileRefStore();
+  });
+
+  it("normalizes stored filenames to a basename without traversal segments", () => {
+    const unsafeEntry = {
+      filename: "..\\nested/../../safe-report.pdf",
+      mimeType: PDF_MIME,
+      sizeBytes: 1024,
+      base64Content: B64,
+      provider: "openai",
+    };
+
+    const token = storeFileRef(unsafeEntry);
+    const result = lookupFileRef(token);
+    const block = buildFileContentBlock("openai", "", unsafeEntry, B64);
+
+    expect(result?.filename).toBe("safe-report.pdf");
+    expect(normalizeStoredFilename(unsafeEntry.filename)).toBe("safe-report.pdf");
+    expect(block).toEqual({
+      type: "file",
+      file: { filename: "safe-report.pdf", file_data: `data:${PDF_MIME};base64,${B64}` },
+    });
+  });
+
+  it("caches decoded bytes, reports hits and misses, and invalidates on delete", () => {
+    const entry = {
+      filename: "cached.png",
+      mimeType: PNG_MIME,
+      sizeBytes: 1024,
+      base64Content: B64,
+      provider: "openai",
+    };
+
+    const token = storeFileRef(entry);
+
+    expect(getFileRefCacheStats()).toEqual({
+      hits: 0,
+      misses: 0,
+      fileRefs: 1,
+      bufferEntries: 0,
+    });
+
+    const first = readFileRefBuffer(token);
+    const second = readFileRefBuffer(token);
+
+    expect(first).toBeDefined();
+    expect(second).toBe(first);
+    expect(first!.equals(Buffer.from(B64, "base64"))).toBe(true);
+    expect(getFileRefCacheStats()).toEqual({
+      hits: 1,
+      misses: 1,
+      fileRefs: 1,
+      bufferEntries: 1,
+    });
+
+    expect(deleteFileRef(token)).toBe(true);
+    expect(readFileRefBuffer(token)).toBeUndefined();
+    expect(getFileRefCacheStats()).toEqual({
+      hits: 1,
+      misses: 2,
+      fileRefs: 0,
+      bufferEntries: 0,
+    });
   });
 });

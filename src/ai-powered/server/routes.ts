@@ -34,7 +34,13 @@
  * error handler in index.ts.
  */
 
-import { Router, type Request, type Response, type NextFunction } from "express";
+import {
+  Router,
+  static as serveStatic,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import multer from "multer";
 import { z } from "zod";
 import { getAiClient, loadConfig, listPricing } from "../index.js";
@@ -60,6 +66,7 @@ import { inferProviderFromModel } from "./compat/model-router.js";
 import {
   lookupFileRef,
   buildFileContentBlock,
+  readFileRefBuffer,
   storeFileRef,
   validateMimeType,
   validateFileSize,
@@ -74,11 +81,50 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 // ---------------------------------------------------------------------------
 // Multer — multipart/form-data file upload middleware (50 MiB hard limit)
 // ---------------------------------------------------------------------------
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 52_428_800 } });
+
+const ROUTES_FILE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(ROUTES_FILE_DIR, "../../../");
+const WEB_APP_ROOT =
+  process.env["AI_POWERED_WEB_ROOT"]?.trim() || path.resolve(REPO_ROOT, "integrations/web-example");
+const DIST_WEB_ROOT =
+  process.env["AI_POWERED_DIST_WEB_ROOT"]?.trim() || path.resolve(REPO_ROOT, "dist-web");
+const WEB_APP_INDEX = path.join(WEB_APP_ROOT, "index.html");
+const SPA_FALLBACK_PREFIXES = [
+  "/.well-known",
+  "/api",
+  "/audio",
+  "/batch",
+  "/config",
+  "/dist-web",
+  "/files",
+  "/health",
+  "/image",
+  "/info",
+  "/models",
+  "/pricing",
+  "/providers",
+  "/stitch",
+  "/stream",
+  "/structured",
+  "/text",
+  "/upload",
+  "/v1",
+  "/video",
+];
+
+function shouldServeAppShell(pathname: string): boolean {
+  if (pathname === "/" || pathname === "") return true;
+  if (path.extname(pathname)) return false;
+  return !SPA_FALLBACK_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Provider metadata — used by GET /providers
@@ -106,6 +152,13 @@ const PROVIDER_META = [
     envKey: "XAI_API_KEY",
     modalities: ["text", "structured", "video"],
     inputModalities: ["image"],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    envKey: "OPENROUTER_API_KEY",
+    modalities: ["text", "image", "audio", "video", "structured"],
+    inputModalities: ["image", "audio", "video"],
   },
   {
     id: "venice",
@@ -379,6 +432,14 @@ function respondModelsError(
   error: string,
 ): void {
   res.status(status).json({ error, code });
+}
+
+function providerSetupErrorMessage(providerId: string | undefined, err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (providerId === "openrouter" && /api key is required/i.test(message)) {
+    return "OpenRouter is missing OPENROUTER_API_KEY. Set OPENROUTER_API_KEY or config.apiKey.";
+  }
+  return "Provider could not be constructed.";
 }
 
 function modelListErrorMessage(err: unknown): string {
@@ -768,7 +829,12 @@ export function createRouter(opts: ServeOptions): Router {
           },
           "GET /models: provider could not be constructed",
         );
-        respondModelsError(res, 503, "PROVIDER_SETUP_ERROR", "Provider could not be constructed.");
+        respondModelsError(
+          res,
+          503,
+          "PROVIDER_SETUP_ERROR",
+          providerSetupErrorMessage(providerOverride, err),
+        );
       }
     }),
   );
@@ -842,12 +908,13 @@ export function createRouter(opts: ServeOptions): Router {
   // Expose this server publicly and set the PROXY_PUBLIC_BASE_URL environment
   // variable so generated URLs are reachable.
   router.get("/files/:uuid", (req, res) => {
-    const entry = lookupFileRef(req.params["uuid"] ?? "");
+    const fileRef = req.params["uuid"] ?? "";
+    const entry = lookupFileRef(fileRef);
     if (!entry) {
       res.status(404).json({ error: "File not found or expired" });
       return;
     }
-    const buffer = Buffer.from(entry.base64Content, "base64");
+    const buffer = readFileRefBuffer(fileRef) ?? Buffer.from(entry.base64Content, "base64");
     res.setHeader("Content-Type", entry.mimeType);
     res.setHeader("Content-Length", buffer.length);
     // Uploaded user files must remain private; the public URL flow does not
@@ -1485,6 +1552,22 @@ export function createRouter(opts: ServeOptions): Router {
   // --- /v1/ compatibility routes (industry-standard wire formats) ---
   // Mounted after all native routes so native routes always take precedence.
   mountCompatRoutes(router, opts);
+
+  router.use("/dist-web", serveStatic(DIST_WEB_ROOT));
+  router.use(serveStatic(WEB_APP_ROOT));
+  router.get(/.*/, (req, res, next) => {
+    if (!shouldServeAppShell(req.path)) {
+      next();
+      return;
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.sendFile(WEB_APP_INDEX, (err) => {
+      if (err) {
+        next(err);
+      }
+    });
+  });
 
   return router;
 }

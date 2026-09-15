@@ -724,6 +724,22 @@ function postBatch(port: number, body: unknown): Promise<http.IncomingMessage> {
   });
 }
 
+function getModels(port: number, query: string): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: `/models?${query}`,
+        method: "GET",
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 describe("POST /batch — server route", () => {
   let server: http.Server;
   let port: number;
@@ -841,6 +857,51 @@ describe("POST /batch — server route", () => {
       expect(lines[2]!["status"]).toBe("ok");
     } finally {
       spy.mockRestore();
+    }
+  });
+});
+
+describe("GET /models — server route", () => {
+  let server: http.Server;
+  let port: number;
+
+  beforeAll(
+    () =>
+      new Promise<void>((resolve) => {
+        const app = createServer({ mock: true });
+        server = app.listen(0, "127.0.0.1", () => {
+          port = (server.address() as { port: number }).port;
+          resolve();
+        });
+      }),
+    15_000,
+  );
+
+  afterAll(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      }),
+  );
+
+  it("returns an OpenRouter-specific missing-key message when OPENROUTER_API_KEY is absent", async () => {
+    const saved = process.env["OPENROUTER_API_KEY"];
+    delete process.env["OPENROUTER_API_KEY"];
+
+    try {
+      const res = await getModels(port, "modality=video&provider=openrouter");
+      expect(res.statusCode).toBe(503);
+      const body = (await readBody(res)) as Record<string, unknown>;
+      expect(body["code"]).toBe("PROVIDER_SETUP_ERROR");
+      expect(body["error"]).toBe(
+        "OpenRouter is missing OPENROUTER_API_KEY. Set OPENROUTER_API_KEY or config.apiKey.",
+      );
+    } finally {
+      if (saved === undefined) {
+        delete process.env["OPENROUTER_API_KEY"];
+      } else {
+        process.env["OPENROUTER_API_KEY"] = saved;
+      }
     }
   });
 });
@@ -1194,6 +1255,7 @@ describe("POST /upload — server route", () => {
     const body = (await readBody(textRes)) as Record<string, unknown>;
     expect(body.error).toMatch(/fileRef/i);
     expect(body.error).toMatch(/not found|expired/i);
+    expect(body.error).toContain("Re-upload the file and try again.");
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -1220,6 +1282,7 @@ describe("POST /upload — server route", () => {
     const body = (await readBody(textRes)) as Record<string, unknown>;
     expect(body.error).toMatch(/does not support/i);
     expect(body.error).toMatch(/application\/pdf/i);
+    expect(body.error).toContain("Re-upload a supported file or remove the attachment.");
     expect(spy).not.toHaveBeenCalled();
   });
 

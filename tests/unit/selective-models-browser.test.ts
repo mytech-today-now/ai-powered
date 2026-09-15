@@ -17,6 +17,8 @@ import { afterEach, describe, it, expect } from "vitest";
 
 interface ProviderMeta {
   id: string;
+  name?: string;
+  active?: boolean;
   inputModalities?: string[];
 }
 
@@ -141,7 +143,11 @@ function formatModelWarning(modality: string, provider: string, error: unknown):
           : typeof errorRecord?.error === "string"
             ? errorRecord.error
             : "Model list unavailable.";
-  return `Could not refresh ${modality} models for ${provider || "default provider"}${code}: ${detail} Keeping the current selection until the server recovers.`;
+  const recoveryHint =
+    errorRecord?.code === "PROVIDER_INACTIVE"
+      ? "Configure that provider on the proxy and try again."
+      : "Keeping the current selection until the server recovers.";
+  return `Could not refresh ${modality} models for ${provider || "default provider"}${code}: ${detail} ${recoveryHint}`;
 }
 
 afterEach(() => {
@@ -156,6 +162,18 @@ async function loadModelsLikeApp(
   allProviders: ProviderMeta[],
   fetchImpl: (url: string) => Promise<FetchResponse>,
 ): Promise<string[]> {
+  const providerMeta = provider ? (allProviders.find((p) => p.id === provider) ?? null) : null;
+  if (providerMeta && providerMeta.active === false) {
+    showModelWarning(
+      selectEl,
+      formatModelWarning(modality, provider, {
+        code: "PROVIDER_INACTIVE",
+        message: `Provider "${providerMeta.name ?? provider}" is not configured on this proxy.`,
+      }),
+    );
+    return [];
+  }
+
   const base = "http://localhost:3001";
   const acceptsImage =
     hasImageAttached && providerSupportsInputModality(provider, "image", allProviders);
@@ -327,6 +345,39 @@ describe("loadModels browser regression", () => {
     expect(select.value).toBe("");
   });
 
+  it("skips inactive providers and shows a local configuration warning", async () => {
+    const { row, select } = makeModelRow("video-model-select", [
+      { id: "auto", name: "Auto" },
+      { id: "manual", name: "Manual" },
+    ]);
+    select.value = "manual";
+    const initialOptions = [...select.options].map((opt) => opt.value);
+
+    const providers: ProviderMeta[] = [
+      { id: "openrouter", name: "OpenRouter", active: false, inputModalities: ["video"] },
+    ];
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      return jsonResponse([]);
+    };
+
+    await loadModelsLikeApp("video", select, "openrouter", false, providers, fetchImpl);
+
+    expect(urls).toEqual([]);
+    expect([...select.options].map((opt) => opt.value)).toEqual(initialOptions);
+    expect(select.value).toBe("manual");
+
+    const warning = row.nextElementSibling as HTMLElement | null;
+    expect(warning).not.toBeNull();
+    expect(warning?.classList.contains("model-warning")).toBe(true);
+    expect(warning?.getAttribute("role")).toBe("status");
+    expect(warning?.getAttribute("aria-live")).toBe("polite");
+    expect(warning?.textContent).toContain("PROVIDER_INACTIVE");
+    expect(warning?.textContent).toContain("not configured on this proxy");
+    expect(warning?.textContent).toContain("Configure that provider on the proxy and try again.");
+  });
+
   it("shows an inline provider error for structured 503 payloads", async () => {
     const { row, select } = makeModelRow("structured-model-select", [
       { id: "gpt-4o-mini", name: "GPT-4o mini" },
@@ -418,5 +469,30 @@ describe("loadModels browser regression", () => {
     expect(select.options).toHaveLength(3);
     expect([...select.options].map((opt) => opt.value)).toEqual(["", "schema-v1", "schema-v2"]);
     expect(row.nextElementSibling).toBeNull();
+  });
+
+  it("keeps the default option focusable after repopulation", async () => {
+    const select = makeSelect();
+    const providers: ProviderMeta[] = [{ id: "venice", inputModalities: ["image"] }];
+    const fetchImpl = async (_url: string) =>
+      jsonResponse([
+        { id: "qwen-2.5-vl", name: "Qwen 2.5 VL" },
+        { id: "llama-3.3-70b", name: "Llama 3.3 70B" },
+      ]);
+
+    document.body.appendChild(select);
+    try {
+      await loadModelsLikeApp("image", select, "venice", true, providers, fetchImpl);
+
+      select.focus();
+      expect(document.activeElement).toBe(select);
+      expect(select.tabIndex).toBe(0);
+      expect(select.options[0]?.value).toBe("");
+      expect(select.options[0]?.disabled).toBe(false);
+      expect(select.options[0]?.hidden).toBe(false);
+      expect(select.value).toBe("");
+    } finally {
+      select.remove();
+    }
   });
 });

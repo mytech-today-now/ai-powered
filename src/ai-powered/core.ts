@@ -55,6 +55,7 @@ export type Modality = z.infer<typeof ModalitySchema>;
 /** Supported provider names (plus "mock" for testing). */
 export const ProviderNameSchema = z.enum([
   "openai",
+  "openrouter",
   "anthropic",
   "xai",
   "venice",
@@ -410,6 +411,7 @@ function resolveApiKey(merged: PlainObject): string | undefined {
   const provider = typeof merged["provider"] === "string" ? merged["provider"] : "openai";
   const providerEnvMap: Record<string, string> = {
     openai: "OPENAI_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
     anthropic: "ANTHROPIC_API_KEY",
     xai: "XAI_API_KEY",
     venice: "VENICE_API_KEY",

@@ -58,6 +58,7 @@ export {
   BaseProvider,
   MockProvider,
   OpenAiProvider,
+  OpenRouterProvider,
   AnthropicProvider,
   GrokProvider,
   VeniceProvider,

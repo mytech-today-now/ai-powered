@@ -185,12 +185,25 @@ describe("structured --schema <file> --mock", () => {
 
 describe("text --mock --dry-run", () => {
   it("outputs a cost report JSON and exits 0 without making API calls", () => {
-    const { stdout, exitCode } = run(["text", "--mock", "--dry-run", "Summarise the Iliad"]);
+    const { stdout, stderr, exitCode } = run([
+      "text",
+      "--mock",
+      "--dry-run",
+      "Summarise the Iliad",
+    ]);
     expect(exitCode).toBe(0);
+    expect(stderr.trim()).toBe("");
     const obj = JSON.parse(stdout) as Record<string, unknown>;
-    expect(obj["dryRun"]).toBe(true);
-    expect(typeof obj["estimatedCostUsd"]).toBe("number");
-    expect(obj["isEstimate"]).toBe(true);
+    expect(obj).toEqual(
+      expect.objectContaining({
+        dryRun: true,
+        prompt: "Summarise the Iliad",
+        model: "gpt-4o",
+        estimatedTokens: expect.any(Number),
+        estimatedCostUsd: expect.any(Number),
+        isEstimate: true,
+      }),
+    );
   });
 });
 
@@ -199,15 +212,10 @@ describe("text --mock --dry-run", () => {
 // ---------------------------------------------------------------------------
 
 describe("text --mock --quiet", () => {
-  it("writes only the raw content to stdout (no banners or decorations)", () => {
+  it("writes a single raw line to stdout", () => {
     const { stdout, exitCode } = run(["text", "--mock", "--quiet", "Hello"]);
     expect(exitCode).toBe(0);
-    // In quiet mode the CLI should emit only the raw content.
-    // Decorative banners / progress spinners go to stderr.
-    const lines = stdout.trim().split("\n");
-    // Should be a single line of raw content (not a JSON object)
-    expect(lines.length).toBeGreaterThanOrEqual(1);
-    expect(lines[0]).not.toMatch(/^\s*\{/); // not a JSON object
+    expect(stdout.trim().split(/\r?\n/)).toEqual(["[mock response]"]);
   });
 });
 
@@ -219,6 +227,7 @@ describe("text --mock --json", () => {
   it("emits a JSON object with content, usage, model, cost, and modality fields", () => {
     const { stdout, exitCode } = run(["text", "--mock", "--json", "Hello AI"]);
     expect(exitCode).toBe(0);
+    expect(stdout.trim().split(/\r?\n/)).toHaveLength(1);
     const obj = JSON.parse(stdout) as Record<string, unknown>;
     expect(typeof obj["content"]).toBe("string");
     expect(obj).toHaveProperty("usage");
@@ -373,6 +382,27 @@ describe("batch text --mock", () => {
       expect(row).toHaveProperty("prompt");
       expect(row).toHaveProperty("response");
     }
+  });
+
+  it("fails when the input file contains no valid JSONL rows", async () => {
+    const inputFile = path.join(tmpDir, "invalid-input.jsonl");
+    const outputFile = path.join(tmpDir, "output.jsonl");
+
+    fs.writeFileSync(inputFile, "not-json\n", "utf-8");
+
+    const { exitCode, stderr } = run([
+      "batch",
+      "text",
+      "--mock",
+      "--input",
+      inputFile,
+      "--output",
+      outputFile,
+    ]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Skipping invalid JSON line");
+    expect(stderr).toContain("No valid batch items read from input file");
+    expect(fs.existsSync(outputFile)).toBe(false);
   });
 });
 

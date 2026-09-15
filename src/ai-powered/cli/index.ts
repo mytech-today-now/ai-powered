@@ -24,7 +24,6 @@ import { Command, Option } from "commander";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import * as readline from "node:readline";
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { loadConfig, writeConfig, CURRENT_VERSION } from "../core.js";
@@ -169,6 +168,7 @@ function handleStatus(): void {
  */
 const INIT_PROVIDER_ENV_KEYS: ReadonlyArray<{ id: string; envKey: string }> = [
   { id: "openai", envKey: "OPENAI_API_KEY" },
+  { id: "openrouter", envKey: "OPENROUTER_API_KEY" },
   { id: "anthropic", envKey: "ANTHROPIC_API_KEY" },
   { id: "xai", envKey: "XAI_API_KEY" },
   { id: "venice", envKey: "VENICE_API_KEY" },
@@ -414,6 +414,10 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8").trim();
 }
 
+function resolveDryRunModel(opts: Record<string, unknown>): string {
+  return (opts["model"] as string | undefined) ?? process.env["AI_MODEL"] ?? "gpt-4o";
+}
+
 /**
  * Serialise `obj` to a JSON line and write it to `stream`.
  * Used by the batch command for NDJSON output (stdout or file).
@@ -552,12 +556,15 @@ const textCmd = new Command("text")
     const templateName = opts["template"] as string | undefined;
     const vars = opts["var"] as Record<string, string>;
     const sessionId = opts["session"] as string | undefined;
+    const shouldLoadConfig = Boolean(templateName) || Boolean(opts["profile"]);
+    let dryRunModel = resolveDryRunModel(opts);
 
     let prompt: string;
     if (templateName) {
       const config = loadConfig(toConfigOverrides(opts) as never);
       const tpl = getTemplate(templateName, (config.templateDirs ?? []) as string[]);
       prompt = renderTemplate(tpl, vars);
+      dryRunModel = (config.model as string | undefined) ?? dryRunModel;
     } else {
       prompt = promptArg ?? (await readStdin());
     }
@@ -567,16 +574,18 @@ const textCmd = new Command("text")
     }
 
     if (opts["dryRun"]) {
-      const dryConfig = loadConfig(toConfigOverrides(opts) as never);
-      const dryModel = (dryConfig.model as string | undefined) ?? "gpt-4o";
+      if (shouldLoadConfig && !templateName) {
+        const config = loadConfig(toConfigOverrides(opts) as never);
+        dryRunModel = (config.model as string | undefined) ?? dryRunModel;
+      }
       const estTokens = estimateTokens(prompt);
-      const estCost = estimateCost(dryModel, prompt);
+      const estCost = estimateCost(dryRunModel, prompt);
 
       console.log(
         JSON.stringify({
           dryRun: true,
           prompt,
-          model: dryModel,
+          model: dryRunModel,
           estimatedTokens: estTokens,
           estimatedCostUsd: estCost.totalUsd,
           isEstimate: true,
@@ -589,7 +598,20 @@ const textCmd = new Command("text")
     const history = sessionId ? loadSession(sessionId) : [];
     const fullPrompt = sessionId ? buildSessionPrompt(history, prompt) : prompt;
 
+    const quietMode = Boolean(opts["quiet"]);
+    const jsonMode = Boolean(opts["json"]);
+    const previousNodeEnv = process.env["NODE_ENV"];
+    const useProductionNodeEnv = quietMode || jsonMode;
+    if (useProductionNodeEnv) process.env["NODE_ENV"] = "production";
+
     const client = await getAiClient("cli-text", toConfigOverrides(opts) as never);
+    if (useProductionNodeEnv) {
+      if (previousNodeEnv === undefined) {
+        delete process.env["NODE_ENV"];
+      } else {
+        process.env["NODE_ENV"] = previousNodeEnv;
+      }
+    }
     if (opts["stream"]) {
       for await (const chunk of client.streamText(fullPrompt)) {
         if (!opts["quiet"]) process.stdout.write(chunk);
@@ -604,14 +626,14 @@ const textCmd = new Command("text")
         saveSession(sessionId, history);
       }
       if (opts["json"]) {
-        console.log(
+        process.stdout.write(
           JSON.stringify({
             content: result.content,
             usage: result.usage,
             model: result.model,
             cost: result.cost,
             modality: result.modality,
-          }),
+          }) + "\n",
         );
       } else {
         process.stdout.write(result.content + "\n");
@@ -1165,15 +1187,27 @@ const batchCmd = new Command("batch")
         process.exit(EXIT_ERROR);
       }
     } else {
-      const rl = readline.createInterface({ input: fs.createReadStream(inputFile) });
-      for await (const line of rl) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          rows.push(JSON.parse(trimmed) as Record<string, unknown>);
-        } catch {
-          process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`);
+      try {
+        const raw = fs.readFileSync(inputFile, "utf-8");
+        let sawFileContent = false;
+        for (const line of raw.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          sawFileContent = true;
+          try {
+            rows.push(JSON.parse(trimmed) as Record<string, unknown>);
+          } catch {
+            process.stderr.write(`Skipping invalid JSON line: ${trimmed}\n`);
+          }
         }
+        if (rows.length === 0 && sawFileContent) {
+          process.stderr.write("No valid batch items read from input file\n");
+          process.exit(EXIT_ERROR);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`Error: unable to read batch input file ${inputFile}: ${message}\n`);
+        process.exit(EXIT_ERROR);
       }
     }
 
@@ -1183,7 +1217,6 @@ const batchCmd = new Command("batch")
     // targetStream is the active NDJSON output destination used by writeLine().
     const targetStream: NodeJS.WritableStream = toStdout ? process.stdout : outStream!;
 
-    const batchConfig = loadConfig(toConfigOverrides(opts) as never);
     // MODE_DEFAULT_MODELS: per-modality sensible defaults so --dry-run uses the
     // correct pricing path for each mode (e.g. video → luma, not gpt-4o).
     // Add a new entry here whenever a new modality is added to the batch command.
@@ -1194,12 +1227,12 @@ const batchCmd = new Command("batch")
       structured: "gpt-4o",
       text: "gpt-4o",
     };
+    const client = await getAiClient("cli-batch", toConfigOverrides(opts) as never);
     const batchModel =
       (opts["model"] as string | undefined) ??
-      (batchConfig.model as string | undefined) ??
+      client.config.model ??
       MODE_DEFAULT_MODELS[mode] ??
       "gpt-4o";
-    const client = await getAiClient("cli-batch", toConfigOverrides(opts) as never);
     let idx = 0;
 
     // Process rows in sliding-window concurrency

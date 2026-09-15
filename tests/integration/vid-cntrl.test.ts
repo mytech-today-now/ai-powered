@@ -525,6 +525,7 @@ describe("V2-08: POST /video — Venice image-keyframe requests reach generateVi
     expect(status).toBe(400);
     const body = JSON.parse(text) as { error?: string };
     expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toContain("Re-upload the file and try again.");
     expect(body.error).toMatch(/not found|expired/i);
     expect(spy).not.toHaveBeenCalled();
   });
@@ -547,6 +548,7 @@ describe("V2-08: POST /video — Venice image-keyframe requests reach generateVi
     expect(status).toBe(422);
     const body = JSON.parse(text) as { error?: string };
     expect(body.error).toMatch(/does not support/i);
+    expect(body.error).toContain("Re-upload a supported file or remove the attachment.");
     expect(body.error).toMatch(/application\/pdf/i);
     expect(spy).not.toHaveBeenCalled();
   });

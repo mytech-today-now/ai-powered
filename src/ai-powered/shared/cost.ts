@@ -164,11 +164,15 @@ export function listPricing(filter?: {
  * Returns the ModelPricing entry for `model`.
  */
 export function lookupModelPricing(model: string): ModelPricing {
+  const normalized = model.split("/").pop() ?? model;
+  const slug = normalized.split(":")[0] ?? normalized;
+
   if (MODEL_PRICING[model] !== undefined) return MODEL_PRICING[model]!;
+  if (MODEL_PRICING[slug] !== undefined) return MODEL_PRICING[slug]!;
 
   let bestKey = "";
   for (const key of Object.keys(MODEL_PRICING)) {
-    if (model.startsWith(key) && key.length > bestKey.length) {
+    if ((model.startsWith(key) || slug.startsWith(key)) && key.length > bestKey.length) {
       bestKey = key;
     }
   }

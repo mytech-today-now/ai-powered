@@ -140,6 +140,7 @@ export interface ModelDescriptor {
   id: string;
   name: string;
   capabilities: Modality[];
+  costPerUnit?: number | null;
   [key: string]: unknown;
   contextWindow?: number;
   /**

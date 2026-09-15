@@ -22,6 +22,7 @@ export type { ProviderCallOptions, StreamTextIterable } from "./base.js";
 // ---------------------------------------------------------------------------
 
 import { OpenAiProvider } from "./openai.js";
+import { OpenRouterProvider } from "./openrouter.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { GrokProvider } from "./xai.js";
 import { VeniceProvider } from "./venice.js";
@@ -33,6 +34,7 @@ import { PikaProvider } from "./pika.js";
 
 export { MockProvider } from "./mock.js";
 export { OpenAiProvider } from "./openai.js";
+export { OpenRouterProvider } from "./openrouter.js";
 export { AnthropicProvider } from "./anthropic.js";
 export { GrokProvider } from "./xai.js";
 export { VeniceProvider } from "./venice.js";
@@ -51,6 +53,7 @@ type ProviderConstructor = new (config: AiConfig) => BaseProvider;
 const REGISTRY = new Map<ProviderName, ProviderConstructor>([
   ["mock", MockProvider],
   ["openai", OpenAiProvider],
+  ["openrouter", OpenRouterProvider],
   ["anthropic", AnthropicProvider],
   ["xai", GrokProvider],
   ["venice", VeniceProvider],

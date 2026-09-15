@@ -156,8 +156,8 @@ describe("CustomProvider non-Ollama baseUrl handling", () => {
 });
 
 describe("CustomProvider model discovery", () => {
-  it("returns openai-compatible models unchanged on success", async () => {
-    mockModelsList.mockResolvedValueOnce({
+  it("annotates image-capable openai-compatible models on success", async () => {
+    mockModelsList.mockResolvedValue({
       data: [
         { id: "llava-1", object: "model" },
         { id: "mistral-7b", object: "model" },
@@ -178,6 +178,7 @@ describe("CustomProvider model discovery", () => {
       id: "llava-1",
       name: "llava-1",
       capabilities: ["text", "structured"],
+      inputCapabilities: ["image"],
       object: "model",
     });
     expect(models[1]).toMatchObject({
@@ -186,7 +187,12 @@ describe("CustomProvider model discovery", () => {
       capabilities: ["text", "structured"],
       object: "model",
     });
-    expect(mockModelsList).toHaveBeenCalledOnce();
+
+    const imageModels = await provider.listModels(undefined, "image" as never);
+    expect(imageModels).toHaveLength(1);
+    expect(imageModels[0]?.id).toBe("llava-1");
+    expect(imageModels[0]?.inputCapabilities).toEqual(["image"]);
+    expect(mockModelsList).toHaveBeenCalledTimes(2);
   });
 
   it("returns an empty array when openai-compatible discovery returns no models", async () => {
@@ -230,7 +236,7 @@ describe("CustomProvider model discovery", () => {
     );
   });
 
-  it("returns Ollama models unchanged on success", async () => {
+  it("annotates image-capable Ollama models on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -249,8 +255,23 @@ describe("CustomProvider model discovery", () => {
     const models = await provider.listModels();
 
     expect(models).toEqual([
-      { id: "llava", name: "llava", capabilities: ["text", "structured"] },
+      {
+        id: "llava",
+        name: "llava",
+        capabilities: ["text", "structured"],
+        inputCapabilities: ["image"],
+      },
       { id: "mistral", name: "mistral", capabilities: ["text", "structured"] },
+    ]);
+
+    const imageModels = await provider.listModels(undefined, "image" as never);
+    expect(imageModels).toEqual([
+      {
+        id: "llava",
+        name: "llava",
+        capabilities: ["text", "structured"],
+        inputCapabilities: ["image"],
+      },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:11434/api/tags",

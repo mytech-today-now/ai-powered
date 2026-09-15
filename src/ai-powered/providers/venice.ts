@@ -75,6 +75,42 @@ const VENICE_STATIC_MODELS: ModelDescriptor[] = [
   },
 ];
 
+/** Normalize a model id so aliases like "Qwen/Qwen2.5-VL" still match. */
+function normalizeModelId(id: string): string {
+  return id.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function declaredImageInputCapabilities(value: unknown): InputModality[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const capabilities = value.filter(
+    (entry): entry is InputModality =>
+      entry === "image" || entry === "audio" || entry === "video" || entry === "document",
+  );
+  return capabilities.length > 0 ? capabilities : undefined;
+}
+
+const VENICE_IMAGE_MODEL_IDS = new Set(
+  VENICE_STATIC_MODELS.filter((model) => model.inputCapabilities?.includes("image")).map((model) =>
+    normalizeModelId(model.id),
+  ),
+);
+
+function inferVeniceInputCapabilities(model: {
+  id: string;
+  [key: string]: unknown;
+}): InputModality[] | undefined {
+  const explicit =
+    declaredImageInputCapabilities(model["inputCapabilities"]) ??
+    declaredImageInputCapabilities(model["inputModalities"]) ??
+    declaredImageInputCapabilities(model["modalities"]);
+  if (explicit) return explicit;
+
+  const type = typeof model["type"] === "string" ? model["type"].toLowerCase() : "";
+  if (type === "image") return ["image"];
+
+  return VENICE_IMAGE_MODEL_IDS.has(normalizeModelId(model.id)) ? ["image"] : undefined;
+}
+
 const DEFAULT_TEXT_MODEL = "llama-3.3-70b";
 const DEFAULT_IMAGE_MODEL = "fluently-xl";
 const DEFAULT_VIDEO_MODEL = "wan-2.5-preview-image-to-video";
@@ -588,8 +624,9 @@ export class VeniceProvider extends BaseProvider {
                 return type === "image" ? ["image"] : (["text", "structured"] as Modality[]);
               })();
         const descriptor: ModelDescriptor = { ...m, id: m.id, name: m.id, capabilities: caps };
-        if (caps.includes("image")) {
-          descriptor.inputCapabilities = ["image"];
+        const inferred = inferVeniceInputCapabilities(m);
+        if (inferred && descriptor.inputCapabilities === undefined) {
+          descriptor.inputCapabilities = inferred;
         }
         return descriptor;
       });

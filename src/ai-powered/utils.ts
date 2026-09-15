@@ -24,9 +24,10 @@ import type { TokenUsage, CostBreakdown } from "./types.js";
  * Masking rules (spec: specs/security/spec.md):
  *   - OpenAI keys (`sk-` prefix, NOT `sk-ant-`)    → `sk-****`
  *   - Anthropic keys (`sk-ant-` prefix)             → `sk-ant-****`
- *   - xAI/Grok keys (`xai-` prefix)                → `xai-****`
- *   - Venice.ai keys (`ven-` prefix)               → `ven-****`
- *   - Unknown / custom / empty                     → `[REDACTED]`
+ *   - OpenRouter keys (`sk-or-v1-` prefix)          → `sk-or-v1-****`
+ *   - xAI/Grok keys (`xai-` prefix)                 → `xai-****`
+ *   - Venice.ai keys (`ven-` prefix)                → `ven-****`
+ *   - Unknown / custom / empty                      → `[REDACTED]`
  *
  * The function is deterministic and never throws.
  */
@@ -35,6 +36,7 @@ export function maskApiKey(key: string): string {
 
   // Order matters: check longer prefixes before shorter ones.
   if (key.startsWith("sk-ant-")) return "sk-ant-****";
+  if (key.startsWith("sk-or-v1-")) return "sk-or-v1-****";
   if (key.startsWith("sk-")) return "sk-****";
   if (key.startsWith("xai-")) return "xai-****";
   if (key.startsWith("ven-")) return "ven-****";
@@ -333,17 +335,23 @@ export function listPricing(filter?: {
  *
  * Lookup order:
  *   1. Exact match (e.g. "gpt-4o")
- *   2. Prefix match — longest key that is a prefix of the model string
+ *   2. OpenRouter-friendly exact / prefix matches on the slug after the final
+ *      "/" and before any variant suffix such as ":free" or ":thinking"
+ *   3. Prefix match — longest key that is a prefix of the model string
  *      (e.g. "gpt-4o-mini-2024-07-18" → "gpt-4o-mini")
- *   3. FALLBACK_PRICING
+ *   4. FALLBACK_PRICING
  */
 export function lookupModelPricing(model: string): ModelPricing {
+  const normalized = model.split("/").pop() ?? model;
+  const slug = normalized.split(":")[0] ?? normalized;
+
   if (MODEL_PRICING[model] !== undefined) return MODEL_PRICING[model]!;
+  if (MODEL_PRICING[slug] !== undefined) return MODEL_PRICING[slug]!;
 
   // Prefix match: find the longest key that is a prefix of the model string.
   let bestKey = "";
   for (const key of Object.keys(MODEL_PRICING)) {
-    if (model.startsWith(key) && key.length > bestKey.length) {
+    if ((model.startsWith(key) || slug.startsWith(key)) && key.length > bestKey.length) {
       bestKey = key;
     }
   }

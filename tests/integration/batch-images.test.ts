@@ -189,6 +189,7 @@ describe("B-ATT-01: batch item with missing fileRef returns error line", () => {
     expect(lines[0]!["prompt"]).toBe("Missing attachment");
     expect(String(lines[0]!["error"])).toMatch(/fileRef/i);
     expect(String(lines[0]!["error"])).toMatch(/not found|expired/i);
+    expect(String(lines[0]!["error"])).toContain("Re-upload the file and try again.");
     expect(spy).not.toHaveBeenCalled();
   }, 20_000);
 });
@@ -241,6 +242,9 @@ describe("B-ATT-02: batch item with unsupported MIME returns error line", () => 
     expect(lines[0]!["prompt"]).toBe("PDF attachment");
     expect(String(lines[0]!["error"])).toMatch(/does not support/i);
     expect(String(lines[0]!["error"])).toMatch(/application\/pdf/i);
+    expect(String(lines[0]!["error"])).toContain(
+      "Re-upload a supported file or remove the attachment.",
+    );
     expect(spy).not.toHaveBeenCalled();
   }, 20_000);
 });

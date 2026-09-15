@@ -22,6 +22,7 @@ const GLOBAL_CONFIG_PATH = path.join(GLOBAL_CONFIG_DIR, "config.json");
 
 const PROVIDER_ENV_KEYS: Record<string, string> = {
   openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   xai: "XAI_API_KEY",
   venice: "VENICE_API_KEY",
@@ -35,6 +36,7 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
 /** Modalities supported by each provider. Used to disable incompatible choices. */
 const MODALITY_SUPPORT: Record<string, string[]> = {
   openai: ["text", "image", "audio", "structured"],
+  openrouter: ["text", "image", "audio", "video", "structured"],
   anthropic: ["text", "structured"],
   venice: ["text", "image", "structured"],
   xai: ["text", "structured"],
@@ -48,6 +50,13 @@ const MODALITY_SUPPORT: Record<string, string[]> = {
 /** Sensible default model IDs per provider and modality. */
 const MODEL_DEFAULTS: Record<string, Partial<Record<string, string>>> = {
   openai: { text: "gpt-4o", image: "dall-e-3", audio: "whisper-1", structured: "gpt-4o" },
+  openrouter: {
+    text: "openai/gpt-4o-mini",
+    image: "openai/gpt-image-1",
+    audio: "openai/whisper-1",
+    video: "google/veo-3.1",
+    structured: "openai/gpt-4o-mini",
+  },
   anthropic: { text: "claude-opus-4-5", structured: "claude-3-5-sonnet-20241022" },
   venice: { text: "llama-3.3-70b", image: "fluently-xl", structured: "llama-3.3-70b" },
   xai: { text: "grok-2-1212", structured: "grok-2-1212" },
@@ -109,6 +118,15 @@ async function validateApiKey(
           signal: AbortSignal.timeout(10_000),
         });
         if (res.ok) return { valid: true, message: "✓ OpenAI API key is valid." };
+        const body = await res.text().catch(() => "");
+        return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
+      }
+      case "openrouter": {
+        const res = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) return { valid: true, message: "✓ OpenRouter API key is valid." };
         const body = await res.text().catch(() => "");
         return { valid: false, message: `✗ HTTP ${res.status}: ${body.slice(0, 120)}` };
       }
@@ -262,6 +280,11 @@ export async function runWizard(opts: { templateMode?: boolean } = {}): Promise<
     message: "Step 2 — Choose an AI provider:",
     choices: [
       { name: "OpenAI  (GPT-4o, DALL-E 3, Whisper, TTS)", value: "openai" },
+      {
+        name: "OpenRouter (live routed models, pricing, media models)",
+        value: "openrouter",
+        disabled: notSupported("openrouter"),
+      },
       {
         name: "Anthropic (Claude) — text & structured only",
         value: "anthropic",

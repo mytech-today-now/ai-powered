@@ -119,9 +119,8 @@ describe("parseJsonFile — empty and invalid inputs", () => {
   });
 
   // T-SP-12
-  it("T-SP-12: completely invalid text returns [] without throwing", () => {
-    expect(() => parseJsonFile("not json at all!!!")).not.toThrow();
-    expect(parseJsonFile("not json at all!!!")).toEqual([]);
+  it("T-SP-12: completely invalid text throws a clear parse error", () => {
+    expect(() => parseJsonFile("not json at all!!!")).toThrow(/Malformed .* batch file/i);
   });
 
   // T-SP-13
