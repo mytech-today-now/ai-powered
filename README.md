@@ -1024,7 +1024,7 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 
 Open the built-in Info page at `info.html#settings-configuration` from the demo header to manage direct-mode credentials. The Settings / Configuration tab now includes OpenRouter in the provider selector, a dedicated Pika API key field for video workflows, and local tab-synced storage for those demo credentials. The Overview tab renders the repository README live from the remote `main` branch.
 
-### Browser client features (v0.5.6)
+### Browser client features (v0.5.7)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 

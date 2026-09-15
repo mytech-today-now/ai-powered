@@ -1,6 +1,6 @@
 {
   "name": "ai-powered",
-  "version": "0.5.5",
+  "version": "0.5.7",
   "description": "Unified AI client and CLI: multi-modal, multi-provider, browser-safe, fully mock-able",
   "type": "module",
   "main": "./dist/ai-powered/index.js",
@@ -47,6 +47,7 @@
     "venice",
     "xai",
     "grok",
+    "openrouter",
     "ollama",
     "cli",
     "multimodal",
@@ -68,7 +69,7 @@
   },
   "license": "MIT",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.7] – 2026-09-15
+
+### Added
+
+- OpenRouter provider support now spans CLI setup, browser direct mode, server routing, and model metadata plumbing.
+- Batch processing and conversation/session support landed together with matching OpenSpec updates and regression coverage.
+- The web example Info and Configuration experience was refreshed, including the live README overview and homepage routing cleanup.
+
+### Changed
+
+- Provider discovery, model filtering, and custom-provider handling now expose capability and readiness state more accurately.
+- File uploads, fetch-client handling, and route caching were tightened to preserve proxy safety and clearer error behavior.
+- Package metadata and release settings were updated for the npm publish flow.
+
+### Fixed
+
+- Idempotency, selective model loading, and file-route handling now fail more consistently when providers or uploads are unavailable.
+- Browser demo and server compatibility routes now preserve clearer degraded states instead of silently falling back.
+
 ## [0.5.6] – 2026-09-14
 
 ### Added

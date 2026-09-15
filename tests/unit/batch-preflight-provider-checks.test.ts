@@ -24,6 +24,9 @@ const BATCH_PROVIDER_BLOCK_TITLE =
 
 const BATCH_PREFLIGHT_WARNING =
   "Batch compatibility check unavailable. Server-side validation will still run.";
+const BATCH_PREFLIGHT_UNVERIFIED_WARNING =
+  "Some image URLs returned 405 to HEAD, so the browser demo retried GET. " +
+  "Those shots are unverified, but Run stays enabled.";
 
 type TimerHandle = { id: number };
 
@@ -130,66 +133,115 @@ function createRuntime(options?: {
     }
 
     let hasBlockingError = false;
+    let hasUnverifiedUrl = false;
 
     await Promise.all(
       videoImageItems.map(async (item) => {
         const urls = item.images ?? [];
-        const headResults = await Promise.all(
+        const urlResults = await Promise.all(
           urls.map(async (url) => {
-            const ac = new AbortController();
-            const timer = setTimeoutImpl(() => ac.abort(), 5000);
+            const headAc = new AbortController();
+            const headTimer = setTimeoutImpl(() => headAc.abort(), 5000);
             try {
-              const res = await fetchImpl(url, { method: "HEAD", signal: ac.signal });
-              return res.ok;
+              const headResponse = await fetchImpl(url, { method: "HEAD", signal: headAc.signal });
+              if (headResponse.ok) {
+                return { state: "ok" };
+              }
+              if (headResponse.status === 405) {
+                const getAc = new AbortController();
+                const getTimer = setTimeoutImpl(() => getAc.abort(), 5000);
+                try {
+                  const getResponse = await fetchImpl(url, { method: "GET", signal: getAc.signal });
+                  if (getResponse.ok) {
+                    return { state: "unverified" };
+                  }
+                } catch {
+                  /* GET fallback failed, treat the URL as blocked */
+                } finally {
+                  clearTimeoutImpl(getTimer);
+                }
+              }
+              return { state: "blocked" };
             } catch {
-              return false;
+              return { state: "blocked" };
             } finally {
-              clearTimeoutImpl(timer);
+              clearTimeoutImpl(headTimer);
             }
           }),
         );
-
-        const allUrlsOk = headResults.every(Boolean);
-        const firstBadIdx = headResults.findIndex((ok) => !ok);
+        const anyBlocked = urlResults.some((result) => result.state === "blocked");
+        const anyUnverified = urlResults.some((result) => result.state === "unverified");
+        const firstBadIdx = urlResults.findIndex((result) => result.state === "blocked");
+        const firstUnverifiedIdx = urlResults.findIndex((result) => result.state === "unverified");
         const routing = selectI2VProviderFn(selectedProvider, urls.length, liveProviders);
         const noLiveProvider = !liveProviders.length;
 
-        let icon = "✅";
-        let title = `Provider: ${routing.provider} · ${urls.length} image(s) accepted`;
-        let isBlocker = false;
-
-        if (!allUrlsOk) {
-          icon = "❌";
-          isBlocker = true;
-          title = "Image URL unreachable: " + urls[firstBadIdx];
-        } else if (noLiveProvider && urls.length > 0) {
-          icon = "❌";
-          isBlocker = true;
-          title = "No live video provider available — start the proxy with a valid API key";
-        } else if (routing.warning) {
-          icon = "⚠️";
-          title = routing.warning;
-          if (routing.alternativeProviders && routing.alternativeProviders.length) {
-            title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+        const status = (() => {
+          if (anyBlocked) {
+            return {
+              icon: "❌",
+              title: "Image URL unreachable: " + urls[firstBadIdx],
+              isBlocker: true,
+            };
           }
-        }
 
-        if (isBlocker) hasBlockingError = true;
+          if (noLiveProvider && urls.length > 0) {
+            return {
+              icon: "❌",
+              title: "No live video provider available — start the proxy with a valid API key",
+              isBlocker: true,
+            };
+          }
+
+          if (anyUnverified) {
+            let title =
+              "HEAD returned 405; GET succeeded, so this URL is only unverified: " +
+              urls[firstUnverifiedIdx];
+            if (routing.warning) {
+              title += " · " + routing.warning;
+              if (routing.alternativeProviders && routing.alternativeProviders.length) {
+                title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+              }
+            }
+            hasUnverifiedUrl = true;
+            return { icon: "⚠️", title, isBlocker: false };
+          }
+
+          if (routing.warning) {
+            let title = routing.warning;
+            if (routing.alternativeProviders && routing.alternativeProviders.length) {
+              title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+            }
+            return { icon: "⚠️", title, isBlocker: false };
+          }
+
+          return {
+            icon: "✅",
+            title: "Provider: " + routing.provider + " · " + urls.length + " image(s) accepted",
+            isBlocker: false,
+          };
+        })();
+
+        if (status.isBlocker) hasBlockingError = true;
 
         const statusEl = listEl.querySelector<HTMLSpanElement>(
           '.shot-preflight-status[data-shot-id="' + item._id + '"]',
         );
         if (statusEl) {
-          statusEl.textContent = icon;
-          statusEl.title = title;
-          statusEl.style.color = isBlocker
+          statusEl.textContent = status.icon;
+          statusEl.title = status.title;
+          statusEl.style.color = status.isBlocker
             ? "var(--danger, #b91c1c)"
-            : icon === "⚠️"
+            : status.icon === "⚠️"
               ? "var(--amber, #d97706)"
               : "";
         }
       }),
     );
+
+    if (hasUnverifiedUrl && !hasBlockingError) {
+      showBatchPreflightWarning(BATCH_PREFLIGHT_UNVERIFIED_WARNING);
+    }
 
     if (hasBlockingError) {
       btnBatchRun.dataset.providerBlocked = "true";
@@ -349,6 +401,102 @@ describe("Routing and blocking", () => {
     expect(runtime.btnBatchRun.disabled).toBe(false);
   });
 
+  it("treats HEAD 405 with GET 200 as unverified and keeps Run enabled", async () => {
+    const timers = createTimerTracker();
+    const fetchImpl = vi.fn(async (_url, init) => {
+      if (init.method === "HEAD") {
+        return { ok: false, status: 405 } as Response;
+      }
+      if (init.method === "GET") {
+        return { ok: true, status: 200 } as Response;
+      }
+      throw new Error("unexpected method");
+    });
+    const runtime = createRuntime({
+      importModule: async () => ({ selectI2VProvider }),
+      fetchImpl,
+      liveProviders: ["xai", "lumaai"],
+      selectedProvider: "xai",
+      setTimeoutImpl: timers.setTimeoutImpl,
+      clearTimeoutImpl: timers.clearTimeoutImpl,
+    });
+
+    const items: BatchItem[] = [
+      {
+        _id: "shot-1",
+        modality: "video",
+        images: ["https://cdn.example.com/hero.jpg"],
+      },
+    ];
+
+    const ul = document.createElement("ul");
+    const li = document.createElement("li");
+    const status = document.createElement("span");
+    status.className = "shot-preflight-status";
+    status.dataset.shotId = "shot-1";
+    li.appendChild(status);
+    ul.appendChild(li);
+
+    await runtime.runPreflightProviderChecks(items, ul);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(timers.setTimeoutImpl).toHaveBeenCalledTimes(2);
+    expect(timers.clearTimeoutImpl).toHaveBeenCalledTimes(2);
+    expect(timers.pending.size).toBe(0);
+    expect(status.textContent).toBe("⚠️");
+    expect(status.title).toContain("HEAD returned 405");
+    expect(status.title).toContain("GET succeeded");
+    expect(runtime.btnBatchRun.dataset.providerBlocked).toBe("false");
+    expect(runtime.btnBatchRun.disabled).toBe(false);
+    const warningEl = runtime.batchSummary.querySelector(".batch-preflight-warning");
+    expect(warningEl?.textContent).toBe(BATCH_PREFLIGHT_UNVERIFIED_WARNING);
+  });
+
+  it("treats HEAD 404 as blocked and keeps the run disabled", async () => {
+    const timers = createTimerTracker();
+    const fetchImpl = vi.fn(async (_url, init) => {
+      if (init.method === "HEAD") {
+        return { ok: false, status: 404 } as Response;
+      }
+      throw new Error("unexpected method");
+    });
+    const runtime = createRuntime({
+      importModule: async () => ({ selectI2VProvider }),
+      fetchImpl,
+      liveProviders: ["xai", "lumaai"],
+      selectedProvider: "xai",
+      setTimeoutImpl: timers.setTimeoutImpl,
+      clearTimeoutImpl: timers.clearTimeoutImpl,
+    });
+
+    const items: BatchItem[] = [
+      {
+        _id: "shot-1",
+        modality: "video",
+        images: ["https://cdn.example.com/hero.jpg"],
+      },
+    ];
+
+    const ul = document.createElement("ul");
+    const li = document.createElement("li");
+    const status = document.createElement("span");
+    status.className = "shot-preflight-status";
+    status.dataset.shotId = "shot-1";
+    li.appendChild(status);
+    ul.appendChild(li);
+
+    await runtime.runPreflightProviderChecks(items, ul);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(timers.setTimeoutImpl).toHaveBeenCalledTimes(1);
+    expect(timers.clearTimeoutImpl).toHaveBeenCalledTimes(1);
+    expect(timers.pending.size).toBe(0);
+    expect(status.textContent).toBe("❌");
+    expect(status.title).toBe("Image URL unreachable: https://cdn.example.com/hero.jpg");
+    expect(runtime.btnBatchRun.dataset.providerBlocked).toBe("true");
+    expect(runtime.btnBatchRun.title).toBe(BATCH_PROVIDER_BLOCK_TITLE);
+    expect(runtime.btnBatchRun.disabled).toBe(true);
+  });
   it("falls back to xai when lumaai is requested but not live", async () => {
     const runtime = createRuntime({
       importModule: async () => ({ selectI2VProvider }),
