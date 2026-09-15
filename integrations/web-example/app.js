@@ -256,13 +256,13 @@
   const btnOpenConfig = $("btn-open-config");
   if (btnOpenConfig) {
     btnOpenConfig.addEventListener("click", () => {
-      window.open("config.html", "_blank", "noopener,noreferrer");
+      window.open("info.html#settings-configuration", "_blank", "noopener,noreferrer");
     });
   }
 
   if (btnOpenInfo) {
     btnOpenInfo.addEventListener("click", () => {
-      window.open("info.html", "_blank", "noopener,noreferrer");
+      window.open("info.html#overview", "_blank", "noopener,noreferrer");
     });
   }
 
@@ -369,7 +369,8 @@
   /* ── Provider cache (populated by loadProviders) ────────── */
   let allProviders = []; // All providers from /providers, including inactive
 
-  /* ── Video model capability cache (populated by loadVideoModels) ── */
+  /* ── Image / video model capability caches ──────────────── */
+  let imageModelsCache = []; // Full ModelDescriptor objects for the active image provider
   let videoModelsCache = []; // Full ModelDescriptor objects for the active video provider
 
   /** Modality that each tab represents. */
@@ -553,7 +554,22 @@
    * @param {string} modality
    * @param {string} provider
    */
+  function getConfiguredProvider(providerId) {
+    return allProviders.find((provider) => provider.id === providerId) ?? null;
+  }
+
   async function fetchModelList(modality, provider, acceptsImage = false) {
+    const providerMeta = provider ? getConfiguredProvider(provider) : null;
+    if (providerMeta && providerMeta.active === false) {
+      return {
+        ok: false,
+        error: {
+          code: "PROVIDER_INACTIVE",
+          message: `Provider "${providerMeta.name}" is not configured on this proxy.`,
+        },
+      };
+    }
+
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
     let url = `${base}/models?modality=${modality}`;
     if (provider) url += `&provider=${encodeURIComponent(provider)}`;
@@ -590,7 +606,8 @@
               : "Model list unavailable."
           : "Model list unavailable.";
     const providerLabel = provider || "default provider";
-    return `Could not refresh ${modality} models for ${providerLabel}${code}: ${detail} Keeping the current selection until the server recovers.`;
+    const recoveryHint = error && typeof error === "object" && typeof error.code === "string" && error.code === "PROVIDER_INACTIVE" ? "Configure that provider on the proxy and try again." : "Keeping the current selection until the server recovers.";
+    return `Could not refresh ${modality} models for ${providerLabel}${code}: ${detail} ${recoveryHint}`;
   }
 
   /** Returns the data-tab value of the currently active tab button. */
@@ -776,6 +793,15 @@
       }
     }
 
+    syncReferenceUploadLabel(
+      "video-file-upload-input",
+      descriptor,
+      "Attach reference images or video",
+      "Attach reference media",
+    );
+  }
+
+  function syncReferenceUploadLabel(inputId, descriptor, defaultLabel, activeLabel) {
     const inputRequirements = Array.isArray(descriptor?.inputRequirements)
       ? descriptor.inputRequirements
       : [];
@@ -783,12 +809,26 @@
       (max, requirement) => Math.max(max, Number(requirement.max ?? 0)),
       0,
     );
-    const label = document.querySelector('label[for="video-file-upload-input"]');
+    const label = document.querySelector(`label[for="${inputId}"]`);
     if (label) {
-      label.textContent = maxReferences
-        ? `Attach reference media (up to ${maxReferences})`
-        : "Attach reference images or video";
+      label.textContent = maxReferences ? `${activeLabel} (up to ${maxReferences})` : defaultLabel;
     }
+  }
+
+  /**
+   * Syncs the image upload label to the capabilities of the selected image model.
+   *
+   * When the active model advertises inputRequirements, the label shows the
+   * maximum supported number of reference images. Otherwise it falls back to
+   * the default copy used in the HTML markup.
+   */
+  function syncImageConstraints(descriptor) {
+    syncReferenceUploadLabel(
+      "image-file-upload-input",
+      descriptor,
+      "Attach reference images",
+      "Attach reference images",
+    );
   }
 
   function validateVideoOptions(descriptor, values) {
@@ -1834,9 +1874,9 @@
    *     surface an inline warning instead of being collapsed into an empty list.
    *   - Calls `autoSelectCheapest` and writes the result into both `tabState`
    *     and `localStorage` via `persistSelection` (REQ-PM-03, REQ-LS-01).
-   *   - Video special-case: updates `videoModelsCache` and calls
-   *     `syncVideoConstraints` so aspect-ratio / resolution / FPS / quality
-   *     dropdowns stay consistent with the newly selected model.
+   *   - Image/video special-case: updates the relevant model cache and calls
+   *     the matching sync helper so attachment limits stay consistent with the
+   *     newly selected model.
    *
    * @param {string} modality  "text" | "image" | "audio" | "video" | "structured"
    * @param {string} [providerOverride]  Explicit provider id to fetch models for.
@@ -1867,8 +1907,11 @@
       modelList = fallbackResult.modelList;
     }
 
-    // Video: update the descriptor cache before repopulating the select so that
-    // syncVideoConstraints can look up the newly selected model immediately.
+    // Image/video: update the descriptor cache before repopulating the select
+    // so the matching sync helper can look up the newly selected model immediately.
+    if (modality === "image") {
+      imageModelsCache = modelList;
+    }
     if (modality === "video") {
       videoModelsCache = modelList;
     }
@@ -1881,9 +1924,13 @@
     const model = cheapest ?? "";
     modelSel.value = model;
 
-    // Video: sync constraint dropdowns (aspect ratio, resolution, FPS, quality)
-    // to the newly selected model's capabilities.  Programmatic .value assignment
-    // does not fire a DOM change event, so we call syncVideoConstraints directly.
+    // Image/video: sync attachment controls to the newly selected model.
+    // Programmatic .value assignment does not fire a DOM change event, so we
+    // call the relevant helper directly.
+    if (modality === "image") {
+      const descriptor = imageModelsCache.find((m) => m.id === model) ?? null;
+      syncImageConstraints(descriptor);
+    }
     if (modality === "video") {
       const descriptor = videoModelsCache.find((m) => m.id === model) ?? null;
       syncVideoConstraints(descriptor);
@@ -1913,9 +1960,8 @@
    *      visible, show an inline warning, and leave localStorage untouched until
    *      a real model array arrives.
    *
-   * Video modality also updates videoModelsCache and calls syncVideoConstraints
-   * so constraint dropdowns (aspect-ratio, resolution, FPS, quality) match
-   * the restored model's capabilities.
+   * Image and video modalities also update their caches and call the matching
+   * sync helpers so upload limits stay aligned with the restored model.
    *
    * Tests: T-PM-09 (full restore), T-PM-10 (stale guard), S-04, S-05.
    */
@@ -1996,8 +2042,9 @@
         modelList = fallbackResult.modelList;
       }
 
-      // Video: update descriptor cache before populating the select so that
-      // syncVideoConstraints can look up the selected model immediately.
+      // Image/video: update descriptor caches before populating the select so
+      // the matching sync helper can look up the selected model immediately.
+      if (modality === "image") imageModelsCache = modelList;
       if (modality === "video") videoModelsCache = modelList;
 
       // Populate model <select> (mirrors loadTabModels population logic).
@@ -2020,6 +2067,11 @@
 
       // Step 6 — render selectors, commit state, seed/repair localStorage.
       if (modelSel) modelSel.value = model;
+
+      if (modality === "image") {
+        const descriptor = imageModelsCache.find((m) => m.id === model) ?? null;
+        syncImageConstraints(descriptor);
+      }
 
       if (modality === "video") {
         const descriptor = videoModelsCache.find((m) => m.id === model) ?? null;
@@ -2219,6 +2271,10 @@
       const newModel = modelSel.value;
       tabState.set(modality, { provider: current.provider ?? "", model: newModel });
       persistSelection(modality, current.provider ?? "", newModel);
+      if (modality === "image") {
+        const descriptor = imageModelsCache.find((m) => m.id === newModel) ?? null;
+        syncImageConstraints(descriptor);
+      }
       if (modality === "video") {
         const descriptor = videoModelsCache.find((m) => m.id === newModel) ?? null;
         syncVideoConstraints(descriptor);
@@ -2235,6 +2291,13 @@
     imageFileUploadStatus,
     imageFileThumbsEl,
     imageFileRefs,
+    undefined,
+    () => {
+      const descriptor = imageModelsCache.find((model) => model.id === imageModelSelect?.value);
+      const requirements = descriptor?.inputRequirements;
+      if (!Array.isArray(requirements) || requirements.length === 0) return undefined;
+      return Math.max(...requirements.map((requirement) => Number(requirement.max ?? 0)));
+    },
   );
   wireMultiFileUpload(
     videoFileUploadInput,
@@ -3389,6 +3452,7 @@
     try {
       let blob;
       let ttsResult = null;
+      const ttsModel = ttsModelSelect.value || undefined;
       if (modeSelect.value === "proxy") {
         // TASK-12: Read audio provider from tabState. TTS model comes from its own
         // dedicated select (ttsModelSelect) which is separate from the transcription
@@ -3397,11 +3461,11 @@
         ttsResult = await proxyPost("/audio/speak", {
           text,
           provider: audioProvider || undefined,
-          model: ttsModelSelect.value || undefined,
+          model: ttsModel,
         });
         blob = base64ToBlob(ttsResult.audio, ttsResult.mimeType || "audio/mpeg");
       } else {
-        blob = await getClient().synthesizeSpeech(text);
+        blob = await getClient().synthesizeSpeech(text, { model: ttsModel });
       }
       const url = blobUrl("audio", blob);
       ttsOutput.innerHTML = "";
@@ -3483,6 +3547,7 @@
     try {
       let text;
       let transcribeResult = null;
+      const { model: audioModel } = tabState.get("audio") ?? {};
       if (modeSelect.value === "proxy") {
         const audioBase64 = await new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -3492,7 +3557,6 @@
         });
         // TASK-12: Read provider + model from tabState["audio"] (REQ-PM-01, S-09).
         // tabState.get("audio").model mirrors transcribeModelSelect.value (MODEL_SELECTS["audio"]).
-        const { provider: audioProvider, model: audioModel } = tabState.get("audio") ?? {};
         transcribeResult = await proxyPost("/audio/transcribe", {
           audioBase64,
           // Forward the Blob's MIME type so the proxy can pass it to Whisper,
@@ -3507,7 +3571,9 @@
         });
         text = transcribeResult.text;
       } else {
-        text = await getClient().transcribeAudio(selectedAudioBlob);
+        text = await getClient().transcribeAudio(selectedAudioBlob, {
+          model: audioModel || undefined,
+        });
       }
       transcribeOutput.innerHTML = "";
       const p = document.createElement("p");
@@ -3650,76 +3716,10 @@
     const items = [];
     const trimmed = text.trim();
 
-    /**
-     * Resolve duration from a raw JSON entry.
-     *
-     * Accepts:
-     *  - Plain number:  duration: 12
-     *  - Plain string:  duration: "12" | "00:00:12" | "288f@24"
-     *  - Object form:   duration: { seconds: 12, formatted: "0:12" }
-     *    (produced by filmbuff-project and similar shot-list exporters)
-     *
-     * Returns the resolved value (number or string) ready for the proxy,
-     * or undefined if the field is absent or unrecognisable.
-     */
-    function resolveDuration(entry) {
-      const raw = entry.duration;
-      if (raw === null || raw === undefined) return undefined;
-      if (typeof raw === "number") return raw;
-      if (typeof raw === "string" && raw !== "") return raw;
-      // Object form — accept .seconds (number) or .formatted (string)
-      if (typeof raw === "object") {
-        if (typeof raw.seconds === "number") return raw.seconds;
-        if (typeof raw.formatted === "string" && raw.formatted !== "") return raw.formatted;
-      }
-      return undefined;
-    }
-
-    function buildItem(entry, index) {
-      const prompt = String(entry.prompt || entry.description || entry.text || "").trim();
-      if (!prompt) return null;
-
-      const duration = resolveDuration(entry);
-      const roundedDuration =
-        typeof duration === "number" && !Number.isInteger(duration)
-          ? Math.round(duration)
-          : duration;
-      const durationCoercion =
-        typeof duration === "number" && !Number.isInteger(duration)
-          ? { raw: duration, rounded: roundedDuration }
-          : null;
-
-      const item = {
-        name: String(entry.name || entry.shot || entry.title || "Shot " + (index + 1)).trim(),
-        prompt,
-        modality: String(entry.modality || "video"),
-        ...(roundedDuration !== undefined ? { duration: roundedDuration } : {}),
-      };
-
-      if (durationCoercion) {
-        console.warn(
-          `[batch-ingest] duration ${durationCoercion.raw} is not an integer; ` +
-            `rounded to ${durationCoercion.rounded}. See filmbuff/docs/specs/batch-shot-list-spec.md §2`,
-        );
-        Object.defineProperty(item, "durationCoercion", {
-          value: durationCoercion,
-          enumerable: false,
-        });
-      }
-
-      return item;
-    }
-
-    // Try as a JSON value first
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      let parsed;
       try {
-        const parsed = JSON.parse(trimmed);
-        const arr = Array.isArray(parsed) ? parsed : parsed.shots || parsed.items || [parsed];
-        for (const entry of arr) {
-          const item = buildItem(entry, items.length);
-          if (item) items.push(item);
-        }
-        return items;
+        parsed = JSON.parse(trimmed);
       } catch (err) {
         if (trimmed.startsWith("[") || !hasMultipleTopLevelJsonValues(trimmed)) {
           const message =
@@ -3728,25 +3728,83 @@
               : "Unable to parse structured JSON batch file";
           throw new Error(`Malformed structured JSON batch file: ${message}`);
         }
-        /* fall through to JSONL */
+        /* fall through to NDJSON */
+      }
+
+      if (parsed !== undefined) {
+        if (!Array.isArray(parsed)) {
+          // (A) JSON object path: read parsed.references (non-array object) as globalRefs
+          const globalRefs =
+            parsed.references !== null &&
+            parsed.references !== undefined &&
+            !Array.isArray(parsed.references) &&
+            typeof parsed.references === "object"
+              ? parsed.references
+              : {};
+
+          // Support shots, items, or bare-object fallback (preserves existing behaviour)
+          const arr = parsed.shots || parsed.items || [parsed];
+          for (const entry of arr) {
+            const item = _buildItem(entry, globalRefs, items.length);
+            if (item) items.push(item);
+          }
+
+          const hasExplicitEmptyArray =
+            (Array.isArray(parsed.shots) && parsed.shots.length === 0) ||
+            (Array.isArray(parsed.items) && parsed.items.length === 0);
+          if (items.length === 0 && !hasExplicitEmptyArray) {
+            throw new Error("Malformed shot-list batch file: no valid shot items found.");
+          }
+        } else {
+          // (B) JSON array path: consume _type:"references" sentinel into globalRefs
+          const globalRefs = {};
+          for (const entry of parsed) {
+            if (entry !== null && typeof entry === "object" && entry._type === "references") {
+              // Destructure sentinel: spread all fields except _type into globalRefs
+              const { _type, ...rest } = entry; // eslint-disable-line no-unused-vars
+              Object.assign(globalRefs, rest);
+              continue; // do NOT emit as a shot
+            }
+            const item = _buildItem(entry, globalRefs, items.length);
+            if (item) items.push(item);
+          }
+
+          if (items.length === 0) {
+            if (parsed.length === 0) return items;
+            throw new Error("Malformed shot-list batch file: no valid shot items found.");
+          }
+        }
+
+        return items;
       }
     }
-    // JSONL: one JSON object per line
+
+    // NDJSON: one JSON object per line — also handle _type:"references" sentinels
+    const globalRefs = {};
+    let sawContent = false;
     for (const line of trimmed.split("\n")) {
       const l = line.trim();
       if (!l) continue;
+      sawContent = true;
       try {
         const entry = JSON.parse(l);
-        const item = buildItem(entry, items.length);
+        if (entry !== null && typeof entry === "object" && entry._type === "references") {
+          const { _type, ...rest } = entry; // eslint-disable-line no-unused-vars
+          Object.assign(globalRefs, rest);
+          continue; // do NOT emit as a shot
+        }
+        const item = _buildItem(entry, globalRefs, items.length);
         if (item) items.push(item);
       } catch (_) {
         /* skip invalid lines */
       }
     }
+    if (items.length === 0 && sawContent) {
+      throw new Error("Malformed shot-list batch file: no valid shot items found.");
+    }
     return items;
   }
 
-  /** Matches an optional modality tag at the end of a Markdown heading line. */
   const MODALITY_TAG_RE = /[\[(](video|image|text|audio)[\])]\s*$/i;
 
   /**
@@ -3894,6 +3952,9 @@
     "Remove or fix them before running.";
   const BATCH_PREFLIGHT_WARNING =
     "Batch compatibility check unavailable. Server-side validation will still run.";
+  const BATCH_PREFLIGHT_UNVERIFIED_WARNING =
+    'Some image URLs returned 405 to HEAD, so the browser demo retried GET. ' +
+    'Those shots are unverified, but Run stays enabled.';
 
   function showBatchPreflightWarning(message) {
     renderBatchWarning("batch-preflight-warning", message);
@@ -3960,6 +4021,11 @@
     if (preflightAbortController) preflightAbortController.abort();
     preflightAbortController = new AbortController();
     try {
+      const cachedDescriptor = videoModelsCache.find((item) => item.id === model);
+      const cachedRate = cachedDescriptor?.costPerUnit;
+      if (typeof cachedRate === "number" && Number.isFinite(cachedRate)) {
+        return { total: (cachedRate * count).toFixed(6), rate: cachedRate.toFixed(6), count };
+      }
       const base = proxyUrlInput.value.trim() || "http://localhost:3001";
       const url = `${base}/pricing?modality=video&model=${encodeURIComponent(model)}`;
       const res = await fetch(url, { signal: preflightAbortController.signal });
@@ -4098,7 +4164,7 @@
    *
    * Status icons:
    *   ✅  All image URLs reachable and selected provider can handle the image count.
-   *   ⚠️  Provider will route or truncate (amber) — still runnable.
+   *   ⚠️  Provider will route or truncate, or an image URL was only verified via GET. Still runnable.
    *   ❌  No live provider available OR at least one image URL unreachable — Run disabled.
    */
   async function runPreflightProviderChecks(items, listEl) {
@@ -4143,31 +4209,50 @@
       "openai";
 
     let hasBlockingError = false;
+    let hasUnverifiedUrl = false;
 
     // Check all items in parallel for speed
     await Promise.all(
       videoImageItems.map(async (item) => {
         const urls = item.images;
 
-        // HTTP HEAD checks — parallel per URL, 5 s timeout each
-        const headResults = await Promise.all(
+        // HTTP HEAD checks — parallel per URL, 5 s timeout each.
+        // If HEAD returns 405, retry with GET so hosts that disallow HEAD stay runnable.
+        const urlResults = await Promise.all(
           urls.map(async (url) => {
-            const ac = new AbortController();
-            const timer = setTimeout(() => ac.abort(), 5000);
+            const headAc = new AbortController();
+            const headTimer = setTimeout(() => headAc.abort(), 5000);
             try {
-              const r = await fetch(url, { method: "HEAD", signal: ac.signal });
-              return r.ok;
+              const headResponse = await fetch(url, { method: 'HEAD', signal: headAc.signal });
+              if (headResponse.ok) {
+                return { state: 'ok' };
+              }
+              if (headResponse.status === 405) {
+                const getAc = new AbortController();
+                const getTimer = setTimeout(() => getAc.abort(), 5000);
+                try {
+                  const getResponse = await fetch(url, { method: 'GET', signal: getAc.signal });
+                  if (getResponse.ok) {
+                    return { state: 'unverified' };
+                  }
+                } catch {
+                  /* GET fallback failed, treat the URL as blocked */
+                } finally {
+                  clearTimeout(getTimer);
+                }
+              }
+              return { state: 'blocked' };
             } catch {
-              return false;
+              return { state: 'blocked' };
             } finally {
-              clearTimeout(timer);
+              clearTimeout(headTimer);
             }
           }),
         );
-        const allUrlsOk = headResults.every(Boolean);
-        const firstBadIdx = headResults.findIndex((ok) => !ok);
-
-        // Routing decision from client-side selectI2VProvider
+        const anyBlocked = urlResults.some((result) => result.state === 'blocked');
+        const anyUnverified = urlResults.some((result) => result.state === 'unverified');
+        const firstBadIdx = urlResults.findIndex((result) => result.state === 'blocked');
+        const firstUnverifiedIdx = urlResults.findIndex((result) => result.state === 'unverified');
         const routing = selectI2VProvider(selectedProvider, urls.length, liveProviders);
         const noLiveProvider = !liveProviders.length;
 
@@ -4175,25 +4260,34 @@
         let icon,
           title,
           isBlocker = false;
-        if (!allUrlsOk) {
-          icon = "❌";
+        if (anyBlocked) {
+          icon = '❌';
           isBlocker = true;
-          title = "Image URL unreachable: " + urls[firstBadIdx];
+          title = 'Image URL unreachable: ' + urls[firstBadIdx];
         } else if (noLiveProvider && urls.length > 0) {
-          icon = "❌";
+          icon = '❌';
           isBlocker = true;
-          title = "No live video provider available — start the proxy with a valid API key";
+          title = 'No live video provider available — start the proxy with a valid API key';
+        } else if (anyUnverified) {
+          icon = '⚠️';
+          title = 'HEAD returned 405; GET succeeded, so this URL is only unverified: ' + urls[firstUnverifiedIdx];
+          if (routing.warning) {
+            title += ' · ' + routing.warning;
+            if (routing.alternativeProviders && routing.alternativeProviders.length) {
+              title += ' (alternatives: ' + routing.alternativeProviders.join(', ') + ')';
+            }
+          }
+          hasUnverifiedUrl = true;
         } else if (routing.warning) {
-          icon = "⚠️";
+          icon = '⚠️';
           title = routing.warning;
           if (routing.alternativeProviders && routing.alternativeProviders.length) {
-            title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
+            title += ' (alternatives: ' + routing.alternativeProviders.join(', ') + ')';
           }
         } else {
-          icon = "✅";
-          title = "Provider: " + routing.provider + " · " + urls.length + " image(s) accepted";
+          icon = '✅';
+          title = 'Provider: ' + routing.provider + ' · ' + urls.length + ' image(s) accepted';
         }
-
         if (isBlocker) hasBlockingError = true;
 
         // Update the status icon element already in the DOM
@@ -4211,6 +4305,10 @@
         }
       }),
     );
+
+    if (hasUnverifiedUrl && !hasBlockingError) {
+      showBatchPreflightWarning(BATCH_PREFLIGHT_UNVERIFIED_WARNING);
+    }
 
     // Disable the Run button when any shot has a hard error (AC-15)
     if (hasBlockingError) {
@@ -6012,3 +6110,9 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
+
+
+
+
+
+

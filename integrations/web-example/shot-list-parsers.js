@@ -183,9 +183,21 @@ export function parseJsonFile(text) {
   const trimmed = text.trim();
 
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    let parsed;
     try {
-      const parsed = JSON.parse(trimmed);
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      if (trimmed.startsWith("[") || !hasMultipleTopLevelJsonValues(trimmed)) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "Unable to parse structured JSON batch file";
+        throw new Error(`Malformed structured JSON batch file: ${message}`);
+      }
+      /* fall through to NDJSON */
+    }
 
+    if (parsed !== undefined) {
       if (!Array.isArray(parsed)) {
         // (A) JSON object path: read parsed.references (non-array object) as globalRefs
         const globalRefs =
@@ -202,6 +214,13 @@ export function parseJsonFile(text) {
           const item = _buildItem(entry, globalRefs, items.length);
           if (item) items.push(item);
         }
+
+        const hasExplicitEmptyArray =
+          (Array.isArray(parsed.shots) && parsed.shots.length === 0) ||
+          (Array.isArray(parsed.items) && parsed.items.length === 0);
+        if (items.length === 0 && !hasExplicitEmptyArray) {
+          throw new Error("Malformed shot-list batch file: no valid shot items found.");
+        }
       } else {
         // (B) JSON array path: consume _type:"references" sentinel into globalRefs
         const globalRefs = {};
@@ -215,26 +234,24 @@ export function parseJsonFile(text) {
           const item = _buildItem(entry, globalRefs, items.length);
           if (item) items.push(item);
         }
+
+        if (items.length === 0) {
+          if (parsed.length === 0) return items;
+          throw new Error("Malformed shot-list batch file: no valid shot items found.");
+        }
       }
 
       return items;
-    } catch (err) {
-      if (trimmed.startsWith("[") || !hasMultipleTopLevelJsonValues(trimmed)) {
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : "Unable to parse structured JSON batch file";
-        throw new Error(`Malformed structured JSON batch file: ${message}`);
-      }
-      /* fall through to NDJSON */
     }
   }
 
   // NDJSON: one JSON object per line — also handle _type:"references" sentinels
   const globalRefs = {};
+  let sawContent = false;
   for (const line of trimmed.split("\n")) {
     const l = line.trim();
     if (!l) continue;
+    sawContent = true;
     try {
       const entry = JSON.parse(l);
       if (entry !== null && typeof entry === "object" && entry._type === "references") {
@@ -248,9 +265,11 @@ export function parseJsonFile(text) {
       /* skip invalid lines */
     }
   }
+  if (items.length === 0 && sawContent) {
+    throw new Error("Malformed shot-list batch file: no valid shot items found.");
+  }
   return items;
 }
-
 /** Matches an optional modality tag at the end of a Markdown heading line. */
 const MODALITY_TAG_RE = /[\[(](video|image|text|audio)[\])]\s*$/i;
 
@@ -431,3 +450,4 @@ export function validateDuration(value) {
   }
   return null; // valid
 }
+

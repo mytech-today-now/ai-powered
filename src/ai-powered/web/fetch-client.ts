@@ -29,8 +29,22 @@ export interface WebCallOptions {
   maxTokens?: number;
   /** System prompt for this call only. */
   systemPrompt?: string;
-  /** Model override for this call only. */
+  /** Provider override forwarded to proxy mode. */
+  provider?: string;
+  /** Model override forwarded to proxy mode or direct-mode helpers. */
   model?: string;
+  /** Single upload reference returned by POST /upload. */
+  fileRef?: string;
+}
+
+/** Image-generation controls accepted by WebAiClient.generateImage(). */
+export interface WebImageOptions extends WebCallOptions {
+  aspectRatio?: string;
+  width?: number;
+  height?: number;
+  quality?: string;
+  /** Multiple upload references returned by POST /upload. */
+  fileRefs?: string[];
 }
 
 /** Video-generation controls accepted by WebAiClient.generateVideo(). */
@@ -103,6 +117,7 @@ export interface WebModelInfo {
   id: string;
   name: string;
   capabilities: string[];
+  costPerUnit?: number | null;
   [key: string]: unknown;
   inputCapabilities?: string[];
   resolutions?: string[];
@@ -135,7 +150,7 @@ export interface WebProxyOptions {
  */
 export interface WebDirectOptions {
   mode: "direct";
-  provider: "openai" | "anthropic" | "venice" | "xai";
+  provider: "openai" | "anthropic" | "venice" | "xai" | "openrouter";
   apiKey: string;
   model?: string;
 }
@@ -180,6 +195,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   anthropic: "https://api.anthropic.com/v1",
   venice: "https://api.venice.ai/api/v1",
   xai: "https://api.x.ai/v1",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 
 // ---------------------------------------------------------------------------
@@ -191,9 +207,39 @@ const DEFAULT_MODELS: Record<string, Partial<Record<string, string>>> = {
   anthropic: { text: "claude-opus-4-5", structured: "claude-3-5-sonnet-20241022" },
   venice: { text: "llama-3.3-70b", image: "fluently-xl", structured: "llama-3.3-70b" },
   xai: { text: "grok-2-1212", structured: "grok-2-1212" },
+  openrouter: {
+    text: "openrouter/auto",
+    image: "openrouter/auto",
+    audio: "openrouter/auto",
+    structured: "openrouter/auto",
+  },
 };
 
 // ---------------------------------------------------------------------------
+const OPENAI_IMAGE_INPUT_MODEL_IDS = new Set([
+  "gpt-4o",
+  "gpt-4o-mini",
+  "gpt-4-turbo",
+  "gpt-image-1",
+]);
+
+const XAI_IMAGE_INPUT_MODEL_IDS = new Set(["grok-vision-beta", "grok-imagine-video"]);
+
+function inferDirectModeInputCapabilities(
+  provider: string,
+  modelId: string,
+): WebModelInfo["inputCapabilities"] | undefined {
+  if (provider === "openai" && OPENAI_IMAGE_INPUT_MODEL_IDS.has(modelId)) {
+    return ["image"];
+  }
+
+  if (provider === "xai" && XAI_IMAGE_INPUT_MODEL_IDS.has(modelId)) {
+    return ["image"];
+  }
+
+  return undefined;
+}
+
 // DOM security banner (direct mode — non-suppressible)
 // ---------------------------------------------------------------------------
 
@@ -623,6 +669,42 @@ export class WebAiClient {
     return "";
   }
 
+  private setBodyField(body: Record<string, unknown>, key: string, value: unknown): void {
+    if (value !== undefined) body[key] = value;
+  }
+
+  private addProxyRoutingFields(body: Record<string, unknown>, options?: WebCallOptions): void {
+    this.setBodyField(body, "provider", options?.provider);
+    this.setBodyField(body, "model", options?.model);
+    this.setBodyField(body, "fileRef", options?.fileRef);
+  }
+
+  private addProxyImageFields(body: Record<string, unknown>, options?: WebImageOptions): void {
+    this.addProxyRoutingFields(body, options);
+    this.setBodyField(body, "fileRefs", options?.fileRefs);
+    this.setBodyField(body, "aspectRatio", options?.aspectRatio);
+    this.setBodyField(body, "width", options?.width);
+    this.setBodyField(body, "height", options?.height);
+    this.setBodyField(body, "quality", options?.quality);
+  }
+
+  private addProxyVideoFields(body: Record<string, unknown>, options?: WebVideoOptions): void {
+    this.addProxyRoutingFields(body, options);
+    this.setBodyField(body, "fileRefs", options?.fileRefs);
+    this.setBodyField(body, "images", options?.images);
+    this.setBodyField(body, "aspectRatio", options?.aspectRatio);
+    this.setBodyField(body, "resolution", options?.resolution);
+    this.setBodyField(body, "quality", options?.quality);
+    this.setBodyField(body, "duration", options?.duration);
+    this.setBodyField(body, "fps", options?.fps);
+    this.setBodyField(body, "negativePrompt", options?.negativePrompt);
+    this.setBodyField(body, "seed", options?.seed);
+    this.setBodyField(body, "transitionDuration", options?.transitionDuration);
+    this.setBodyField(body, "pikaffect", options?.pikaffect);
+    this.setBodyField(body, "modifyRegionRoi", options?.modifyRegionRoi);
+    this.setBodyField(body, "modifyRegionMask", options?.modifyRegionMask);
+  }
+
   /**
    * Parse a fetch Response that may be an error.
    * Throws a descriptive Error for non-2xx responses.
@@ -630,7 +712,23 @@ export class WebAiClient {
   private async assertOk(res: Response): Promise<void> {
     if (res.ok) return;
     const body = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
+    let message = body.trim();
+    if (message) {
+      try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        if (typeof parsed["error"] === "string") {
+          message = parsed["error"];
+        } else if (typeof parsed["message"] === "string") {
+          message = parsed["message"];
+        }
+      } catch {
+        // Keep the raw text body when the error payload is not JSON.
+      }
+    }
+    const err = new Error(message || `HTTP ${res.status}`) as Error & { statusCode?: number };
+    err.name = "ProxyError";
+    err.statusCode = res.status;
+    throw err;
   }
 
   /**
@@ -751,6 +849,7 @@ export class WebAiClient {
   async generateText(prompt: string, options?: WebCallOptions): Promise<WebTextResult> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
+      this.addProxyRoutingFields(body, options);
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
       if (options?.maxTokens !== undefined) body["maxTokens"] = options.maxTokens;
       if (options?.systemPrompt !== undefined) body["systemPrompt"] = options.systemPrompt;
@@ -803,6 +902,7 @@ export class WebAiClient {
   async *streamText(prompt: string, options?: WebCallOptions): AsyncIterable<string> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt, stream: true };
+      this.addProxyRoutingFields(body, options);
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
       if (options?.maxTokens !== undefined) body["maxTokens"] = options.maxTokens;
       if (options?.systemPrompt !== undefined) body["systemPrompt"] = options.systemPrompt;
@@ -905,10 +1005,11 @@ export class WebAiClient {
    * In proxy mode the server JSON response may contain `url`, `b64_json`, or
    * `data` (data URI from `ImageResult`) — all three formats are handled.
    */
-  async generateImage(prompt: string, options?: WebCallOptions): Promise<Blob> {
+  async generateImage(prompt: string, options?: WebImageOptions): Promise<Blob> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
+      this.addProxyImageFields(body, options);
       const res = await this.fetchWithResilience(
         () =>
           fetch(`${this.proxyBase}/image`, {
@@ -953,6 +1054,59 @@ export class WebAiClient {
 
     // Direct mode — OpenAI / Venice images endpoint
     const { provider, apiKey } = this.opts;
+    if (provider === "openrouter") {
+      const model = this.resolveModel("image", options?.model);
+      this._checkBudget(this._estimateProjectedCost(model, prompt));
+      const res = await this.fetchWithResilience(
+        () =>
+          fetch(`${PROVIDER_BASE_URLS[provider]}/images`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              model,
+              prompt,
+              response_format: "b64_json",
+            }),
+            signal: options?.signal ?? null,
+          }),
+        options?.signal,
+      );
+      await this.assertOk(res);
+      const imageResult = (await res.json()) as {
+        data?:
+          | Array<{ b64_json?: string; url?: string; data?: string; mimeType?: string }>
+          | string;
+        b64_json?: string;
+        url?: string;
+        mimeType?: string;
+      };
+      const item = Array.isArray(imageResult.data) ? imageResult.data[0] : undefined;
+      const b64 = item?.b64_json ?? imageResult.b64_json;
+      if (b64) {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        return new Blob([bytes], { type: "image/png" });
+      }
+      const imageUrl = item?.url ?? imageResult.url;
+      if (imageUrl) {
+        const directImgUrl = imageUrl;
+        const imgRes = await this.fetchWithResilience(
+          () => fetch(directImgUrl, { signal: options?.signal ?? null }),
+          options?.signal,
+        );
+        return imgRes.blob();
+      }
+      const dataUri =
+        item?.data ?? (typeof imageResult.data === "string" ? imageResult.data : undefined);
+      if (dataUri) {
+        const commaIdx = dataUri.indexOf(",");
+        const header = commaIdx >= 0 ? dataUri.slice(0, commaIdx) : "";
+        const b64 = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
+        const mime = header.match(/:(.*?);/)?.[1] ?? imageResult.mimeType ?? "image/png";
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        return new Blob([bytes], { type: mime });
+      }
+      throw new Error("generateImage: no image data in provider response");
+    }
     const model = this.resolveModel("image", options?.model);
     this._checkBudget(this._estimateProjectedCost(model, prompt));
     const res = await this.fetchWithResilience(
@@ -1009,6 +1163,7 @@ export class WebAiClient {
       // the field in that case so the provider falls back to "audio/webm".
       if (audio.type) body["mimeType"] = audio.type;
       if (this.opts.profile) body["profile"] = this.opts.profile;
+      this.addProxyRoutingFields(body, options);
       const res = await this.fetchWithResilience(
         () =>
           fetch(`${this.proxyBase}/audio/transcribe`, {
@@ -1028,6 +1183,39 @@ export class WebAiClient {
     // Derive the filename extension from the Blob's MIME type so Whisper
     // receives the correct file hint for video containers and audio formats.
     const { provider, apiKey } = this.opts;
+    if (provider === "openrouter") {
+      const model = this.resolveModel("audio", options?.model);
+      this._checkBudget(this._estimateProjectedCost(model, audio.type || "audio/webm"));
+      const buffer = await audio.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (const b of bytes) binary += String.fromCharCode(b);
+      const b64 = btoa(binary);
+      const directMimeType = audio.type || "audio/webm";
+      const res = await this.fetchWithResilience(
+        () =>
+          fetch(`${PROVIDER_BASE_URLS[provider]}/audio/transcriptions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              file: b64,
+              input: b64,
+              audio: b64,
+              mime_type: directMimeType,
+              mimeType: directMimeType,
+            }),
+            signal: options?.signal ?? null,
+          }),
+        options?.signal,
+      );
+      await this.assertOk(res);
+      const data = (await res.json()) as { text?: string; transcript?: string };
+      return data.text ?? data.transcript ?? "";
+    }
     const model = this.resolveModel("audio", options?.model);
     const directMimeType = audio.type || "audio/webm";
     const directExt = directMimeType.split("/")[1]?.split(";")[0] ?? "webm";
@@ -1059,6 +1247,7 @@ export class WebAiClient {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { text };
       if (this.opts.profile) body["profile"] = this.opts.profile;
+      this.addProxyRoutingFields(body, options);
       const res = await this.fetchWithResilience(
         () =>
           fetch(`${this.proxyBase}/audio/speak`, {
@@ -1106,24 +1295,7 @@ export class WebAiClient {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
-      if (options?.provider !== undefined) body["provider"] = options.provider;
-      if (options?.model !== undefined) body["model"] = options.model;
-      if (options?.fileRef !== undefined) body["fileRef"] = options.fileRef;
-      if (options?.fileRefs !== undefined) body["fileRefs"] = options.fileRefs;
-      if (options?.images !== undefined) body["images"] = options.images;
-      if (options?.aspectRatio !== undefined) body["aspectRatio"] = options.aspectRatio;
-      if (options?.resolution !== undefined) body["resolution"] = options.resolution;
-      if (options?.quality !== undefined) body["quality"] = options.quality;
-      if (options?.duration !== undefined) body["duration"] = options.duration;
-      if (options?.fps !== undefined) body["fps"] = options.fps;
-      if (options?.negativePrompt !== undefined) body["negativePrompt"] = options.negativePrompt;
-      if (options?.seed !== undefined) body["seed"] = options.seed;
-      if (options?.transitionDuration !== undefined)
-        body["transitionDuration"] = options.transitionDuration;
-      if (options?.pikaffect !== undefined) body["pikaffect"] = options.pikaffect;
-      if (options?.modifyRegionRoi !== undefined) body["modifyRegionRoi"] = options.modifyRegionRoi;
-      if (options?.modifyRegionMask !== undefined)
-        body["modifyRegionMask"] = options.modifyRegionMask;
+      this.addProxyVideoFields(body, options);
       const res = await this.fetchWithResilience(
         () =>
           fetch(`${this.proxyBase}/video`, {
@@ -1181,6 +1353,7 @@ export class WebAiClient {
   ): Promise<WebStructuredResult<T>> {
     if (this.opts.mode === "proxy") {
       const body: Record<string, unknown> = { prompt };
+      this.addProxyRoutingFields(body, options);
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
       if (options?.maxTokens !== undefined) body["maxTokens"] = options.maxTokens;
       if (options?.systemPrompt !== undefined) body["systemPrompt"] = options.systemPrompt;
@@ -1326,12 +1499,17 @@ export class WebAiClient {
     const data = (await res.json()) as { data: Array<Record<string, unknown>> };
     const models: WebModelInfo[] = data.data.map((m): WebModelInfo => {
       const id = typeof m["id"] === "string" ? (m["id"] as string) : "";
-      return {
+      const model: WebModelInfo = {
         ...m,
         id,
         name: id,
         capabilities: [],
       };
+      const inferred = inferDirectModeInputCapabilities(provider, id);
+      if (inferred && model.inputCapabilities === undefined) {
+        model.inputCapabilities = inferred;
+      }
+      return model;
     });
     return accepts ? models.filter((m) => m.inputCapabilities?.includes(accepts) ?? false) : models;
   }

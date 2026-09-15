@@ -3,70 +3,126 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ai-powered · info</title>
+    <title>ai-powered - info</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="info-page">
     <div class="info-shell">
       <header class="info-header">
         <div class="info-header-copy">
-          <h1>Information and settings</h1>
-          <p>
-            Read the live README, explore related posts, and manage browser-owned state for the demo.
-          </p>
+          <h1>ai-powered · info</h1>
+          <p>Live README content, local settings, and browser configuration for the web demo.</p>
         </div>
         <div class="info-header-meta">
-          <button class="style-badge" id="info-style-badge" type="button">Style</button>
-          <span class="version-badge" id="info-version-badge">UMD</span>
+          <span class="info-status">Local settings + live README</span>
+          <a class="btn btn-ghost" href="index.html">Back to app</a>
         </div>
       </header>
 
-      <nav class="info-tabs" role="tablist" aria-label="Information tabs">
-        <button class="info-tab-btn active" data-info-tab="readme" role="tab" aria-selected="true">
-          README
+      <nav class="info-tabs" role="tablist" aria-label="Info sections">
+        <button
+          class="info-tab-btn active"
+          data-info-tab="overview"
+          role="tab"
+          aria-selected="true"
+          type="button"
+        >
+          Overview
         </button>
-        <button class="info-tab-btn" data-info-tab="discover" role="tab" aria-selected="false">
-          Discovery
-        </button>
-        <button class="info-tab-btn" data-info-tab="settings" role="tab" aria-selected="false">
-          Settings
+        <button
+          class="info-tab-btn"
+          data-info-tab="settings-configuration"
+          role="tab"
+          aria-selected="false"
+          type="button"
+        >
+          Settings / Configuration
         </button>
       </nav>
 
       <main class="info-main">
-        <section class="info-panel" id="info-panel-readme" role="tabpanel">
+        <section class="info-panel" data-info-panel="overview" role="tabpanel">
           <div class="info-panel-header">
             <div>
-              <h2>Live README</h2>
-              <p>Fetched from the published upstream source and rendered as semantic HTML.</p>
+              <h2>Overview</h2>
+              <p>Live repository README rendered from the remote source.</p>
             </div>
-            <span id="readme-status" class="info-status">Loading...</span>
           </div>
-          <article id="readme-content" class="info-article"></article>
+
+          <article
+            id="readme-article"
+            class="info-article rendered-markdown"
+            aria-live="polite"
+          >
+            <p id="readme-status">Loading the live README from the repository…</p>
+          </article>
         </section>
 
-        <section class="info-panel hidden" id="info-panel-discover" role="tabpanel">
+        <section class="info-panel hidden" data-info-panel="settings-configuration" role="tabpanel">
           <div class="info-panel-header">
             <div>
-              <h2>Discovery</h2>
-              <p>Relevant posts from mytech.today with short context for the browser workbench.</p>
+              <h2>Settings / Configuration</h2>
+              <p>Manage provider credentials and the soft budget cap.</p>
             </div>
-            <span id="discovery-status" class="info-status">Loading...</span>
+            <div class="settings-actions">
+              <button id="btn-reset-settings" class="btn btn-ghost" type="button">Reset</button>
+              <a class="btn btn-ghost" href="index.html">Open app</a>
+            </div>
           </div>
-          <div id="discovery-grid" class="discovery-grid"></div>
-        </section>
 
-        <section class="info-panel hidden" id="info-panel-settings" role="tabpanel">
-          <div class="info-panel-header">
-            <div>
-              <h2>Configuration</h2>
-              <p>Reset all app-owned browser state and review the current storage footprint.</p>
+          <div class="connection-config direct-config">
+            <div class="direct-row settings-credential-row">
+              <label for="provider-select">Provider:</label>
+              <select id="provider-select">
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="venice">Venice</option>
+                <option value="xai">xAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="pika">Pika</option>
+              </select>
+              <label for="api-key-input">Credential:</label>
+              <input
+                id="api-key-input"
+                type="password"
+                placeholder="Enter the selected provider credential"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <div class="settings-credential-actions">
+                <button id="btn-verify-settings" class="btn btn-ghost" type="button">Verify</button>
+                <button id="btn-save-settings" class="btn btn-primary" type="button">Save</button>
+                <span
+                  id="credential-status"
+                  class="info-status credential-status"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  data-state="idle"
+                >
+                  Enter a credential to verify or save.
+                </span>
+              </div>
             </div>
-            <span id="settings-status" class="info-status">Ready</span>
-          </div>
-          <div id="storage-summary" class="storage-summary"></div>
-          <div class="settings-actions">
-            <button id="btn-reset-all" class="btn-primary btn--danger" type="button">Reset All</button>
+            <div class="direct-row">
+              <label for="direct-budget">Budget (USD):</label>
+              <input
+                id="direct-budget"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="∞ (no limit)"
+                style="width: 8rem"
+              />
+            </div>
+            <div class="security-warning">
+              ⚠ WARNING: Direct mode exposes your API key in browser DevTools and network traffic.
+              Never use a production key here. Use proxy mode in production environments.
+            </div>
+            <p class="hint">
+              Changes are stored locally in this browser and will update the main app in other
+              tabs on the same origin.
+            </p>
           </div>
         </section>
       </main>

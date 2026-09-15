@@ -113,8 +113,8 @@
             id="btn-open-config"
             class="icon-button"
             type="button"
-            title="Open config page"
-            aria-label="Open config page"
+            title="Open settings page"
+            aria-label="Open settings page"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="2.6"></circle>
@@ -171,7 +171,7 @@
         <!-- Direct config (shown only when Direct is selected) -->
         <div id="direct-config" class="connection-config hidden">
           <div class="hint">
-            Direct mode settings live on the Config page. Open it from the header to change your
+            Direct mode settings live on the Info page under Settings / Configuration. Open it from the header to change your
             provider, API key, or budget.
           </div>
           <div hidden aria-hidden="true">
@@ -182,6 +182,7 @@
                 <option value="anthropic">Anthropic</option>
                 <option value="venice">Venice</option>
                 <option value="xai">xAI</option>
+                <option value="openrouter">OpenRouter</option>
               </select>
               <label for="api-key-input">API Key:</label>
               <input
@@ -943,3 +944,6 @@ List 3 programming languages. Return a JSON array where each object has: name (s
     <script src="app.js"></script>
   </body>
 </html>
+
+
+
