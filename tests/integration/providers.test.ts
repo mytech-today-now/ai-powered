@@ -24,6 +24,7 @@ import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { OpenAiProvider } from "../../src/ai-powered/providers/openai.js";
 import { AnthropicProvider } from "../../src/ai-powered/providers/anthropic.js";
+import { XAIProvider } from "../../src/ai-powered/providers/xai.js";
 import { ProviderCapabilityError, ProviderError } from "../../src/ai-powered/types.js";
 import { getLogger } from "../../src/ai-powered/utils.js";
 import { createProvider } from "../../src/ai-powered/providers/index.js";
@@ -243,6 +244,19 @@ describe("AnthropicProvider", () => {
     });
   });
 
+  it("annotates all Claude 3 models as image-capable inputs", async () => {
+    const models = await provider.listModels(undefined, "image");
+    expect(models.map((m) => m.id).sort()).toEqual(
+      [
+        "claude-3-5-haiku-20241022",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-haiku-20240307",
+        "claude-3-opus-20240229",
+        "claude-3-sonnet-20240229",
+      ].sort(),
+    );
+  });
+
   describe("listModels — filtered by modality", () => {
     it("returns only text models when modality=text", async () => {
       const models = await provider.listModels("text");
@@ -290,6 +304,30 @@ describe("AnthropicProvider", () => {
 
   it("throws ProviderCapabilityError for generateVideo (unsupported modality)", () => {
     expect(() => provider.generateVideo("a test prompt")).toThrow(ProviderCapabilityError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// XAIProvider — no-network tests
+
+describe("XAIProvider", () => {
+  const config = AiConfigSchema.parse({ provider: "xai", apiKey: "xai-test-key" });
+  const provider = new XAIProvider(config);
+
+  it("returns only grok-vision-beta when accepts=image", async () => {
+    const allModels = await provider.listModels();
+    expect(allModels.find((m) => m.id === "grok-vision-beta")?.inputCapabilities).toEqual([
+      "image",
+    ]);
+    expect(
+      allModels
+        .filter((m) => m.id !== "grok-vision-beta")
+        .every((m) => m.inputCapabilities === undefined),
+    ).toBe(true);
+
+    const imageModels = await provider.listModels(undefined, "image");
+    expect(imageModels.map((m) => m.id)).toEqual(["grok-vision-beta"]);
+    expect(imageModels[0]?.inputCapabilities).toEqual(["image"]);
   });
 });
 
@@ -425,6 +463,9 @@ describe("LumaAIProvider", () => {
     expect(ids).toContain("ray-2");
     expect(ids).toContain("ray-flash-2");
     models.forEach((m) => expect(m.capabilities).toContain("video"));
+    models.forEach((model) => {
+      expect(model.inputCapabilities).toEqual(["image"]);
+    });
   });
 
   it("listModels('video') returns both video models", async () => {

@@ -109,7 +109,6 @@ const GROK_MODELS: ModelDescriptor[] = [
     aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
     resolutions: ["480p", "720p"],
     durationRange: { min: 1, max: 15, default: 8 },
-    inputCapabilities: ["image"],
   },
 ];
 
