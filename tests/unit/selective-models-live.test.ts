@@ -12,6 +12,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AiConfigSchema } from "../../src/ai-powered/core.js";
+import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { VeniceProvider } from "../../src/ai-powered/providers/venice.js";
 import { CustomProvider } from "../../src/ai-powered/providers/custom.js";
 
@@ -183,5 +184,21 @@ describe("Custom provider live model lists", () => {
       "http://localhost:11434/api/tags",
       expect.objectContaining({ headers: {} }),
     );
+  });
+});
+
+describe("Mock provider static model annotations", () => {
+  it("keeps only the image-facing mock models annotated for accepts=image", async () => {
+    const provider = new MockProvider(AiConfigSchema.parse({ mock: true }));
+
+    const models = await provider.listModels();
+    const byId = new Map(models.map((model) => [model.id, model]));
+
+    expect(byId.get("mock-text-v1")?.inputCapabilities).toEqual(["image"]);
+    expect(byId.get("mock-image-v1")?.inputCapabilities).toEqual(["image"]);
+    expect(byId.get("mock-video-v1")?.inputCapabilities).toEqual(["image"]);
+    expect(byId.get("mock-whisper-v1")?.inputCapabilities).toBeUndefined();
+    expect(byId.get("mock-tts-v1")?.inputCapabilities).toBeUndefined();
+    expect(byId.get("mock-structured-v1")?.inputCapabilities).toBeUndefined();
   });
 });

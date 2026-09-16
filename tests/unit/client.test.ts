@@ -22,7 +22,8 @@ import type {
   VideoResult,
   ModelDescriptor,
 } from "../../src/ai-powered/types.js";
-import type { Modality, InputModality } from "../../src/ai-powered/core.js";
+import type { InputModality } from "../../src/ai-powered/types.js";
+import type { Modality } from "../../src/ai-powered/core.js";
 import type { ProviderCallOptions } from "../../src/ai-powered/providers/base.js";
 import type { TextResult } from "../../src/ai-powered/types.js";
 import type { AiConfig } from "../../src/ai-powered/core.js";
@@ -35,6 +36,7 @@ const baseConfig = AiConfigSchema.parse({ mock: true, provider: "mock" });
 
 class RecordingMockProvider extends MockProvider {
   lastGenerateTextCall: { prompt: string; options?: ProviderCallOptions } | null = null;
+  listModelsCalls: Array<{ modality?: Modality; accepts?: InputModality }> = [];
 
   override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
     this.lastGenerateTextCall = {
@@ -52,6 +54,14 @@ class RecordingMockProvider extends MockProvider {
       latencyMs: 1,
       finishReason: "stop",
     };
+  }
+
+  override async listModels(
+    modality?: Modality,
+    accepts?: InputModality,
+  ): Promise<ModelDescriptor[]> {
+    this.listModelsCalls.push({ modality, accepts });
+    return super.listModels(modality, accepts);
   }
 }
 
@@ -226,6 +236,24 @@ describe("AiClient.generateVideo dispatch", () => {
       prompt: "motion prompt",
     });
     expect(result.provider).toBe("mock");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listModels forwarding
+// ---------------------------------------------------------------------------
+
+describe("AiClient.listModels", () => {
+  it("forwards modality and accepts to the provider", async () => {
+    const { client, provider } = makeRecordingClient();
+
+    await client.listModels("video", "image");
+    await client.listModels("text");
+
+    expect(provider.listModelsCalls).toEqual([
+      { modality: "video", accepts: "image" },
+      { modality: "text", accepts: undefined },
+    ]);
   });
 });
 

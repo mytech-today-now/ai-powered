@@ -302,14 +302,13 @@ export class MockProvider extends BaseProvider {
         id: "mock-whisper-v1",
         name: "Mock Whisper v1",
         capabilities: ["audio"],
-        inputCapabilities: ["audio"],
       },
       { id: "mock-tts-v1", name: "Mock TTS v1", capabilities: ["audio"] },
       {
         id: "mock-video-v1",
         name: "Mock Video v1",
         capabilities: ["video"],
-        inputCapabilities: ["image", "video"],
+        inputCapabilities: ["image"],
       },
       { id: "mock-structured-v1", name: "Mock Structured v1", capabilities: ["structured"] },
     ];

@@ -648,13 +648,13 @@
     if (!selectEl) return;
     const prev = selectEl.value;
     selectEl.innerHTML = '<option value="">Default</option>';
-    const compatible = allProviders.filter(
-      (p) =>
-        Array.isArray(p.modalities) &&
-        p.modalities.includes(modality) &&
-        (!hasImageAttached ||
-          (Array.isArray(p.inputModalities) && p.inputModalities.includes("image"))),
-    );
+    const compatible = allProviders
+      .filter((p) => Array.isArray(p.modalities))
+      .filter((p) => p.modalities.includes(modality))
+      .filter((p) => {
+        if (!hasImageAttached) return true;
+        return providerSupportsInputModality(p.id, "image");
+      });
     compatible.forEach((p) => {
       const opt = document.createElement("option");
       opt.value = p.id;
@@ -1755,7 +1755,9 @@
     const base = proxyUrlInput.value.trim() || "http://localhost:3001";
     const provider =
       providerHint !== undefined ? providerHint : tabState.get(modality)?.provider || "";
-    const acceptsImage = hasImageAttached && providerSupportsInputModality(provider, "image");
+    const acceptsImage = hasImageAttached;
+    const retryWithoutAcceptsImage =
+      hasImageAttached && providerSupportsInputModality(provider, "image");
     let url = base + "/models?modality=" + modality;
     if (provider) url += "&provider=" + provider;
     if (acceptsImage) url += "&accepts=image";
@@ -1795,7 +1797,7 @@
       // The attachment notice ("image will be ignored") is shown separately via
       // updateAttachmentNotice(), which is called by switchTab and
       // retriggerAttachmentDropdowns after this function returns.
-      if (acceptsImage && Array.isArray(models) && models.length === 0) {
+      if (retryWithoutAcceptsImage && Array.isArray(models) && models.length === 0) {
         const fallbackUrl =
           base + "/models?modality=" + modality + (provider ? "&provider=" + provider : "");
         resp = await fetch(fallbackUrl);

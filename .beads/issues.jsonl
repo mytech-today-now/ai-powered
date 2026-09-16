@@ -3810,3 +3810,5 @@
 {"id":"bd-6ite","updated_at":"2026-09-14T12:09:04Z","status":"in-progress","claimed_by":"kyle_"}
 {"id":"bd-vike","updated_at":"2026-09-15T11:22:33Z","status":"in-progress","claimed_by":"kyle_"}
 {"id":"bd-vike","status":"closed","close_reason":"\\","updated_at":"2026-09-15T11:27:16Z"}
+{"id":"bd-ue24","updated_at":"2026-09-15T17:20:18Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-ue24","status":"closed","close_reason":"done","updated_at":"2026-09-15T17:24:59Z"}

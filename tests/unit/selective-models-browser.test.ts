@@ -6,7 +6,7 @@
  * and structured /models error handling.
  *
  * Mirrors the loadModels() logic from integrations/web-example/app.js:
- *   - only append accepts=image when the selected provider advertises image input
+ *   - append accepts=image whenever a reference image is attached
  *   - retry without accepts=image when the filtered list is empty
  *   - keep the Default option present and selected after repopulation
  *   - preserve the current dropdown contents on structured HTTP errors
@@ -175,7 +175,8 @@ async function loadModelsLikeApp(
   }
 
   const base = "http://localhost:3001";
-  const acceptsImage =
+  const acceptsImage = hasImageAttached;
+  const retryWithoutAcceptsImage =
     hasImageAttached && providerSupportsInputModality(provider, "image", allProviders);
   let url = `${base}/models?modality=${modality}`;
   if (provider) url += `&provider=${provider}`;
@@ -220,7 +221,7 @@ async function loadModelsLikeApp(
     return urls;
   }
 
-  if (acceptsImage && Array.isArray(models) && models.length === 0) {
+  if (retryWithoutAcceptsImage && Array.isArray(models) && models.length === 0) {
     const fallbackUrl =
       `${base}/models?modality=${modality}` + (provider ? `&provider=${provider}` : "");
     urls.push(fallbackUrl);
@@ -326,7 +327,7 @@ describe("loadModels browser regression", () => {
     expect(select.value).toBe("");
   });
 
-  it("skips accepts=image for providers without image input and still populates", async () => {
+  it("appends accepts=image when an attachment is present", async () => {
     const select = makeSelect();
     const providers: ProviderMeta[] = [{ id: "runway", inputModalities: [] }];
     const urls: string[] = [];
@@ -337,8 +338,10 @@ describe("loadModels browser regression", () => {
 
     await loadModelsLikeApp("video", select, "runway", true, providers, fetchImpl);
 
-    expect(urls).toEqual(["http://localhost:3001/models?modality=video&provider=runway"]);
-    expect(urls[0]).not.toContain("accepts=image");
+    expect(urls).toEqual([
+      "http://localhost:3001/models?modality=video&provider=runway&accepts=image",
+    ]);
+    expect(urls[0]).toContain("accepts=image");
     expect(select.options).toHaveLength(2);
     expect(select.options[0]?.value).toBe("");
     expect(select.options[0]?.disabled).toBe(false);
@@ -429,7 +432,7 @@ describe("loadModels browser regression", () => {
     expect(row.nextElementSibling).toBeNull();
   });
 
-  it("repopulates the audio select normally", async () => {
+  it("repopulates the audio select with accepts=image", async () => {
     const { row, select } = makeModelRow("tts-model-select");
     const providers: ProviderMeta[] = [{ id: "openai", inputModalities: ["text"] }];
     const urls: string[] = [];
@@ -443,14 +446,16 @@ describe("loadModels browser regression", () => {
 
     await loadModelsLikeApp("audio", select, "openai", true, providers, fetchImpl);
 
-    expect(urls).toEqual(["http://localhost:3001/models?modality=audio&provider=openai"]);
-    expect(urls[0]).not.toContain("accepts=image");
+    expect(urls).toEqual([
+      "http://localhost:3001/models?modality=audio&provider=openai&accepts=image",
+    ]);
+    expect(urls[0]).toContain("accepts=image");
     expect(select.options).toHaveLength(3);
     expect([...select.options].map((opt) => opt.value)).toEqual(["", "tts-1", "tts-1-hd"]);
     expect(row.nextElementSibling).toBeNull();
   });
 
-  it("repopulates the structured select normally", async () => {
+  it("repopulates the structured select with accepts=image", async () => {
     const { row, select } = makeModelRow("structured-model-select");
     const providers: ProviderMeta[] = [{ id: "openai", inputModalities: ["text"] }];
     const urls: string[] = [];
@@ -464,8 +469,10 @@ describe("loadModels browser regression", () => {
 
     await loadModelsLikeApp("structured", select, "openai", true, providers, fetchImpl);
 
-    expect(urls).toEqual(["http://localhost:3001/models?modality=structured&provider=openai"]);
-    expect(urls[0]).not.toContain("accepts=image");
+    expect(urls).toEqual([
+      "http://localhost:3001/models?modality=structured&provider=openai&accepts=image",
+    ]);
+    expect(urls[0]).toContain("accepts=image");
     expect(select.options).toHaveLength(3);
     expect([...select.options].map((opt) => opt.value)).toEqual(["", "schema-v1", "schema-v2"]);
     expect(row.nextElementSibling).toBeNull();

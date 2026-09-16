@@ -4,6 +4,8 @@
  * Unit tests for the Render-aware serve binding resolver.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveServeBinding } from "../../src/ai-powered/server/index.js";
 
@@ -29,5 +31,14 @@ describe("resolveServeBinding", () => {
     expect(() => resolveServeBinding({}, { PORT: "not-a-number" })).toThrow(
       /Invalid PORT value "not-a-number"/,
     );
+  });
+});
+
+describe("render deployment config", () => {
+  it("builds the web bundle before starting Render", () => {
+    const renderYaml = readFileSync(path.resolve(process.cwd(), "render.yaml"), "utf8");
+
+    expect(renderYaml).toContain("buildCommand: npm ci && npm run build && npm run build:web");
+    expect(renderYaml).toContain("startCommand: npm start");
   });
 });
