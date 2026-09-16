@@ -10,7 +10,7 @@
  *   - No real API key is required.
  *
  * Logic under test (src/ai-powered/providers/openai.ts):
- *   const mimeType = options?.mimeType || "audio/webm";
+ *   const mimeType = options?.mimeType ?? "audio/webm";
  *   const ext = mimeType.split("/")[1]?.split(";")[0] ?? "webm";
  *   const file = await toFile(buffer, `media.${ext}`, { type: mimeType });
  */
@@ -106,13 +106,13 @@ describe("OpenAiProvider.transcribeAudio — MIME-type derivation (bd-0fw1)", ()
     );
   });
 
-  it("T-VT-05: mimeType='' (empty string) → falsy → fallback to 'audio/webm'", async () => {
+  it("T-VT-05: mimeType='' (empty string) → preserved → type ''", async () => {
     const provider = new OpenAiProvider(FAKE_CONFIG);
-    await provider.transcribeAudio(BUF, { mimeType: "" }); // empty string is falsy
+    await provider.transcribeAudio(BUF, { mimeType: "" }); // empty string is preserved
     expect(mockToFile).toHaveBeenCalledWith(
       expect.any(Buffer),
       "media.webm",
-      expect.objectContaining({ type: "audio/webm" }),
+      expect.objectContaining({ type: "" }),
     );
   });
 });

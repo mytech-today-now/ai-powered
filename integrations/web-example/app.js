@@ -667,9 +667,21 @@
     }
   }
 
-  /** @see populateProviderSelect */
+  /**
+   * Refresh the provider dropdown for a specific modality.
+   *
+   * Returns the select element so callers can read the post-refresh value when
+   * the current selection is cleared by filtering.
+   */
+  function refreshProviderDropdown(modality) {
+    const providerSelect = PROVIDER_SELECTS[modality] ?? null;
+    populateProviderSelect(providerSelect, modality);
+    return providerSelect;
+  }
+
+  /** @see refreshProviderDropdown */
   function refreshVideoProviderDropdown() {
-    populateProviderSelect(videoProviderSelect, "video");
+    refreshProviderDropdown("video");
   }
 
   /**
@@ -2180,9 +2192,11 @@
    * a no-op otherwise so it is safe to call unconditionally.
    */
   async function retriggerAttachmentDropdowns() {
-    if (modeSelect.value !== "proxy" || allProviders.length === 0) return;
     const modality = TAB_MODALITY[activeTab()] ?? "text";
-    await loadModels(modality, activeModelSelect());
+    if (modeSelect.value === "proxy" && allProviders.length > 0) {
+      const providerSelect = refreshProviderDropdown(modality);
+      await loadTabModels(modality, providerSelect?.value);
+    }
     updateAttachmentNotice();
   }
 
@@ -4673,108 +4687,180 @@ ${combinedSection}${shotCards}
       const url = URL.createObjectURL(combinedVideoBlob);
       const a = Object.assign(document.createElement("a"), {
         href: url,
-        download: "combined-video.mp4",
+        download: "combined.mp4",
       });
       a.click();
       URL.revokeObjectURL(url);
     });
   }
 
-  /* ── STITCH VIDEOS ────────────────────────────────────────── */
+    /* ── STITCH VIDEOS ────────────────────────────────────────── */
 
   /**
-   * Concatenate all successful video clips in `resultItems` via the Express
-   * proxy server (POST /stitch) using native ffmpeg (stream-copy, no re-encode,
-   * 2–8 s vs 90–270 s for ffmpeg.wasm).
+   * Concatenate all successful video clips in `resultItems` with the browser
+   * FFmpeg runtime that the page loads in `index.html`.
    *
-   * Guard order (returns null without a network call on guard failure):
-   *   1. Filter for valid video clips — requires ≥ 2.
+   * Guard order:
+   *   1. Require at least 2 valid video clips.
+   *   2. Require SharedArrayBuffer support.
+   *   3. Require the FFmpeg runtime helpers to be present.
+   *   4. Require the combined payload to stay under 500 MB.
    *
    * On success: updates combinedVideoBlob / combinedVideoDataUri, shows the
    * combined-video-section, sets the player src, and reveals the download btn.
    *
-   * REQ-SC-02 | AC-05,09,11
-   *
-   * @param {object[]} resultItems  - Array of batch result objects from the NDJSON stream.
+   * @param {object[]} resultItems - Array of batch result objects from the NDJSON stream.
    * @returns {Promise<Blob|null>}
    */
   async function stitchVideos(resultItems) {
-    // ── Guard 1: filter valid video clips (REQ-SC-02) ────────
-    // Requires ≥ 2 successful video clips — if not, hide section and return
-    // immediately without making any network request (REQ-SC-02, Example B).
-    const clips = (resultItems || []).filter(
-      (r) => r.status === "ok" && r.modality === "video" && r.result?.data,
-    );
-    if (clips.length < 2) {
+    const clips = (resultItems || [])
+      .filter((r) => r.status === "ok" && r.modality === "video" && r.result?.data)
+      .map((r, index) => {
+        const dataUri = r.result.data;
+        const mimeType = r.result?.mimeType || dataUri.match(/^data:([^;,]+)/)?.[1] || "video/mp4";
+        return {
+          dataUri,
+          inputName: `combined-clip-${index}.${mimeToExt(mimeType)}`,
+          byteLength: estimateDataUriBytes(dataUri),
+        };
+      });
+
+    function estimateDataUriBytes(dataUri) {
+      const commaIndex = dataUri.indexOf(",");
+      if (commaIndex === -1) return 0;
+      const base64 = dataUri.slice(commaIndex + 1).trim();
+      if (!base64) return 0;
+      const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+      return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+    }
+
+    const resetCombinedVideoOutput = (hideSection = false) => {
+      const previousSrc = combinedVideoPlayer?.src || "";
+      combinedVideoBlob = null;
+      combinedVideoDataUri = null;
       if (combinedVideoStatus) combinedVideoStatus.textContent = "";
-      if (combinedVideoSection) combinedVideoSection.hidden = true;
       if (btnDownloadCombined) btnDownloadCombined.hidden = true;
+      if (combinedVideoPlayer) combinedVideoPlayer.src = "";
+      if (hideSection && combinedVideoSection) combinedVideoSection.hidden = true;
+      if (previousSrc.startsWith("blob:")) URL.revokeObjectURL(previousSrc);
+    };
+
+    if (clips.length < 2) {
+      resetCombinedVideoOutput(true);
       return null;
     }
 
-    // ── UI prep: show section, clear player, set initial status ─
+    resetCombinedVideoOutput(false);
     if (combinedVideoSection) combinedVideoSection.hidden = false;
-    if (combinedVideoPlayer) combinedVideoPlayer.src = "";
-    if (btnDownloadCombined) btnDownloadCombined.hidden = true;
-    if (combinedVideoStatus) combinedVideoStatus.textContent = "Sending clips to server\u2026";
+    if (combinedVideoStatus) combinedVideoStatus.textContent = "Preparing combined video…";
 
-    // ── Read proxy base URL (REQ-SC-04) ──────────────────────
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    if (typeof window.SharedArrayBuffer === "undefined") {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Combined video requires SharedArrayBuffer support. Serve the page with cross-origin isolation enabled.";
+      }
+      return null;
+    }
 
-    // ── POST /stitch — send clips to Express proxy for native ffmpeg concat ──
+    if (typeof window._FFmpeg !== "function" || typeof window._toBlobURL !== "function") {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Combined video runtime unavailable. Reload after the FFmpeg bundle has loaded.";
+      }
+      return null;
+    }
+
+    const totalBytes = clips.reduce((sum, clip) => sum + clip.byteLength, 0);
+    const maxBytes = 500 * 1024 * 1024;
+    if (totalBytes > maxBytes) {
+      if (combinedVideoStatus) {
+        combinedVideoStatus.textContent =
+          "Combined video exceeds the 500 MB browser limit. Split the batch and try again.";
+      }
+      return null;
+    }
+
+    const ffmpeg = new window._FFmpeg();
+    const progressHandler = ({ progress }) => {
+      if (!combinedVideoStatus) return;
+      const pct = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress * 100))) : 0;
+      combinedVideoStatus.textContent = `Stitching ${clips.length} clips… ${pct}%`;
+    };
+    ffmpeg.on("progress", progressHandler);
+
+    const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.10/dist/umd";
 
     try {
-      // Build ordered array of data URIs from valid clips.
-      const clipDataUris = clips.map((r) => r.result.data);
-      if (combinedVideoStatus)
-        combinedVideoStatus.textContent = "Stitching on server (" + clips.length + " clips)\u2026";
-      // POST /stitch with ordered clip data URIs (REQ-SC-02, AC-09)
-      const resp = await fetch(base + "/stitch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clips: clipDataUris }),
+      if (combinedVideoStatus) combinedVideoStatus.textContent = `Loading FFmpeg for ${clips.length} clips…`;
+      await ffmpeg.load({
+        coreURL: await window._toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await window._toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+        workerURL: await window._toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, "text/javascript"),
       });
 
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
-        const base = errBody.error || resp.statusText;
-        const detail =
-          Array.isArray(errBody.issues) && errBody.issues.length
-            ? " \u2014 " + errBody.issues.join("; ")
-            : "";
-        throw new Error("Server stitch failed (" + resp.status + "): " + base + detail);
+      for (const clip of clips) {
+        const blob = dataUrlToBlob(clip.dataUri);
+        await ffmpeg.writeFile(clip.inputName, new Uint8Array(await blob.arrayBuffer()));
       }
 
-      const json = await resp.json();
-      if (!json.data) throw new Error("Server returned no data URI for combined video.");
+      await ffmpeg.writeFile(
+        "concat.txt",
+        clips.map((clip) => `file ${clip.inputName}`).join("\n") + "\n",
+      );
 
-      // Decode base64 data URI → Blob (avoids storing two copies in memory)
-      const b64 = json.data.replace(/^data:[^,]+,/, "");
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      if (combinedVideoStatus) combinedVideoStatus.textContent = `Stitching ${clips.length} clips… 0%`;
+
+      const exitCode = await ffmpeg.exec([
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        "concat.txt",
+        "-c",
+        "copy",
+        "combined.mp4",
+      ]);
+      if (typeof exitCode === "number" && exitCode !== 0) {
+        throw new Error("FFmpeg exited with code " + exitCode + ".");
+      }
+
+      const combinedFile = await ffmpeg.readFile("combined.mp4");
+      const bytes = combinedFile instanceof Uint8Array ? combinedFile : new Uint8Array(combinedFile);
       const blob = new Blob([bytes], { type: "video/mp4" });
-      const sizeMB = json.sizeMB ?? Math.round((blob.size / (1024 * 1024)) * 10) / 10;
+      const dataUri = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(/** @type {string} */ (reader.result));
+        reader.onerror = () => reject(new Error("Failed to encode combined video."));
+        reader.readAsDataURL(blob);
+      });
 
-      // Cache blobs + update UI (REQ-SC-06: null-guard all DOM refs)
       combinedVideoBlob = blob;
-      combinedVideoDataUri = json.data;
-      const url = URL.createObjectURL(blob);
-      if (combinedVideoPlayer) combinedVideoPlayer.src = url;
-      if (btnDownloadCombined) btnDownloadCombined.hidden = false;
-      if (combinedVideoStatus) combinedVideoStatus.textContent = "Ready \u00b7 " + sizeMB + " MB";
+      combinedVideoDataUri = dataUri;
 
       return blob;
     } catch (err) {
       console.error("[stitchVideos] Stitch failed:", err);
-      if (combinedVideoStatus)
+      resetCombinedVideoOutput(false);
+      if (combinedVideoSection) combinedVideoSection.hidden = false;
+      if (combinedVideoStatus) {
         combinedVideoStatus.textContent = "Stitch failed: " + (err.message || String(err));
-      combinedVideoBlob = null;
-      combinedVideoDataUri = null;
-      if (btnDownloadCombined) btnDownloadCombined.hidden = true;
+      }
       return null;
+    } finally {
+      if (typeof ffmpeg.off === "function") {
+        ffmpeg.off("progress", progressHandler);
+      }
+      if (typeof ffmpeg.terminate === "function") {
+        try {
+          await ffmpeg.terminate();
+        } catch (_) {
+          /* ignore termination cleanup errors */
+        }
+      }
     }
-  }
-
-  /* ── DURATION ERROR MESSAGING (spec: duration-error-messaging/spec.md) ── */
+  }/* ── DURATION ERROR MESSAGING (spec: duration-error-messaging/spec.md) ── */
 
   /**
    * Format a video API error body into a human-readable message.
@@ -5063,6 +5149,7 @@ ${combinedSection}${shotCards}
               reader.onload = () => resolve(/** @type {string} */ (reader.result));
               reader.readAsDataURL(stitchedBlob);
             });
+            if (combinedVideoPlayer) combinedVideoPlayer.src = combinedVideoDataUri || "";
             if (combinedVideoStatus) {
               combinedVideoStatus.textContent =
                 "✓ " +
@@ -6112,6 +6199,7 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
+
 
 
 

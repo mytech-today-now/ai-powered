@@ -165,7 +165,7 @@
         <!-- Proxy config -->
         <div id="proxy-config" class="connection-config proxy-config">
           <span class="hint">Run <code>npm run serve</code> to start the proxy server.</span>
-          <small id="attachment-notice" style="color: #888"></small>
+          <small id="attachment-notice" style="color: #888" aria-live="polite"></small>
         </div>
 
         <!-- Direct config (shown only when Direct is selected) -->
@@ -941,6 +941,13 @@ List 3 programming languages. Return a JSON array where each object has: name (s
     -->
     <script src="../../dist-web/jszip.min.js"></script>
     <script src="../../dist-web/ai-powered.umd.js"></script>
+    <script type="module">
+      import { FFmpeg } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
+      import { toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.10/dist/esm/index.js";
+
+      window._FFmpeg = FFmpeg;
+      window._toBlobURL = toBlobURL;
+    </script>
     <script src="app.js"></script>
   </body>
 </html>

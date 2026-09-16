@@ -1,0 +1,318 @@
+- generic [active] [ref=e1]:
+    - alert [ref=e2]:
+        - button "Dismiss error" [ref=e3]: ✕
+    - banner [ref=e4]:
+        - generic [ref=e5]:
+            - generic [ref=e6]:
+                - heading "ai-powered · web demo" [level=1] [ref=e7]
+                - paragraph [ref=e8]: Persistent multi-modal browser workbench
+            - generic [ref=e9]:
+                - text: UMD
+                - button "Style" [ref=e10]
+                - button "Open settings page" [ref=e11]
+                - button "Open information page" [ref=e17]
+        - generic [ref=e19]:
+            - generic [ref=e20]:
+                - text: "Mode:"
+                - combobox "Mode:" [ref=e21]:
+                    - option "Proxy (recommended)" [selected]
+                    - option "Direct (dev only)"
+                - text: "Proxy URL:"
+                - textbox "Proxy URL:" [ref=e22]:
+                    - /placeholder: http://localhost:3001
+                    - text: http://localhost:3001
+            - generic [ref=e24]:
+                - text: Run
+                - code [ref=e25]: npm run serve
+                - text: to start the proxy server.
+            - generic [ref=e26]: Direct mode settings live on the Info page under Settings / Configuration. Open it from the header to change your provider, API key, or budget.
+    - tablist "Modality" [ref=e28]:
+        - tab "Text" [selected] [ref=e29]
+        - tab "Image" [ref=e30]
+        - tab "Audio" [ref=e31]
+        - tab "Video" [ref=e32]
+        - tab "Structured" [ref=e33]
+    - region "Persistent history" [ref=e34]:
+        - generic [ref=e35]:
+            - button "► History (0)" [ref=e36]
+            - generic [ref=e37]:
+                - button "Export All" [ref=e38]
+                - button "Clear All" [ref=e39]
+        - list
+        - paragraph
+    - main [ref=e40]:
+        - tabpanel [ref=e41]:
+            - generic [ref=e42]:
+                - text: Session History
+                - button "Clear Session" [ref=e43]
+                - button "New Conversation" [ref=e44]
+            - generic "Conversation history"
+            - generic [ref=e46]:
+                - textbox "Enter your prompt…" [ref=e47]: Explain quantum entanglement in two sentences.
+                - button "Start voice input for text prompt" [ref=e48]
+            - generic [ref=e51]:
+                - text: Provider
+                - combobox "Provider" [ref=e52]
+            - generic [ref=e53]:
+                - text: "Model:"
+                - combobox "Model:" [ref=e54]:
+                    - option "Default" [selected]
+            - generic [ref=e55]:
+                - text: Attach file
+                - button "Attach file" [ref=e56]
+                - text: No file attached
+            - generic [ref=e57]:
+                - button "Generate" [ref=e58]
+                - button "Stream" [ref=e59]
+        - tabpanel [ref=e60]:
+            - generic [ref=e62]:
+                - textbox "Describe the image to generate…" [ref=e63]: A serene mountain lake at sunrise, photorealistic, 4k
+                - button "Start voice input for image prompt" [ref=e64]
+            - generic [ref=e67]:
+                - text: Provider
+                - combobox "Provider" [ref=e68]
+            - generic [ref=e69]:
+                - text: "Model:"
+                - combobox "Model:" [ref=e70]:
+                    - option "Default" [selected]
+            - generic [ref=e71]:
+                - text: "Category:"
+                - combobox "Category:" [ref=e72]:
+                    - option "Any" [selected]
+                    - option "Square"
+                    - option "Landscape"
+                    - option "Portrait"
+                    - option "Custom"
+                - text: "Aspect Ratio:"
+                - combobox "Aspect Ratio:" [ref=e73]:
+                    - option "Default" [selected]
+                    - option "1:1"
+                    - option "4:3"
+                    - option "3:4"
+                    - option "16:9"
+                    - option "9:16"
+                    - option "3:2"
+                    - option "2:3"
+                - text: "Quality:"
+                - combobox "Quality:" [ref=e74]:
+                    - option "Default" [selected]
+                    - option "Draft"
+                    - option "Standard"
+                    - option "High"
+            - generic [ref=e75]:
+                - text: "Width (px):"
+                - spinbutton "Width (px):" [ref=e76]
+                - text: "Height (px):"
+                - spinbutton "Height (px):" [ref=e77]
+            - generic [ref=e78]:
+                - text: Attach reference images
+                - button "Attach reference images" [ref=e79]
+                - text: No files attached
+            - button "Generate Image" [ref=e81]
+        - tabpanel [ref=e82]:
+            - generic [ref=e83]:
+                - text: Provider
+                - combobox "Provider" [ref=e84]
+            - generic [ref=e85]:
+                - heading "Text → Speech" [level=2] [ref=e86]
+                - generic [ref=e88]:
+                    - textbox "Text to synthesize…" [ref=e89]: Hello! This demonstrates text-to-speech synthesis.
+                    - button "Start voice input for TTS text" [ref=e90]
+                - generic [ref=e93]:
+                    - text: "Model:"
+                    - combobox "Model:" [ref=e94]:
+                        - option "Default" [selected]
+                - button "Synthesize Speech" [ref=e96]
+            - separator [ref=e97]
+            - generic [ref=e98]:
+                - heading "Audio → Text (Transcription)" [level=2] [ref=e99]
+                - generic [ref=e100]:
+                    - text: Choose audio or video file
+                    - button "Choose audio or video file" [ref=e101]
+                    - text: No file selected
+                - generic [ref=e102]:
+                    - text: "Model:"
+                    - combobox "Model:" [ref=e103]:
+                        - option "Default" [selected]
+                - button "Transcribe" [disabled] [ref=e105]
+        - tabpanel [ref=e106]:
+            - generic [ref=e107]: ℹ Video generation requires proxy mode (server-side rendering).
+            - generic [ref=e108]:
+                - text: "Provider:"
+                - combobox "Provider:" [ref=e109]:
+                    - option "Default" [selected]
+                - text: "Model:"
+                - combobox "Model:" [ref=e110]:
+                    - option "Default" [selected]
+            - tablist "Video mode" [ref=e111]:
+                - tab "Batch" [selected] [ref=e112]
+                - tab "Single Video" [ref=e113]
+            - generic [ref=e114]:
+                - region "Batch file drop zone" [ref=e115]:
+                    - text: 📂
+                    - generic [ref=e116]:
+                        - text: Drop a
+                        - strong [ref=e117]: .json
+                        - text: ","
+                        - strong [ref=e118]: .jsonl
+                        - text: ", or"
+                        - strong [ref=e119]: .md
+                        - text: shot-list here
+                    - text: — or — Choose file
+                    - button "Choose file" [ref=e120]
+                    - text: No file selected
+                - generic [ref=e121]:
+                    - text: "Default constraints (applied to all shots):"
+                    - generic [ref=e122]:
+                        - text: "Aspect Ratio:"
+                        - combobox "Aspect Ratio:" [ref=e123]:
+                            - option "Default" [selected]
+                            - option "1:1 (Square)"
+                            - option "16:9 (Landscape)"
+                            - option "9:16 (Portrait/Story)"
+                            - option "4:3"
+                            - option "3:4"
+                            - option "21:9 (Cinematic)"
+                        - text: "Resolution:"
+                        - combobox "Resolution:" [ref=e124]:
+                            - option "Default" [selected]
+                            - option "480p"
+                            - option "720p"
+                            - option "1080p"
+                            - option "4K"
+                        - text: "Quality:"
+                        - combobox "Quality:" [ref=e125]:
+                            - option "Default" [selected]
+                            - option "Draft"
+                            - option "Standard"
+                            - option "High"
+                    - generic [ref=e126]:
+                        - text: "Duration (s):"
+                        - spinbutton "Duration (s):" [ref=e127]
+                        - text: "FPS:"
+                        - combobox "FPS:" [ref=e128]:
+                            - option "Default" [selected]
+                            - option "24"
+                            - option "30"
+                            - option "60"
+                    - generic [ref=e129]:
+                        - text: "Negative prompt:"
+                        - textbox "Negative prompt:" [ref=e130]:
+                            - /placeholder: Optional
+                        - text: "Seed:"
+                        - spinbutton "Seed:" [ref=e131]
+                        - text: "Transition (s):"
+                        - spinbutton "Transition (s):" [ref=e132]
+                        - text: "Pikaffect:"
+                        - combobox "Pikaffect:" [ref=e133]:
+                            - option "Default" [selected]
+                        - text: "Swap ROI:"
+                        - textbox "Swap ROI:" [ref=e134]:
+                            - /placeholder: Optional
+                        - text: "Swap mask URL:"
+                        - textbox "Swap mask URL:" [ref=e135]:
+                            - /placeholder: Optional HTTPS URL
+                - generic [ref=e136]:
+                    - generic [ref=e137]:
+                        - text: Shot List Preview
+                        - button "✕ Clear" [ref=e138]
+                    - button "▶ Run Batch" [disabled] [ref=e140]
+                - generic [ref=e141]:
+                    - generic [ref=e142]: Processing… 0 / 0
+                    - paragraph
+                    - button "Cancel" [ref=e143]
+                - generic [ref=e145]:
+                    - text: Batch Results
+                    - generic [ref=e146]:
+                        - button "⬇ Download HTML" [ref=e147]
+                        - button "⬇ Download ZIP" [ref=e148]
+            - generic [ref=e149]:
+                - generic [ref=e151]:
+                    - textbox "Describe the video to generate…" [ref=e152]: A time-lapse of clouds drifting over mountain peaks at golden hour
+                    - button "Start voice input for video prompt" [ref=e153]
+                - generic [ref=e156]:
+                    - text: Attach reference images or video
+                    - button "Attach reference images or video" [ref=e157]
+                    - text: No files attached
+                - generic [ref=e158]:
+                    - text: ⚠
+                    - strong [ref=e159]: Public tunnel required.
+                    - text: "Luma AI image-to-video needs a publicly accessible URL for the keyframe image. Restart the proxy with an ngrok tunnel:"
+                    - code [ref=e160]: .\scripts\cycle-service.ps1 -Ngrok
+                    - text: Or set
+                    - code [ref=e161]: PROXY_PUBLIC_BASE_URL
+                    - text: to your server's public address before starting.
+                - generic [ref=e162]:
+                    - text: "Aspect Ratio:"
+                    - combobox "Aspect Ratio:" [ref=e163]:
+                        - option "Default" [selected]
+                        - option "1:1 (Square)"
+                        - option "16:9 (Landscape)"
+                        - option "9:16 (Portrait/Story)"
+                        - option "4:3"
+                        - option "3:4"
+                        - option "21:9 (Cinematic)"
+                    - text: "Resolution:"
+                    - combobox "Resolution:" [ref=e164]:
+                        - option "Default" [selected]
+                        - option "480p"
+                        - option "720p"
+                        - option "1080p"
+                        - option "4K"
+                    - text: "Quality:"
+                    - combobox "Quality:" [ref=e165]:
+                        - option "Default" [selected]
+                        - option "Draft"
+                        - option "Standard"
+                        - option "High"
+                - generic [ref=e166]:
+                    - text: "Duration (s):"
+                    - spinbutton "Duration (s):" [ref=e167]
+                    - text: "FPS:"
+                    - combobox "FPS:" [ref=e168]:
+                        - option "Default" [selected]
+                        - option "24"
+                        - option "30"
+                        - option "60"
+                - generic [ref=e169]:
+                    - text: "Negative prompt:"
+                    - textbox "Negative prompt:" [ref=e170]:
+                        - /placeholder: Optional
+                    - text: "Seed:"
+                    - spinbutton "Seed:" [ref=e171]
+                    - text: "Transition (s):"
+                    - spinbutton "Transition (s):" [ref=e172]
+                    - text: "Pikaffect:"
+                    - combobox "Pikaffect:" [ref=e173]:
+                        - option "Default" [selected]
+                    - text: "Swap ROI:"
+                    - textbox "Swap ROI:" [ref=e174]:
+                        - /placeholder: Optional
+                    - text: "Swap mask URL:"
+                    - textbox "Swap mask URL:" [ref=e175]:
+                        - /placeholder: Optional HTTPS URL
+                - button "Generate Video" [ref=e177]
+        - tabpanel [ref=e178]:
+            - generic [ref=e180]:
+                - textbox "Ask for structured JSON output…" [ref=e181]: "List 3 programming languages. Return a JSON array where each object has: name (string), primaryUseCase (string), yearCreated (number), paradigm (string)."
+                - button "Start voice input for structured prompt" [ref=e182]
+            - generic [ref=e185]:
+                - text: Provider
+                - combobox "Provider" [ref=e186]
+            - generic [ref=e187]:
+                - text: "Model:"
+                - combobox "Model:" [ref=e188]:
+                    - option "Default" [selected]
+            - button "Generate JSON" [ref=e190]
+    - contentinfo [ref=e191]:
+        - generic [ref=e192]:
+            - text: "Session cost:"
+            - strong [ref=e193]: $0.000000
+            - text: "· Tokens:"
+            - strong [ref=e194]: "0"
+            - text: "· Calls:"
+            - strong [ref=e195]: "0"
+        - generic [ref=e197]:
+            - text: Loads
+            - code [ref=e198]: dist-web/ai-powered.umd.js
+            - text: · No build step required

@@ -1157,11 +1157,11 @@ export class WebAiClient {
       for (const b of bytes) binary += String.fromCharCode(b);
       const b64 = btoa(binary);
 
-      const body: Record<string, unknown> = { audioBase64: b64 };
-      // Forward the Blob's MIME type so the proxy can pass it to the provider.
-      // audio.type is empty for programmatically constructed Blobs — omit
-      // the field in that case so the provider falls back to "audio/webm".
-      if (audio.type) body["mimeType"] = audio.type;
+      const body: Record<string, unknown> = {
+        audioBase64: b64,
+        // Forward the Blob MIME type when available so the proxy can pass it through.
+        mimeType: audio.type || undefined,
+      };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       this.addProxyRoutingFields(body, options);
       const res = await this.fetchWithResilience(

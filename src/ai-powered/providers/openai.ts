@@ -455,9 +455,9 @@ export class OpenAiProvider extends BaseProvider {
 
     // Derive filename extension from the caller-supplied MIME type so that
     // Whisper receives the correct file hint for video containers (.mp4, .mkv,
-    // .mov, .avi, .webm) as well as audio-only formats.  Falls back to
-    // "audio/webm" when options.mimeType is absent or empty (backward compat).
-    const mimeType = options?.mimeType || "audio/webm";
+    // .mov, .avi, .webm) as well as audio-only formats. Falls back only when
+    // options.mimeType is nullish.
+    const mimeType = options?.mimeType ?? "audio/webm";
     const ext = mimeType.split("/")[1]?.split(";")[0] ?? "webm";
 
     try {

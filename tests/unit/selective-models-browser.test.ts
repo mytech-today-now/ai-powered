@@ -327,6 +327,49 @@ describe("loadModels browser regression", () => {
     expect(select.value).toBe("");
   });
 
+  it("retries without accepts=image for audio when the filtered list is empty", async () => {
+    const select = makeSelect();
+    const providers: ProviderMeta[] = [{ id: "openai", inputModalities: ["image"] }];
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url.includes("accepts=image")) return jsonResponse([]);
+      return jsonResponse([
+        { id: "tts-1", name: "TTS-1" },
+        { id: "tts-1-hd", name: "TTS-1 HD" },
+      ]);
+    };
+
+    await loadModelsLikeApp("audio", select, "openai", true, providers, fetchImpl);
+
+    expect(urls[0]).toContain("&accepts=image");
+    expect(urls[1]).not.toContain("&accepts=image");
+    expect(select.options).toHaveLength(3);
+    expect([...select.options].map((opt) => opt.value)).toEqual(["", "tts-1", "tts-1-hd"]);
+    expect(select.value).toBe("");
+  });
+
+  it("retries without accepts=image for structured when the filtered list is empty", async () => {
+    const select = makeSelect();
+    const providers: ProviderMeta[] = [{ id: "openai", inputModalities: ["image"] }];
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url.includes("accepts=image")) return jsonResponse([]);
+      return jsonResponse([
+        { id: "schema-v1", name: "Schema V1" },
+        { id: "schema-v2", name: "Schema V2" },
+      ]);
+    };
+
+    await loadModelsLikeApp("structured", select, "openai", true, providers, fetchImpl);
+
+    expect(urls[0]).toContain("&accepts=image");
+    expect(urls[1]).not.toContain("&accepts=image");
+    expect(select.options).toHaveLength(3);
+    expect([...select.options].map((opt) => opt.value)).toEqual(["", "schema-v1", "schema-v2"]);
+    expect(select.value).toBe("");
+  });
   it("appends accepts=image when an attachment is present", async () => {
     const select = makeSelect();
     const providers: ProviderMeta[] = [{ id: "runway", inputModalities: [] }];

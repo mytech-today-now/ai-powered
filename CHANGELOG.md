@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.9] - 2026-09-16
+
+### Added
+
+- The web demo now shows contextual attachment notices for image-aware tabs and an explicit ignored-attachment message on Audio and Structured tabs.
+- Batch video stitching now exposes a combined-video preview section with a dedicated download button once enough clips succeed.
+
+### Changed
+
+- Browser provider and model refreshes now re-filter providers by attachment compatibility, retry without `accepts=image` when the filtered list is empty, and preserve the active selection when structured/model loading fails.
+- Transcribe uploads now preserve Blob MIME types and derive the correct filename extension for audio and video containers in proxy and direct mode.
+
 ## [0.5.8] – 2026-09-15
 
 ### Changed

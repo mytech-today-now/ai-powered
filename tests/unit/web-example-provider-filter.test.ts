@@ -79,6 +79,7 @@ function runRefresh(allProviders, hasImageAttached, initialValue = "") {
 
   const select = createMockSelect(initialValue);
   context.videoProviderSelect = select;
+  context.PROVIDER_SELECTS = { video: select };
   context.refreshVideoProviderDropdown();
 
   return select;

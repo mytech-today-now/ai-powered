@@ -334,6 +334,27 @@ describe("R11/R12 – GET /config redaction regression", () => {
 });
 
 // ---------------------------------------------------------------------------
+// R20 – COOP / COEP headers on browser and API responses
+// ---------------------------------------------------------------------------
+describe("R20 – COOP / COEP headers on browser and API responses", () => {
+  it("sets cross-origin isolation headers on the browser shell", async () => {
+    const res = await getJson("/");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cross-origin-opener-policy"]).toBe("same-origin");
+    expect(res.headers["cross-origin-embedder-policy"]).toBe("require-corp");
+  });
+
+  it("sets cross-origin isolation headers on JSON API responses", async () => {
+    const res = await getJson("/config");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cross-origin-opener-policy"]).toBe("same-origin");
+    expect(res.headers["cross-origin-embedder-policy"]).toBe("require-corp");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // R13-R17 – GET /models diagnostics and regression coverage
 // ---------------------------------------------------------------------------
 describe("R13-R17 – GET /models diagnostics and regression coverage", () => {

@@ -27,16 +27,16 @@ console.log(result.content);
 
 **Key features at a glance:**
 
-| Feature           | Detail                                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                                   |
-| **Providers**     | OpenAI · Anthropic · xAI (Grok) · OpenRouter · Venice.ai · Luma AI · Runway · Pika · VibeVoice · Custom/Ollama · Mock |
-| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                                      |
-| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings                   |
-| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                                               |
-| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners                         |
-| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents                             |
-| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                                        |
+| Feature           | Detail                                                                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Modalities**    | Text · Image · Audio (transcribe + speak) · Video · Structured JSON                                                                                |
+| **Providers**     | OpenAI · Anthropic · xAI (Grok) · OpenRouter · Venice.ai · Luma AI · Runway · Pika · VibeVoice · Custom/Ollama · Mock                              |
+| **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                                                                   |
+| **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings                                                |
+| **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                                                                            |
+| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners · attachment-aware filtering · combined-video export |
+| **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents                                                          |
+| **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                                                                     |
 
 ---
 
@@ -422,6 +422,8 @@ ai-powered wizard               # guided provider/model/API key setup with live 
 
 The proxy server and the web demo in proxy mode support batch file input on the **Video tab**. Drop (or click-to-browse) a `.json`, `.jsonl`, or `.md` shot-list file onto the batch drop zone. The app parses it into shots, shows a pre-flight preview, and then sends every shot to the proxy's `POST /batch` endpoint sequentially. Results appear as live shot cards with play buttons, individual download links, a downloadable HTML results page, and a ZIP export of all video files.
 
+The Video tab also includes reference-media uploads for image-to-video and video-to-video workflows. When an image is attached, the browser narrows the active provider and model pickers to providers that can actually use image input; if you switch to Audio or Structured, the demo keeps the attachment visible and says it will be ignored instead of silently dropping it.
+
 ### JSONL format (one shot per line)
 
 **Text**
@@ -454,7 +456,7 @@ filmbuff-project object form — all three are accepted:
 {"name":"Shot 3","prompt":"Drone flyover","modality":"video","duration":{"seconds":15,"formatted":"0:15"}}
 ```
 
-After all shots have been generated, the **⬡ Stitch** button sends the successful video clips to the proxy's `/stitch` endpoint, where ffmpeg concatenates them into a single combined MP4 for preview and download.
+After all shots have been generated, the **⬡ Stitch** button sends the successful video clips to the proxy's `/stitch` endpoint, where ffmpeg concatenates them into a single combined MP4 for preview and download. In the web demo, that stitched result also appears in a Combined Video section with its own download button once at least two clips succeed.
 
 **Structured**
 
@@ -1024,19 +1026,21 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 
 Open the built-in Info page at `info.html#settings-configuration` from the demo header to manage direct-mode credentials. The Settings / Configuration tab now includes OpenRouter in the provider selector, a dedicated Pika API key field for video workflows, and local tab-synced storage for those demo credentials. The Overview tab renders the repository README live from the remote `main` branch.
 
-### Browser client features (v0.5.8)
+### Browser client features (v0.5.9)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
-| Feature                  | Detail                                                                                    |
-| ------------------------ | ----------------------------------------------------------------------------------------- |
-| **Circuit breaker**      | Opens after N consecutive failures; probes after a configurable reset window (App-008)    |
-| **Automatic retry**      | Exponential back-off with jitter on transient errors (App-008)                            |
-| **Budget enforcement**   | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown |
-| **Typed `ProxyError`**   | Structured error object with `code`, `message`, `severity`; severity-aware UI banners     |
-| **Conversation history** | Session history with soft reset; clearing the display does not drop context               |
-| **Archive toolbar**      | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference      |
-| **Provider dropdown**    | Populated dynamically from `GET /providers`; per-request provider and model overrides     |
+| Feature                        | Detail                                                                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **Circuit breaker**            | Opens after N consecutive failures; probes after a configurable reset window (App-008)                      |
+| **Automatic retry**            | Exponential back-off with jitter on transient errors (App-008)                                              |
+| **Budget enforcement**         | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown                   |
+| **Typed `ProxyError`**         | Structured error object with `code`, `message`, `severity`; severity-aware UI banners                       |
+| **Conversation history**       | Session history with soft reset; clearing the display does not drop context                                 |
+| **Archive toolbar**            | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference                        |
+| **Provider dropdown**          | Populated dynamically from `GET /providers`; per-request provider and model overrides                       |
+| **Attachment-aware pickers**   | Image attachments narrow provider/model dropdowns; Audio and Structured tabs show an explicit ignore notice |
+| **MIME-preserving transcribe** | Proxy and direct transcribe uploads keep Blob MIME types and filename extensions for audio/video containers |
 
 ### Proxy mode (recommended)
 
