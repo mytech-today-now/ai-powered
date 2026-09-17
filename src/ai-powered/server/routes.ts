@@ -143,7 +143,7 @@ function applyAppShellHeaders(res: Response, filePath: string): void {
   res.setHeader("Cache-Control", "no-store");
 }
 
-function shouldServeAppShell(pathname: string): boolean {
+export function shouldServeAppShell(pathname: string): boolean {
   if (pathname === "/" || pathname === "") return true;
   if (path.extname(pathname)) return false;
   return !SPA_FALLBACK_PREFIXES.some(

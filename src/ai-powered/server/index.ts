@@ -5,7 +5,7 @@
  *
  * Middleware stack (in order):
  *   1. Pino HTTP request/response logger — structured JSON with masked keys
- *   2. Helmet — CSP, X-Content-Type-Options: nosniff, X-Frame-Options: DENY,
+ *   2. Helmet — X-Content-Type-Options: nosniff, X-Frame-Options: DENY,
  *               Strict-Transport-Security on every response
  *   3. CORS — configurable origin (default http://localhost:5173)
  *   4. express-rate-limit — default 60 req/min, returns 429 on exceed
@@ -25,7 +25,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger, initLogger } from "../utils.js";
-import { createRouter } from "./routes.js";
+import { createRouter, shouldServeAppShell } from "./routes.js";
 import type { AiConfig } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -150,24 +150,33 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     callback(new Error(`CORS: origin '${requestOrigin}' is not allowed`));
   };
 
-  // 1. Helmet — security headers on every response
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'none'"],
-          connectSrc: ["'self'"],
-          scriptSrc: ["'none'"],
-          styleSrc: ["'none'"],
-          frameSrc: ["'none'"],
-          objectSrc: ["'none'"],
-          baseUri: ["'none'"],
-          formAction: ["'none'"],
-        },
+  // 1. Helmet — security headers on every response.
+  //    The app shell sets its own page-scoped CSP in server/routes.ts so the
+  //    demo can load local CSS, inline styles, and inline scripts.
+  const strictHelmetMiddleware = helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        connectSrc: ["'self'"],
+        scriptSrc: ["'none'"],
+        styleSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
       },
-      // noSniff, frameguard (DENY), and hsts are enabled by default in helmet.
-    }),
-  );
+    },
+    // noSniff, frameguard (DENY), and hsts are enabled by default in helmet.
+  });
+  const relaxedHelmetMiddleware = helmet({
+    contentSecurityPolicy: false,
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const middleware = shouldServeAppShell(req.path)
+      ? relaxedHelmetMiddleware
+      : strictHelmetMiddleware;
+    middleware(req, res, next);
+  });
 
   // 1a. COOP / COEP — required for SharedArrayBuffer to be available in the
   //     browser.  These must be set on every response from this server so that

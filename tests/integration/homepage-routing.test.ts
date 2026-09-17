@@ -35,9 +35,8 @@ describe("homepage routing", () => {
     await writeFile(path.join(distRoot, "jszip.min.js"), "window.JSZip = {};\n");
     process.env.AI_POWERED_DIST_WEB_ROOT = distRoot;
 
-    const { createRouter } = await import("../../src/ai-powered/server/routes.js");
-    const app = express();
-    app.use(createRouter({ mock: true, configOverrides: {} } as never));
+    const { createServer } = await import("../../src/ai-powered/server/index.js");
+    const app = createServer({ mock: true, configOverrides: {} } as never);
     server = await startServer(app);
     const address = server.address();
     if (!address || typeof address === "string") {
@@ -115,6 +114,9 @@ describe("homepage routing", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
+    expect(res.headers.get("content-security-policy")).toContain("script-src 'none'");
+    expect(res.headers.get("content-security-policy")).toContain("style-src 'none'");
     expect(body).toMatchObject({ status: "ok" });
   });
 });
