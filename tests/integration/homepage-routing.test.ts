@@ -74,8 +74,14 @@ describe("homepage routing", () => {
       "style-src 'self' 'unsafe-inline'",
     );
     expect(res.headers.get("content-security-policy")).toContain(
-      "script-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
     );
+    expect(res.headers.get("content-security-policy")).toContain(
+      "script-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    );
+    expect(html).toContain("cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js");
+    expect(html).toContain("cdn.jsdelivr.net/npm/ai-powered/dist-web/ai-powered.umd.js");
+    expect(html).toContain("cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
     expect(html).toContain("ai-powered · web demo");
     expect(html).toContain("btn-text-generate");
     expect(html).toContain("btn-structured-generate");

@@ -935,20 +935,50 @@ List 3 programming languages. Return a JSON array where each object has: name (s
     </footer>
 
     <!--
-      UMD bundle must load BEFORE app.js so window.AiPowered is defined.
-      Run `npm run build:web` once to produce dist-web/ai-powered.umd.js.
-      JSZip is loaded for client-side ZIP generation in the batch results panel.
+      Load the browser demo assets from the same origin first. If a deployment
+      is missing dist-web/, fall back to jsDelivr so the page still boots.
     -->
-    <script src="../../dist-web/jszip.min.js"></script>
-    <script src="../../dist-web/ai-powered.umd.js"></script>
     <script type="module">
-      import { FFmpeg } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js";
-      import { toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.10/dist/esm/index.js";
+      const loadScript = (src) =>
+        new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = src;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Failed to load " + src));
+          document.head.appendChild(script);
+        });
+
+      const loadWithFallback = async (primarySrc, fallbackSrc) => {
+        try {
+          await loadScript(primarySrc);
+        } catch {
+          await loadScript(fallbackSrc);
+        }
+      };
+
+      await Promise.all([
+        loadWithFallback(
+          "../../dist-web/jszip.min.js",
+          "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js",
+        ),
+        loadWithFallback(
+          "../../dist-web/ai-powered.umd.js",
+          "https://cdn.jsdelivr.net/npm/ai-powered/dist-web/ai-powered.umd.js",
+        ),
+      ]);
+
+      const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
+        import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js"),
+        import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.10/dist/esm/index.js"),
+      ]);
 
       window._FFmpeg = FFmpeg;
       window._toBlobURL = toBlobURL;
+
+      const appScript = document.createElement("script");
+      appScript.src = "app.js";
+      document.body.appendChild(appScript);
     </script>
-    <script src="app.js"></script>
   </body>
 </html>
 
