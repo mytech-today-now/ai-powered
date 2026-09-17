@@ -118,6 +118,31 @@ const SPA_FALLBACK_PREFIXES = [
   "/video",
 ];
 
+// Render and other hosts may send a strict default CSP. The app shell needs to
+// load local CSS/JS plus its inline <style> and <script> blocks, so we set a
+// page-scoped CSP here instead of changing API responses globally.
+const APP_SHELL_CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' http: https: ws: wss:",
+  "script-src 'self' 'unsafe-inline'",
+  "script-src-elem 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "style-src-elem 'self' 'unsafe-inline'",
+  "worker-src 'self' blob:",
+].join("; ");
+
+function applyAppShellHeaders(res: Response, filePath: string): void {
+  if (path.basename(filePath) !== "index.html") return;
+  res.setHeader("Content-Security-Policy", APP_SHELL_CSP);
+  res.setHeader("Cache-Control", "no-store");
+}
+
 function shouldServeAppShell(pathname: string): boolean {
   if (pathname === "/" || pathname === "") return true;
   if (path.extname(pathname)) return false;
@@ -1554,14 +1579,14 @@ export function createRouter(opts: ServeOptions): Router {
   mountCompatRoutes(router, opts);
 
   router.use("/dist-web", serveStatic(DIST_WEB_ROOT));
-  router.use(serveStatic(WEB_APP_ROOT));
+  router.use(serveStatic(WEB_APP_ROOT, { setHeaders: applyAppShellHeaders }));
   router.get(/.*/, (req, res, next) => {
     if (!shouldServeAppShell(req.path)) {
       next();
       return;
     }
 
-    res.setHeader("Cache-Control", "no-store");
+    applyAppShellHeaders(res, WEB_APP_INDEX);
     res.sendFile(WEB_APP_INDEX, (err) => {
       if (err) {
         next(err);
