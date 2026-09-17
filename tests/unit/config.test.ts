@@ -52,7 +52,10 @@ describe("maskApiKey", () => {
   it("masks xAI xai- keys", () => {
     expect(maskApiKey("xai-somekey")).toBe("xai-****");
   });
-  it("masks Venice ven- keys", () => {
+  it("masks Venice VENICE_INFERENCE_KEY_ keys", () => {
+    expect(maskApiKey("VENICE_INFERENCE_KEY_example")).toBe("VENICE_INFERENCE_KEY_****");
+  });
+  it("masks legacy Venice ven- keys", () => {
     expect(maskApiKey("ven-abc")).toBe("ven-****");
   });
   it("returns [REDACTED] for empty string", () => {

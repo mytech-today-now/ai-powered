@@ -136,5 +136,5 @@ describe("web-example playwright smoke", () => {
     expect(github.readme).toContain("Hello from GitHub.");
     expect(fallback.readme).toContain("Unified AI client and CLI");
     expect(github.chrome).toBe(fallback.chrome);
-  });
+  }, 60_000);
 });

@@ -19,9 +19,10 @@ fi
 #   sk-        OpenAI keys
 #   sk-ant-    Anthropic keys
 #   xai-       xAI / Grok keys
-#   ven-       Venice.ai keys
+#   VENICE_INFERENCE_KEY_  Venice.ai inference keys
+#   ven-                   Legacy Venice.ai keys
 # Minimum suffix of 20 chars to reduce false positives on short identifiers.
-SECRET_PATTERNS="(sk-ant-|sk-|xai-|ven-)[A-Za-z0-9_-]{20,}"
+SECRET_PATTERNS="(sk-ant-|sk-|xai-|VENICE_INFERENCE_KEY_|ven-)[A-Za-z0-9_-]{20,}"
 
 VIOLATIONS=""
 for FILE in $STAGED_FILES; do

@@ -19,9 +19,10 @@
  */
 
 // Load .env from process.cwd() before any process.env access.
+// quiet: true keeps spawned CLI stdout clean for JSON-oriented tests.
 // Named import ensures tsc does not elide the call under verbatimModuleSyntax.
 import { config as _dotenvLoad } from "dotenv";
-_dotenvLoad(); // populate process.env from .env (no-op if already loaded)
+_dotenvLoad({ quiet: true }); // populate process.env from .env (no-op if already loaded)
 
 import { z } from "zod";
 import * as fs from "node:fs";

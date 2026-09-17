@@ -20,7 +20,7 @@
  * Unsupported modalities (audio, video) throw ProviderCapabilityError.
  *
  * API key: read from config.apiKey or VENICE_API_KEY env var.
- * Key is always masked as "ven-****" in all log output.
+ * Key is masked by maskApiKey() in all log output.
  *
  * Model discovery: GET /models with capability filtering via the model's
  * `type` field returned by the Venice API.

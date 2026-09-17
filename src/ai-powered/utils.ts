@@ -26,7 +26,8 @@ import type { TokenUsage, CostBreakdown } from "./types.js";
  *   - Anthropic keys (`sk-ant-` prefix)             → `sk-ant-****`
  *   - OpenRouter keys (`sk-or-v1-` prefix)          → `sk-or-v1-****`
  *   - xAI/Grok keys (`xai-` prefix)                 → `xai-****`
- *   - Venice.ai keys (`ven-` prefix)                → `ven-****`
+ *   - Venice.ai keys (`VENICE_INFERENCE_KEY_` prefix, legacy `ven-` accepted)
+ *                                                   → `VENICE_INFERENCE_KEY_****`
  *   - Unknown / custom / empty                      → `[REDACTED]`
  *
  * The function is deterministic and never throws.
@@ -39,6 +40,7 @@ export function maskApiKey(key: string): string {
   if (key.startsWith("sk-or-v1-")) return "sk-or-v1-****";
   if (key.startsWith("sk-")) return "sk-****";
   if (key.startsWith("xai-")) return "xai-****";
+  if (key.startsWith("VENICE_INFERENCE_KEY_")) return "VENICE_INFERENCE_KEY_****";
   if (key.startsWith("ven-")) return "ven-****";
 
   return "[REDACTED]";

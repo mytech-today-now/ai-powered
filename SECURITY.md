@@ -4,7 +4,7 @@
 
 1. **Never commit API keys.** All key files (`.env`, `.env.local`, `.ai-powered/config.json`)
    are listed in `.gitignore`. The Husky pre-commit hook aborts the commit if any staged file
-   contains a recognised key prefix (`sk-`, `sk-ant-`, `xai-`, `ven-`).
+   contains a recognised key prefix (`sk-`, `sk-ant-`, `xai-`, `VENICE_INFERENCE_KEY_`).
 
 2. **Always use `maskApiKey`.** Every log statement, error message, and CLI output path that
    could contain an API key MUST call `maskApiKey(key)` before including it. This is enforced
@@ -61,8 +61,7 @@ We will acknowledge receipt within 48 hours and provide a fix timeline within 7 
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
+| ------- | --------- |
 | 0.1.x   | ✅ Yes    |
 
 Older versions receive security patches only; feature development targets the latest minor.
-

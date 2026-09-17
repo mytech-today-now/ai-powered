@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.10] - 2026-09-17
+
+### Added
+
+- The web demo Overview now renders the repository README live from GitHub and falls back to the local README when the remote fetch is unavailable.
+- Regression coverage now checks that the info-page GUI stays consistent across the GitHub README path and the local fallback path.
+
+### Changed
+
+- Venice API keys now use the `VENICE_INFERENCE_KEY_` prefix throughout config docs, masking, and secret-scanning rules.
+- The browser/web docs now call out the shared local, proxy, and Render.com GUI behavior for the Info page.
+- CLI startup keeps dotenv banner noise off stdout so subprocess tests stay JSON-friendly.
+
 ## [0.5.9] - 2026-09-16
 
 ### Added

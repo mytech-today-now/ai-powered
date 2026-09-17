@@ -105,24 +105,24 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 
 ### Environment variables
 
-| Variable                | Config key            | Example                 |
-| ----------------------- | --------------------- | ----------------------- |
-| `OPENAI_API_KEY`        | `apiKey` (OpenAI)     | `sk-…`                  |
-| `OPENROUTER_API_KEY`    | `apiKey` (OpenRouter) | `sk-or-v1-…`            |
-| `ANTHROPIC_API_KEY`     | `apiKey` (Anthropic)  | `sk-ant-…`              |
-| `XAI_API_KEY`           | `apiKey` (xAI)        | `xai-…`                 |
-| `VENICE_API_KEY`        | `apiKey` (Venice)     | `ven-…`                 |
-| `LUMAAI_API_KEY`        | `apiKey` (Luma AI)    | `luma-…`                |
-| `RUNWAYML_API_SECRET`   | `apiKey` (Runway)     | (from Runway app)       |
-| `VIBEVOICE_API_URL`     | `baseUrl` (VibeVoice) | `http://localhost:8080` |
-| `AI_CUSTOM_API_KEY`     | `apiKey` (custom)     | any                     |
-| `AI_PROVIDER`           | `provider`            | `openai`                |
-| `AI_MODEL`              | `model`               | `gpt-4o`                |
-| `AI_PROFILE`            | `profile`             | `production`            |
-| `AI_MOCK`               | `mock`                | `true`                  |
-| `AI_BUDGET_SESSION`     | `budgetSession`       | `1.00`                  |
-| `AI_FALLBACK_PROVIDERS` | `fallbackProviders`   | `anthropic,mock`        |
-| `LOG_LEVEL`             | `debug`               | `debug`                 |
+| Variable                | Config key            | Example                  |
+| ----------------------- | --------------------- | ------------------------ |
+| `OPENAI_API_KEY`        | `apiKey` (OpenAI)     | `sk-…`                   |
+| `OPENROUTER_API_KEY`    | `apiKey` (OpenRouter) | `sk-or-v1-…`             |
+| `ANTHROPIC_API_KEY`     | `apiKey` (Anthropic)  | `sk-ant-…`               |
+| `XAI_API_KEY`           | `apiKey` (xAI)        | `xai-…`                  |
+| `VENICE_API_KEY`        | `apiKey` (Venice)     | `VENICE_INFERENCE_KEY_…` |
+| `LUMAAI_API_KEY`        | `apiKey` (Luma AI)    | `luma-…`                 |
+| `RUNWAYML_API_SECRET`   | `apiKey` (Runway)     | (from Runway app)        |
+| `VIBEVOICE_API_URL`     | `baseUrl` (VibeVoice) | `http://localhost:8080`  |
+| `AI_CUSTOM_API_KEY`     | `apiKey` (custom)     | any                      |
+| `AI_PROVIDER`           | `provider`            | `openai`                 |
+| `AI_MODEL`              | `model`               | `gpt-4o`                 |
+| `AI_PROFILE`            | `profile`             | `production`             |
+| `AI_MOCK`               | `mock`                | `true`                   |
+| `AI_BUDGET_SESSION`     | `budgetSession`       | `1.00`                   |
+| `AI_FALLBACK_PROVIDERS` | `fallbackProviders`   | `anthropic,mock`         |
+| `LOG_LEVEL`             | `debug`               | `debug`                  |
 
 `AIPOWERED_REDIS_URL` enables Redis-backed idempotency for single-shot work. Leave it unset to keep idempotency disabled. If you set it in production, make sure `ioredis` is installed and loadable; otherwise idempotent calls fail with an explicit `PROVIDER_ERROR` instead of silently downgrading to per-process memory.
 
@@ -1024,9 +1024,9 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 | **proxy**  | Production      | Key stays on your server — browser never sees it            |
 | **direct** | Dev / demo only | Key visible in DevTools — non-suppressible DOM banner shown |
 
-Open the built-in Info page at `info.html#settings-configuration` from the demo header to manage direct-mode credentials. The Settings / Configuration tab now includes OpenRouter in the provider selector, a dedicated Pika API key field for video workflows, and local tab-synced storage for those demo credentials. The Overview tab renders the repository README live from the remote `main` branch.
+Open the built-in Info page at `info.html#settings-configuration` from the demo header to manage direct-mode credentials. The Settings / Configuration tab now includes OpenRouter in the provider selector, a dedicated Pika API key field for video workflows, and local tab-synced storage for those demo credentials. The Overview tab renders the repository README live from GitHub, falls back to the local README when needed, and keeps the local, proxy, and Render.com demos on the same GUI.
 
-### Browser client features (v0.5.9)
+### Browser client features (v0.5.10)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
@@ -1041,6 +1041,7 @@ The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`)
 | **Provider dropdown**          | Populated dynamically from `GET /providers`; per-request provider and model overrides                       |
 | **Attachment-aware pickers**   | Image attachments narrow provider/model dropdowns; Audio and Structured tabs show an explicit ignore notice |
 | **MIME-preserving transcribe** | Proxy and direct transcribe uploads keep Blob MIME types and filename extensions for audio/video containers |
+| **Live README overview**       | Overview fetches the README from GitHub, falls back locally, and keeps local/proxy/Render layouts aligned   |
 
 ### Proxy mode (recommended)
 
@@ -1351,7 +1352,7 @@ Full integration scripts are available in the [`integrations/`](integrations/) d
   - `sk-…` → `sk-...****`
   - `sk-ant-…` → `sk-ant-...****`
   - `xai-…` → `xai-...****`
-  - `ven-…` → `ven-...****`
+  - `VENICE_INFERENCE_KEY_…` → `VENICE_INFERENCE_KEY_...****`
 - The pre-commit hook scans staged files for any of these patterns and aborts if found.
 
 ### Audit log plugin
