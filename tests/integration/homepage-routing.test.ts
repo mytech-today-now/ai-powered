@@ -115,6 +115,8 @@ describe("homepage routing", () => {
     expect(html).toContain('<link rel="stylesheet" href="styles.css" />');
     expect(html).toContain('class="info-shell"');
     expect(html).toContain('data-info-tab="settings-configuration"');
+    expect(html).toContain('<script src="info-content.js"></script>');
+    expect(html).not.toContain("dist-web/ai-powered.umd.js");
   });
 
   it("keeps config.html redirecting to the settings tab", async () => {
@@ -132,14 +134,18 @@ describe("homepage routing", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(html).toContain("info.html#settings-configuration");
   });
-  it("serves static browser assets without falling back to HTML", async () => {
+
+  it("serves the browser helpers needed by the info page", async () => {
     const appJs = await request("/app.js");
+    const infoContent = await request("/info-content.js");
     const styles = await request("/styles.css");
     const umd = await request("/dist-web/ai-powered.umd.js");
     const jszip = await request("/dist-web/jszip.min.js");
 
     expect(appJs.status).toBe(200);
     expect(await appJs.text()).toContain("window.AiPowered");
+    expect(infoContent.status).toBe(200);
+    expect(await infoContent.text()).toContain("AiPoweredInfoContent");
     expect(styles.status).toBe(200);
     expect(await styles.text()).toContain(".app-header");
     expect(umd.status).toBe(200);

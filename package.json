@@ -118,6 +118,7 @@
     "jszip": "^3.10.1",
     "lint-staged": "^16.4.0",
     "msw": "^2.12.14",
+    "playwright": "^1.63.0",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "vite": "^8.0.3",

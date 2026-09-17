@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DISCOVERY_FALLBACK_POSTS,
+  README_SOURCE_URL,
   loadDiscoveryPosts,
   loadReadmeMarkdown,
   normalizeDiscoveryPosts,
@@ -57,22 +58,52 @@ describe("info content helpers", () => {
     });
   });
 
-  it("loads the proxied README and falls back to discovery defaults", async () => {
-    const readmeFetch = vi.fn(async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("/info/readme");
-      return new Response("# Demo README\n\nHello browser workbench.", {
+  it("loads the GitHub README first and only falls back locally when needed", async () => {
+    const githubFetch = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(README_SOURCE_URL);
+      return new Response("# Demo README\n\nHello from GitHub.", {
         status: 200,
         headers: { "content-type": "text/markdown" },
       });
     });
 
     const markdown = await loadReadmeMarkdown({
-      fetchImpl: readmeFetch as unknown as typeof fetch,
+      fetchImpl: githubFetch as unknown as typeof fetch,
       cache: null,
     });
-    expect(markdown).toContain("Demo README");
-    expect(readmeFetch).toHaveBeenCalledOnce();
 
+    expect(markdown).toContain("Hello from GitHub.");
+    expect(githubFetch).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the local /info/readme route when GitHub is unavailable", async () => {
+    const fetchCalls: string[] = [];
+    const fallbackFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url === README_SOURCE_URL) {
+        return new Response("GitHub unavailable", { status: 503 });
+      }
+      if (url === "/info/readme") {
+        return new Response("# Local README\n\nFallback copy.", {
+          status: 200,
+          headers: { "content-type": "text/markdown" },
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const markdown = await loadReadmeMarkdown({
+      fetchImpl: fallbackFetch as unknown as typeof fetch,
+      cache: null,
+    });
+
+    expect(markdown).toContain("Fallback copy.");
+    expect(fetchCalls).toEqual([README_SOURCE_URL, "/info/readme"]);
+    expect(fallbackFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads discovery posts and falls back to defaults", async () => {
     const fallbackFetch = vi.fn(async () => new Response("not json", { status: 200 }));
     const discovery = await loadDiscoveryPosts({
       fetchImpl: fallbackFetch as unknown as typeof fetch,

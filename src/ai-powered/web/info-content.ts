@@ -476,7 +476,7 @@ export async function loadRemoteText(
 }
 
 export async function loadReadmeMarkdown(options: RemoteLoadOptions = {}): Promise<string> {
-  return loadRemoteText(["/info/readme", README_SOURCE_URL], options);
+  return loadRemoteText([README_SOURCE_URL, "/info/readme"], options);
 }
 
 export async function loadDiscoveryPosts(

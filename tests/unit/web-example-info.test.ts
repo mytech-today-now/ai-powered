@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-type AiPoweredStub = {
+type AiPoweredContentStub = {
   loadReadmeMarkdown: ReturnType<typeof vi.fn>;
   renderMarkdownToSemanticHtml: ReturnType<typeof vi.fn>;
   sanitizeRenderedHtml: ReturnType<typeof vi.fn>;
@@ -140,7 +140,7 @@ beforeEach(() => {
     writable: true,
   });
   renderInfoDom();
-  Object.defineProperty(window, "AiPowered", {
+  Object.defineProperty(window, "AiPoweredInfoContent", {
     configurable: true,
     value: {
       loadReadmeMarkdown: vi.fn().mockResolvedValue("# ai-powered\n\nLive README content."),
@@ -149,21 +149,28 @@ beforeEach(() => {
           `<article class="rendered-markdown"><h1>${markdown.includes("ai-powered") ? "ai-powered" : "README"}</h1><p>Live README content.</p></article>`,
       ),
       sanitizeRenderedHtml: vi.fn((html: string) => html),
-    } satisfies AiPoweredStub,
+    } satisfies AiPoweredContentStub,
   });
 });
 
 afterEach(() => {
   document.body.innerHTML = "";
   window.localStorage.clear();
-  delete (window as unknown as { AiPowered?: AiPoweredStub }).AiPowered;
+  delete (window as unknown as { AiPoweredInfoContent?: AiPoweredContentStub })
+    .AiPoweredInfoContent;
+  delete (window as unknown as { AiPowered?: unknown }).AiPowered;
   delete (window as unknown as { __AI_PROXY_URL__?: string }).__AI_PROXY_URL__;
   vi.restoreAllMocks();
 });
 
 describe("web-example info page", () => {
   it("renders the live README and exposes the unified connection controls", async () => {
-    const aiPowered = (window as unknown as { AiPowered: AiPoweredStub }).AiPowered;
+    const infoContent = (
+      window as unknown as {
+        AiPoweredInfoContent: AiPoweredContentStub;
+      }
+    ).AiPoweredInfoContent;
+    expect((window as unknown as { AiPowered?: unknown }).AiPowered).toBeUndefined();
 
     await mountInfoPage();
     await settle();
@@ -178,11 +185,11 @@ describe("web-example info page", () => {
       status,
     } = getSettingsElements();
 
-    expect(aiPowered.loadReadmeMarkdown).toHaveBeenCalledOnce();
-    expect(aiPowered.renderMarkdownToSemanticHtml).toHaveBeenCalledWith(
+    expect(infoContent.loadReadmeMarkdown).toHaveBeenCalledOnce();
+    expect(infoContent.renderMarkdownToSemanticHtml).toHaveBeenCalledWith(
       "# ai-powered\n\nLive README content.",
     );
-    expect(aiPowered.sanitizeRenderedHtml).toHaveBeenCalled();
+    expect(infoContent.sanitizeRenderedHtml).toHaveBeenCalled();
     expect(document.getElementById("readme-article")?.innerHTML).toContain("Live README content.");
     expect(document.getElementById("readme-status")).toBeNull();
     expect(document.getElementById("pika-api-key-input")).toBeNull();

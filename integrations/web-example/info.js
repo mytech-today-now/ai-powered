@@ -29,7 +29,7 @@
 
   const KNOWN_PROVIDERS = new Set(Object.keys(PROVIDER_LABELS));
 
-  const aiPowered = window.AiPowered ?? {};
+  const aiPowered = window.AiPowered ?? window.AiPoweredInfoContent ?? {};
   const loadReadmeMarkdown =
     typeof aiPowered.loadReadmeMarkdown === "function"
       ? aiPowered.loadReadmeMarkdown.bind(aiPowered)
@@ -412,3 +412,4 @@
   setActiveTab(getTabFromHash(), false);
   void renderReadmeOverview();
 })();
+

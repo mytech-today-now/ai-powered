@@ -48,7 +48,6 @@ import { getTemplate, renderTemplate } from "../templates/index.js";
 import {
   DISCOVERY_FALLBACK_POSTS,
   DISCOVERY_SOURCE_URL,
-  README_SOURCE_URL,
   normalizeDiscoveryPosts,
 } from "../web/info-content.js";
 import {
@@ -475,23 +474,6 @@ function modelListErrorMessage(err: unknown): string {
   return "Model listing failed.";
 }
 
-async function fetchTextFromKnownUrls(urls: string[]): Promise<string> {
-  let lastError: unknown = null;
-  for (const url of urls) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        lastError = new Error(`HTTP ${response.status}`);
-        continue;
-      }
-      return await response.text();
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Unable to fetch remote content.");
-}
-
 async function fetchDiscoveryPosts(): Promise<ReturnType<typeof normalizeDiscoveryPosts>> {
   try {
     const response = await fetch(DISCOVERY_SOURCE_URL);
@@ -723,13 +705,12 @@ export function createRouter(opts: ServeOptions): Router {
   });
 
   // --- GET /info/readme ---
-  // Proxies the published README so the standalone info page can render it
-  // without relying on cross-origin browser fetch permissions.
+  // Serves the local repository README as the fallback source for the standalone info page.
   router.get(
     "/info/readme",
     wrap(async (_req, res) => {
       try {
-        const markdown = await fetchTextFromKnownUrls([README_SOURCE_URL]);
+        const markdown = await fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8");
         res.setHeader("Cache-Control", "no-store");
         res.type("text/markdown; charset=utf-8").send(markdown);
       } catch (err) {
@@ -1181,8 +1162,7 @@ export function createRouter(opts: ServeOptions): Router {
       if (hasVideoInputMedia) {
         const providerMeta = PROVIDER_META.find((p) => p.id === routedProvider);
         const providerInputModalities = providerMeta?.inputModalities as
-          | readonly string[]
-          | undefined;
+          readonly string[] | undefined;
         if (!providerInputModalities?.includes("video")) {
           res.status(422).json({
             error: `Provider "${routedProvider}" does not support modality "video".`,
