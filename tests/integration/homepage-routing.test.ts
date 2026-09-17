@@ -105,6 +105,13 @@ describe("homepage routing", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-security-policy")).toContain(
+      "style-src 'self' 'unsafe-inline'",
+    );
+    expect(res.headers.get("content-security-policy")).toContain(
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    );
+    expect(res.headers.get("cache-control")).toBe("no-store");
     expect(html).toContain('<link rel="stylesheet" href="styles.css" />');
     expect(html).toContain('class="info-shell"');
     expect(html).toContain('data-info-tab="settings-configuration"');
@@ -116,6 +123,13 @@ describe("homepage routing", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-security-policy")).toContain(
+      "style-src 'self' 'unsafe-inline'",
+    );
+    expect(res.headers.get("content-security-policy")).toContain(
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    );
+    expect(res.headers.get("cache-control")).toBe("no-store");
     expect(html).toContain("info.html#settings-configuration");
   });
   it("serves static browser assets without falling back to HTML", async () => {

@@ -138,7 +138,8 @@ const APP_SHELL_CSP = [
 ].join("; ");
 
 function applyAppShellHeaders(res: Response, filePath: string): void {
-  if (path.basename(filePath) !== "index.html") return;
+  const shellPages = new Set(["index.html", "info.html", "config.html"]);
+  if (!shellPages.has(path.basename(filePath))) return;
   res.setHeader("Content-Security-Policy", APP_SHELL_CSP);
   res.setHeader("Cache-Control", "no-store");
 }
