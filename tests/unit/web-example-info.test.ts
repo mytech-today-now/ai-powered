@@ -25,6 +25,24 @@ function renderInfoDom(): void {
           </article>
         </section>
         <section class="info-panel hidden" data-info-panel="settings-configuration" role="tabpanel">
+          <div class="connection-config proxy-config">
+            <div class="direct-row settings-credential-row">
+              <label for="mode-select">Mode:</label>
+              <select id="mode-select">
+                <option value="proxy">Proxy (recommended)</option>
+                <option value="direct">Direct (dev only)</option>
+              </select>
+              <label for="proxy-url">Proxy URL:</label>
+              <input
+                id="proxy-url"
+                type="text"
+                value="http://localhost:3001"
+                placeholder="http://localhost:3001"
+                spellcheck="false"
+              />
+            </div>
+            <p class="hint">Proxy mode keeps provider keys on the server.</p>
+          </div>
           <div class="connection-config direct-config">
             <div class="direct-row settings-credential-row">
               <label for="provider-select">Provider:</label>
@@ -91,6 +109,8 @@ async function settle(): Promise<void> {
 
 function getSettingsElements() {
   return {
+    modeSelect: document.getElementById("mode-select") as HTMLSelectElement,
+    proxyUrlInput: document.getElementById("proxy-url") as HTMLInputElement,
     providerSelect: document.getElementById("provider-select") as HTMLSelectElement,
     credentialInput: document.getElementById("api-key-input") as HTMLInputElement,
     budgetInput: document.getElementById("direct-budget") as HTMLInputElement,
@@ -114,6 +134,11 @@ function dispatchStorageEvent(key: string, newValue: string | null): void {
 
 beforeEach(() => {
   window.localStorage.clear();
+  Object.defineProperty(window, "__AI_PROXY_URL__", {
+    configurable: true,
+    value: "http://localhost:3001",
+    writable: true,
+  });
   renderInfoDom();
   Object.defineProperty(window, "AiPowered", {
     configurable: true,
@@ -132,18 +157,26 @@ afterEach(() => {
   document.body.innerHTML = "";
   window.localStorage.clear();
   delete (window as unknown as { AiPowered?: AiPoweredStub }).AiPowered;
+  delete (window as unknown as { __AI_PROXY_URL__?: string }).__AI_PROXY_URL__;
   vi.restoreAllMocks();
 });
 
 describe("web-example info page", () => {
-  it("renders the live README and exposes the unified credential controls", async () => {
+  it("renders the live README and exposes the unified connection controls", async () => {
     const aiPowered = (window as unknown as { AiPowered: AiPoweredStub }).AiPowered;
 
     await mountInfoPage();
     await settle();
 
-    const { providerSelect, credentialInput, verifyButton, saveButton, status } =
-      getSettingsElements();
+    const {
+      modeSelect,
+      proxyUrlInput,
+      providerSelect,
+      credentialInput,
+      verifyButton,
+      saveButton,
+      status,
+    } = getSettingsElements();
 
     expect(aiPowered.loadReadmeMarkdown).toHaveBeenCalledOnce();
     expect(aiPowered.renderMarkdownToSemanticHtml).toHaveBeenCalledWith(
@@ -153,7 +186,9 @@ describe("web-example info page", () => {
     expect(document.getElementById("readme-article")?.innerHTML).toContain("Live README content.");
     expect(document.getElementById("readme-status")).toBeNull();
     expect(document.getElementById("pika-api-key-input")).toBeNull();
-    expect(providerSelect.querySelector('option[value="pika"]')).not.toBeNull();
+    expect(modeSelect.value).toBe("proxy");
+    expect(proxyUrlInput.value).toBe("http://localhost:3001");
+    expect(modeSelect.querySelector('option[value="proxy"]')).not.toBeNull();
     expect(verifyButton.type).toBe("button");
     expect(saveButton.type).toBe("button");
     expect(status.getAttribute("role")).toBe("status");
@@ -167,14 +202,37 @@ describe("web-example info page", () => {
       "Pika is stored separately for the demo's video workflow settings",
     );
     expect(credentialInput.placeholder).toContain("OpenAI credential");
+    expect(providerSelect.querySelector('option[value="pika"]')).not.toBeNull();
   });
 
-  it("verifies and saves a provider credential, then clears the field when switching providers", async () => {
+  it("persists proxy mode and URL, then clears the field when switching providers", async () => {
     await mountInfoPage();
     await settle();
 
-    const { providerSelect, credentialInput, verifyButton, saveButton, status } =
-      getSettingsElements();
+    const {
+      modeSelect,
+      proxyUrlInput,
+      providerSelect,
+      credentialInput,
+      verifyButton,
+      saveButton,
+      status,
+    } = getSettingsElements();
+
+    modeSelect.value = "direct";
+    modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(window.localStorage.getItem("ai-powered:connection:mode")).toBe("direct");
+
+    proxyUrlInput.value = "";
+    proxyUrlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(window.localStorage.getItem("ai-powered:connection:proxy-url")).toBe("");
+    expect(proxyUrlInput.value).toBe("");
+
+    proxyUrlInput.value = "https://ai-powered-proxy.onrender.com";
+    proxyUrlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(window.localStorage.getItem("ai-powered:connection:proxy-url")).toBe(
+      "https://ai-powered-proxy.onrender.com",
+    );
 
     providerSelect.value = "openrouter";
     providerSelect.dispatchEvent(new Event("change", { bubbles: true }));
@@ -230,7 +288,12 @@ describe("web-example info page", () => {
     expect(window.localStorage.getItem("ai-powered:direct:pika-api-key")).toBeNull();
   });
 
-  it("restores persisted credentials on reload and syncs storage updates from another tab", async () => {
+  it("restores persisted settings, syncs storage updates, and resets everything", async () => {
+    window.localStorage.setItem("ai-powered:connection:mode", "direct");
+    window.localStorage.setItem(
+      "ai-powered:connection:proxy-url",
+      "https://ai-powered-proxy.onrender.com",
+    );
     window.localStorage.setItem("ai-powered:direct:provider", "openrouter");
     window.localStorage.setItem("ai-powered:direct:api-key", "sk-or-v1-persisted");
     window.localStorage.setItem("ai-powered:direct:budget-usd", "3.50");
@@ -238,32 +301,44 @@ describe("web-example info page", () => {
     await mountInfoPage();
     await settle();
 
-    let { providerSelect, credentialInput, budgetInput, status } = getSettingsElements();
+    let { modeSelect, proxyUrlInput, providerSelect, credentialInput, budgetInput, status } =
+      getSettingsElements();
+    expect(modeSelect.value).toBe("direct");
+    expect(proxyUrlInput.value).toBe("https://ai-powered-proxy.onrender.com");
     expect(providerSelect.value).toBe("openrouter");
     expect(credentialInput.value).toBe("sk-or-v1-persisted");
     expect(budgetInput.value).toBe("3.50");
     expect(status.dataset.state).toBe("saved");
     expect(status.textContent).toContain("OpenRouter credential saved in this browser.");
 
-    window.localStorage.setItem("ai-powered:direct:provider", "pika");
-    window.localStorage.setItem("ai-powered:direct:pika-api-key", "pika-secret-01");
-    dispatchStorageEvent("ai-powered:direct:provider", "pika");
-    dispatchStorageEvent("ai-powered:direct:pika-api-key", "pika-secret-01");
+    window.localStorage.setItem("ai-powered:connection:mode", "proxy");
+    window.localStorage.setItem("ai-powered:connection:proxy-url", "");
+    dispatchStorageEvent("ai-powered:connection:mode", "proxy");
+    dispatchStorageEvent("ai-powered:connection:proxy-url", "");
     await settle();
 
-    ({ providerSelect, credentialInput, budgetInput, status } = getSettingsElements());
-    expect(providerSelect.value).toBe("pika");
-    expect(credentialInput.value).toBe("pika-secret-01");
+    ({ modeSelect, proxyUrlInput, providerSelect, credentialInput, budgetInput, status } =
+      getSettingsElements());
+    expect(modeSelect.value).toBe("proxy");
+    expect(proxyUrlInput.value).toBe("");
+    expect(providerSelect.value).toBe("openrouter");
+    expect(credentialInput.value).toBe("sk-or-v1-persisted");
     expect(budgetInput.value).toBe("3.50");
     expect(status.dataset.state).toBe("saved");
-    expect(status.textContent).toContain("Pika credential saved in this browser.");
+    expect(status.textContent).toContain("OpenRouter credential saved in this browser.");
 
     const resetButton = getSettingsElements().resetButton;
     resetButton.click();
+    expect(window.localStorage.getItem("ai-powered:connection:mode")).toBe("proxy");
+    expect(window.localStorage.getItem("ai-powered:connection:proxy-url")).toBe(
+      "http://localhost:3001",
+    );
     expect(window.localStorage.getItem("ai-powered:direct:provider")).toBeNull();
     expect(window.localStorage.getItem("ai-powered:direct:api-key")).toBeNull();
     expect(window.localStorage.getItem("ai-powered:direct:pika-api-key")).toBeNull();
     expect(window.localStorage.getItem("ai-powered:direct:budget-usd")).toBeNull();
+    expect(getSettingsElements().modeSelect.value).toBe("proxy");
+    expect(getSettingsElements().proxyUrlInput.value).toBe("http://localhost:3001");
     expect(getSettingsElements().providerSelect.value).toBe("openai");
     expect(getSettingsElements().credentialInput.value).toBe("");
   });

@@ -12,5 +12,8 @@ describe("web example loader", () => {
     expect(html.indexOf('appScript.src = "app.js";')).toBeGreaterThan(
       html.indexOf("@ffmpeg/util@0.12.1/dist/esm/index.js"),
     );
+    expect(html).toMatch(/<section class="mode-section" hidden aria-hidden="true">/);
+    expect(html).toContain('id="mode-select"');
+    expect(html).toContain('id="proxy-url"');
   });
 });

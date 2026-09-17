@@ -99,6 +99,25 @@ describe("homepage routing", () => {
     },
   );
 
+  it("serves the info page with the shared stylesheet and shell wrapper", async () => {
+    const res = await request("/info.html");
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain('<link rel="stylesheet" href="styles.css" />');
+    expect(html).toContain('class="info-shell"');
+    expect(html).toContain('data-info-tab="settings-configuration"');
+  });
+
+  it("keeps config.html redirecting to the settings tab", async () => {
+    const res = await request("/config.html");
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain("info.html#settings-configuration");
+  });
   it("serves static browser assets without falling back to HTML", async () => {
     const appJs = await request("/app.js");
     const styles = await request("/styles.css");

@@ -56,25 +56,41 @@
   const directConfig = $("direct-config");
   const directBudgetInput = $("direct-budget");
   const proxyUrlInput = $("proxy-url");
-  // Pre-fill the proxy URL when served via a public tunnel (e.g. ngrok) so
-  // remote visitors don't have to type the API URL manually.
-  //
-  // Priority order:
-  //   1. window.__AI_PROXY_URL__  — injected by the Vite plugin when
-  //      VITE_PROXY_URL is set (e.g. the -Ngrok flag in cycle-service.ps1).
-  //   2. window.location.origin   — when the page is loaded from a non-localhost
-  //      host the Vite dev-server IS the proxy (ngrok → Vite → :3001), so the
-  //      page's own origin is the correct proxy base URL.
-  //   3. HTML default ("http://localhost:3001") — local-only dev, no override.
-  {
+  const providerSelect = $("provider-select");
+  const apiKeyInput = $("api-key-input");
+  const connectionStorageKeys = {
+    mode: "ai-powered:connection:mode",
+    proxyUrl: "ai-powered:connection:proxy-url",
+  };
+  const DEFAULT_PROXY_URL = "http://localhost:3001";
+
+  function detectDefaultProxyUrl() {
     const _host = window.location.hostname;
     const _isLocal = _host === "localhost" || _host === "127.0.0.1" || _host === "";
     const _detected = window.__AI_PROXY_URL__ || (_isLocal ? null : window.location.origin);
-    if (_detected) proxyUrlInput.value = _detected;
+    return _detected || DEFAULT_PROXY_URL;
   }
 
-  const providerSelect = $("provider-select");
-  const apiKeyInput = $("api-key-input");
+  function syncConnectionFromStorage() {
+    const storedMode = localStorage.getItem(connectionStorageKeys.mode);
+    const storedProxyUrl = localStorage.getItem(connectionStorageKeys.proxyUrl);
+    const resolvedMode = storedMode === "direct" ? "direct" : "proxy";
+    const resolvedProxyUrl = storedProxyUrl === null ? detectDefaultProxyUrl() : storedProxyUrl;
+
+    if (modeSelect) {
+      modeSelect.value = resolvedMode;
+    }
+    if (proxyUrlInput) {
+      proxyUrlInput.value = resolvedProxyUrl;
+    }
+    if (storedMode !== resolvedMode) {
+      localStorage.setItem(connectionStorageKeys.mode, resolvedMode);
+    }
+    if (storedProxyUrl === null) {
+      localStorage.setItem(connectionStorageKeys.proxyUrl, resolvedProxyUrl);
+    }
+  }
+
   const directConfigStorageKeys = {
     provider: "ai-powered:direct:provider",
     apiKey: "ai-powered:direct:api-key",
@@ -110,7 +126,7 @@
   }
 
   syncDirectConfigFromStorage();
-
+  syncConnectionFromStorage();
   if (providerSelect) {
     providerSelect.addEventListener("change", syncDirectConfigToStorage);
   }
@@ -122,12 +138,20 @@
   }
 
   window.addEventListener("storage", (event) => {
-    if (!event.key) return;
+    if (!event.key) {
+      syncDirectConfigFromStorage();
+      syncConnectionFromStorage();
+      applyModeUi();
+      return;
+    }
     if (Object.values(directConfigStorageKeys).includes(event.key)) {
       syncDirectConfigFromStorage();
     }
+    if (Object.values(connectionStorageKeys).includes(event.key)) {
+      syncConnectionFromStorage();
+      applyModeUi();
+    }
   });
-
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
   const historyPanelWrap = $("history-panel-wrap");
@@ -2231,15 +2255,21 @@
     directConfig.classList.toggle("hidden", isProxy);
     if (isProxy) loadProviders();
   }
-  modeSelect.addEventListener("change", applyModeUi);
+  modeSelect.addEventListener("change", () => {
+    localStorage.setItem(
+      connectionStorageKeys.mode,
+      modeSelect.value === "direct" ? "direct" : "proxy",
+    );
+    applyModeUi();
+  });
 
   // Reload providers when proxy URL changes (debounced)
   let _proxyUrlTimer = null;
   proxyUrlInput.addEventListener("input", () => {
+    localStorage.setItem(connectionStorageKeys.proxyUrl, proxyUrlInput.value.trim());
     clearTimeout(_proxyUrlTimer);
     _proxyUrlTimer = setTimeout(loadProviders, 600);
   });
-
   // ── Per-tab provider change listeners (TASK-09) ──────────────────────────────
   // One listener per modality.  When the user picks a different provider:
   //   1. Fetch + repopulate only that tab's model select via loadTabModels.
@@ -6199,6 +6229,10 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
+
+
+
+
 
 
 

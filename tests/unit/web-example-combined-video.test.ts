@@ -224,6 +224,13 @@ describe("web-example combined video wiring", () => {
   it("keeps the combined video wiring in the source", () => {
     const appJs = fs.readFileSync(appJsPath, "utf8");
 
+    expect(appJs).toContain("async function buildResultsHtmlAsync(results) {");
+    expect(appJs).toContain("const combinedSection = combinedVideoDataUri");
+    expect(appJs).toContain("const html = await buildResultsHtmlAsync(batchResultItems);");
+    expect(appJs).toContain('zip.file("combined.mp4", combinedBytes);');
+    expect(appJs).toContain(
+      'zip.file("results.html", await buildResultsHtmlAsync(batchResultItems));',
+    );
     expect(appJs).toContain("const successCount = batchResultItems.filter(");
     expect(appJs).toContain("if (successCount >= 2) {");
     expect(appJs).toContain("combinedVideoDataUri = await new Promise((resolve) => {");

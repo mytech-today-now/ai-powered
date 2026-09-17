@@ -2,12 +2,14 @@
  * integrations/web-example/info.js
  *
  * Standalone info page for the web demo. Provides an overview tab plus the
- * Settings / Configuration tab for browser-stored provider credentials.
+ * Settings / Configuration tab for browser-stored connection and credential settings.
  */
 (function () {
   "use strict";
 
   const STORAGE_KEYS = {
+    mode: "ai-powered:connection:mode",
+    proxyUrl: "ai-powered:connection:proxy-url",
     provider: "ai-powered:direct:provider",
     apiKey: "ai-powered:direct:api-key",
     pikaApiKey: "ai-powered:direct:pika-api-key",
@@ -15,6 +17,7 @@
   };
 
   const DEFAULT_PROVIDER = "openai";
+  const DEFAULT_PROXY_URL = "http://localhost:3001";
   const PROVIDER_LABELS = {
     openai: "OpenAI",
     anthropic: "Anthropic",
@@ -40,6 +43,8 @@
       ? aiPowered.sanitizeRenderedHtml.bind(aiPowered)
       : (html) => html;
 
+  const modeSelect = document.getElementById("mode-select");
+  const proxyUrlInput = document.getElementById("proxy-url");
   const providerSelect = document.getElementById("provider-select");
   const credentialInput = document.getElementById("api-key-input");
   const directBudgetInput = document.getElementById("direct-budget");
@@ -56,6 +61,10 @@
     return typeof provider === "string" && KNOWN_PROVIDERS.has(provider)
       ? provider
       : DEFAULT_PROVIDER;
+  }
+
+  function normalizeMode(mode) {
+    return mode === "direct" ? "direct" : "proxy";
   }
 
   function providerLabel(provider) {
@@ -82,6 +91,33 @@
     credentialInput.placeholder = `Enter the ${providerLabel(provider)} credential`;
   }
 
+  function detectProxyUrlFallback() {
+    const host = window.location.hostname;
+    const isLocal = host === "localhost" || host === "127.0.0.1" || host === "";
+    const detected = window.__AI_PROXY_URL__ || (isLocal ? null : window.location.origin);
+    return detected || DEFAULT_PROXY_URL;
+  }
+
+  function syncConnectionFromStorage() {
+    const storedMode = normalizeMode(localStorage.getItem(STORAGE_KEYS.mode));
+    const storedProxyUrl = localStorage.getItem(STORAGE_KEYS.proxyUrl);
+    const proxyUrl = storedProxyUrl === null ? detectProxyUrlFallback() : storedProxyUrl;
+
+    if (modeSelect) {
+      modeSelect.value = storedMode;
+    }
+    if (proxyUrlInput) {
+      proxyUrlInput.value = proxyUrl;
+    }
+
+    if (localStorage.getItem(STORAGE_KEYS.mode) !== storedMode) {
+      localStorage.setItem(STORAGE_KEYS.mode, storedMode);
+    }
+    if (storedProxyUrl === null) {
+      localStorage.setItem(STORAGE_KEYS.proxyUrl, proxyUrl);
+    }
+  }
+
   function readStoredCredential(provider) {
     return localStorage.getItem(credentialStorageKey(provider)) ?? "";
   }
@@ -90,6 +126,8 @@
     const storedProvider = normalizeProvider(localStorage.getItem(STORAGE_KEYS.provider));
     const storedBudget = localStorage.getItem(STORAGE_KEYS.budget);
     const storedCredential = readStoredCredential(storedProvider);
+
+    syncConnectionFromStorage();
 
     if (providerSelect) {
       providerSelect.value = storedProvider;
@@ -240,9 +278,27 @@
     localStorage.setItem(STORAGE_KEYS.budget, directBudgetInput.value.trim());
   }
 
+  function persistModeSelection() {
+    if (!modeSelect) return;
+    localStorage.setItem(STORAGE_KEYS.mode, normalizeMode(modeSelect.value));
+  }
+
+  function persistProxyUrl() {
+    if (!proxyUrlInput) return;
+    localStorage.setItem(STORAGE_KEYS.proxyUrl, proxyUrlInput.value.trim());
+  }
+
   function handleProviderChange() {
     persistProviderSelection();
     syncSettingsFromStorage({ clearCredential: true });
+  }
+
+  function handleModeChange() {
+    persistModeSelection();
+  }
+
+  function handleProxyUrlInput() {
+    persistProxyUrl();
   }
 
   function handleCredentialInput() {
@@ -294,6 +350,8 @@
   }
 
   function handleReset() {
+    localStorage.removeItem(STORAGE_KEYS.mode);
+    localStorage.removeItem(STORAGE_KEYS.proxyUrl);
     localStorage.removeItem(STORAGE_KEYS.provider);
     localStorage.removeItem(STORAGE_KEYS.apiKey);
     localStorage.removeItem(STORAGE_KEYS.pikaApiKey);
@@ -312,6 +370,12 @@
     }
   }
 
+  if (modeSelect) {
+    modeSelect.addEventListener("change", handleModeChange);
+  }
+  if (proxyUrlInput) {
+    proxyUrlInput.addEventListener("input", handleProxyUrlInput);
+  }
   if (providerSelect) {
     providerSelect.addEventListener("change", handleProviderChange);
   }
@@ -348,5 +412,3 @@
   setActiveTab(getTabFromHash(), false);
   void renderReadmeOverview();
 })();
-
-
