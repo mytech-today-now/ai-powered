@@ -49,8 +49,8 @@
   const resetButton = document.getElementById("btn-reset-settings");
   const readmeArticle = document.getElementById("readme-article");
   const readmeStatus = document.getElementById("readme-status");
-  const tabButtons = Array.from(document.querySelectorAll(".info-tab-btn"));
-  const tabPanels = Array.from(document.querySelectorAll(".info-panel"));
+  const tabButtons = Array.from(document.querySelectorAll(".info-tab-btn, .tab-btn"));
+  const tabPanels = Array.from(document.querySelectorAll(".info-panel, .tab-panel"));
 
   function normalizeProvider(provider) {
     return typeof provider === "string" && KNOWN_PROVIDERS.has(provider)
@@ -348,4 +348,5 @@
   setActiveTab(getTabFromHash(), false);
   void renderReadmeOverview();
 })();
+
 

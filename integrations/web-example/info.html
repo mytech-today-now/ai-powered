@@ -3,130 +3,122 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ai-powered - info</title>
+    <title>ai-powered · info</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="info-page">
-    <div class="info-shell">
-      <header class="info-header">
-        <div class="info-header-copy">
+    <header class="app-header">
+      <div class="header-title">
+        <div class="header-title-copy">
           <h1>ai-powered · info</h1>
-          <p>Live README content, local settings, and browser configuration for the web demo.</p>
+          <p class="header-subtitle">
+            Live README content, local settings, and browser configuration for the web demo.
+          </p>
         </div>
-        <div class="info-header-meta">
-          <span class="info-status">Local settings + live README</span>
+        <div class="header-title-badges">
+          <span class="version-badge">Local settings + live README</span>
           <a class="btn btn-ghost" href="index.html">Back to app</a>
         </div>
-      </header>
+      </div>
+    </header>
 
-      <nav class="info-tabs" role="tablist" aria-label="Info sections">
-        <button
-          class="info-tab-btn active"
-          data-info-tab="overview"
-          role="tab"
-          aria-selected="true"
-          type="button"
-        >
-          Overview
-        </button>
-        <button
-          class="info-tab-btn"
-          data-info-tab="settings-configuration"
-          role="tab"
-          aria-selected="false"
-          type="button"
-        >
-          Settings / Configuration
-        </button>
-      </nav>
+    <nav class="tab-bar" role="tablist" aria-label="Info sections">
+      <button class="tab-btn active" data-info-tab="overview" role="tab" aria-selected="true" type="button">
+        Overview
+      </button>
+      <button
+        class="tab-btn"
+        data-info-tab="settings-configuration"
+        role="tab"
+        aria-selected="false"
+        type="button"
+      >
+        Settings / Configuration
+      </button>
+    </nav>
 
-      <main class="info-main">
-        <section class="info-panel" data-info-panel="overview" role="tabpanel">
-          <div class="info-panel-header">
-            <div>
-              <h2>Overview</h2>
-              <p>Live repository README rendered from the remote source.</p>
+    <main>
+      <section class="tab-panel" data-info-panel="overview" role="tabpanel">
+        <div class="info-panel-header">
+          <div>
+            <h2>Overview</h2>
+            <p>Live repository README rendered from the remote source.</p>
+          </div>
+        </div>
+
+        <article id="readme-article" class="info-article rendered-markdown" aria-live="polite">
+          <p id="readme-status">Loading the live README from the repository…</p>
+        </article>
+      </section>
+
+      <section class="tab-panel hidden" data-info-panel="settings-configuration" role="tabpanel">
+        <div class="info-panel-header">
+          <div>
+            <h2>Settings / Configuration</h2>
+            <p>Manage provider credentials and the soft budget cap.</p>
+          </div>
+          <div class="settings-actions">
+            <button id="btn-reset-settings" class="btn btn-ghost" type="button">Reset</button>
+            <a class="btn btn-ghost" href="index.html">Open app</a>
+          </div>
+        </div>
+
+        <div class="connection-config direct-config">
+          <div class="direct-row settings-credential-row">
+            <label for="provider-select">Provider:</label>
+            <select id="provider-select">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="venice">Venice</option>
+              <option value="xai">xAI</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="pika">Pika</option>
+            </select>
+            <label for="api-key-input">Credential:</label>
+            <input
+              id="api-key-input"
+              type="password"
+              placeholder="Enter the selected provider credential"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <div class="settings-credential-actions">
+              <button id="btn-verify-settings" class="btn btn-ghost" type="button">Verify</button>
+              <button id="btn-save-settings" class="btn btn-primary" type="button">Save</button>
+              <span
+                id="credential-status"
+                class="info-status credential-status"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                data-state="idle"
+              >
+                Enter a credential to verify or save.
+              </span>
             </div>
           </div>
-
-          <article
-            id="readme-article"
-            class="info-article rendered-markdown"
-            aria-live="polite"
-          >
-            <p id="readme-status">Loading the live README from the repository…</p>
-          </article>
-        </section>
-
-        <section class="info-panel hidden" data-info-panel="settings-configuration" role="tabpanel">
-          <div class="info-panel-header">
-            <div>
-              <h2>Settings / Configuration</h2>
-              <p>Manage provider credentials and the soft budget cap.</p>
-            </div>
-            <div class="settings-actions">
-              <button id="btn-reset-settings" class="btn btn-ghost" type="button">Reset</button>
-              <a class="btn btn-ghost" href="index.html">Open app</a>
-            </div>
+          <div class="direct-row">
+            <label for="direct-budget">Budget (USD):</label>
+            <input
+              id="direct-budget"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="∞ (no limit)"
+              style="width: 8rem"
+            />
           </div>
-
-          <div class="connection-config direct-config">
-            <div class="direct-row settings-credential-row">
-              <label for="provider-select">Provider:</label>
-              <select id="provider-select">
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="venice">Venice</option>
-                <option value="xai">xAI</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="pika">Pika</option>
-              </select>
-              <label for="api-key-input">Credential:</label>
-              <input
-                id="api-key-input"
-                type="password"
-                placeholder="Enter the selected provider credential"
-                spellcheck="false"
-                autocomplete="off"
-              />
-              <div class="settings-credential-actions">
-                <button id="btn-verify-settings" class="btn btn-ghost" type="button">Verify</button>
-                <button id="btn-save-settings" class="btn btn-primary" type="button">Save</button>
-                <span
-                  id="credential-status"
-                  class="info-status credential-status"
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                  data-state="idle"
-                >
-                  Enter a credential to verify or save.
-                </span>
-              </div>
-            </div>
-            <div class="direct-row">
-              <label for="direct-budget">Budget (USD):</label>
-              <input
-                id="direct-budget"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="∞ (no limit)"
-                style="width: 8rem"
-              />
-            </div>
-            <div class="security-warning">
-              ⚠ WARNING: Direct mode exposes your API key in browser DevTools and network traffic.
-              Never use a production key here. Use proxy mode in production environments.
-            </div>
-            <p class="hint">
-              Changes are stored locally in this browser and will update the main app in other
-              tabs on the same origin.
-            </p>
+          <div class="security-warning">
+            ⚠ WARNING: Direct mode exposes your API key in browser DevTools and network traffic.
+            Never use a production key here. Use proxy mode in production environments.
           </div>
-        </section>
-      </main>
-    </div>
+          <p class="hint">
+            Changes are stored locally in this browser and will update the main app in other
+            tabs on the same origin.
+          </p>
+        </div>
+      </section>
+    </main>
 
     <script src="../../dist-web/ai-powered.umd.js"></script>
     <script src="info.js"></script>
