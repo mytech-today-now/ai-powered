@@ -1492,7 +1492,9 @@ body > .app-header,
 body > .tab-bar,
 body > .history-panel-wrap,
 body > main,
-body.info-page .info-shell {
+body.info-page .info-shell,
+body:has(.info-shell) .info-shell,
+body:has(.info-header) .info-shell {
   width: min(1380px, calc(100% - 2rem));
   margin-inline: auto;
 }
@@ -1500,7 +1502,9 @@ body.info-page .info-shell {
 body > .app-header,
 body > .history-panel-wrap,
 body > main,
-body.info-page .info-shell {
+body.info-page .info-shell,
+body:has(.info-shell) .info-shell,
+body:has(.info-header) .info-shell {
   margin-top: 1rem;
   margin-bottom: 0;
 }
@@ -2015,11 +2019,15 @@ button.btn-primary:disabled {
 }
 
 /* ── Info page ────────────────────────────────────────── */
-body.info-page {
+body.info-page,
+body:has(.info-shell),
+body:has(.info-header) {
   padding-bottom: 2rem;
 }
 
-body.info-page .info-shell {
+body.info-page .info-shell,
+body:has(.info-shell) .info-shell,
+body:has(.info-header) .info-shell {
   display: grid;
   gap: 1rem;
 }
@@ -2327,14 +2335,18 @@ body.info-page .info-shell {
   body > .tab-bar,
   body > .history-panel-wrap,
   body > main,
-  body.info-page .info-shell {
+  body.info-page .info-shell,
+body:has(.info-shell) .info-shell,
+body:has(.info-header) .info-shell {
     width: min(100% - 1rem, 1380px);
   }
 
   body > .app-header,
   body > .history-panel-wrap,
   body > main,
-  body.info-page .info-shell {
+  body.info-page .info-shell,
+body:has(.info-shell) .info-shell,
+body:has(.info-header) .info-shell {
     margin-top: 0.75rem;
   }
 
