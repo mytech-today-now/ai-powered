@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: 1c-2g
     branch: main
-    buildCommand: npm ci && npm run build && npm run build:web
+    buildCommand: npm ci && npm run build && npm run build:web && npm run build:dist
     startCommand: npm start
     healthCheckPath: /health
     autoDeployTrigger: commit
