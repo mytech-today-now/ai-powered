@@ -787,10 +787,12 @@ export function createRouter(opts: ServeOptions): Router {
   //                                 composable with ?modality= and ?provider=;
   //                                 unknown values return [] not a 4xx error
   // When ?provider= is specified, that provider's model list is returned
-  // regardless of whether the server is in mock mode — all real providers
-  // use static lists so no live API calls are made.  Provider construction
-  // failures return a structured 5xx error; the empty array response is
-  // reserved for providers that genuinely return no models.
+  // regardless of whether the server is in mock mode. Real providers use
+  // static lists, so no live API calls are made. If the selected provider is
+  // inactive on the proxy, we fall back to the static model catalog so the
+  // browser can still refresh model options. Other provider construction
+  // failures continue to return a structured 5xx error. The empty array
+  // response is reserved for providers that genuinely return no models.
   // When no provider is specified and mock mode is on, the mock list is used.
   router.get(
     "/models",
@@ -800,7 +802,7 @@ export function createRouter(opts: ServeOptions): Router {
       const accepts = req.query["accepts"] as string | undefined;
 
       // Honour an explicit ?provider= override even in mock mode so that the
-      // UI can display models from all configured real providers.  listModels
+      // UI can display models from all configured real providers. listModels
       // for every built-in provider is static (no network calls), so this is safe.
       // Honour an explicit ?provider= to always fetch real models.
       // Otherwise propagate the server-level mock flag explicitly so a stale
@@ -827,6 +829,45 @@ export function createRouter(opts: ServeOptions): Router {
           respondModelsError(res, 500, "MODEL_LIST_ERROR", modelListErrorMessage(err));
         }
       } catch (err) {
+        const errorText = err instanceof Error ? err.name + ": " + err.message : String(err);
+        if (
+          providerOverride &&
+          providerOverride === "openai" &&
+          (errorText.includes("PROVIDER_INACTIVE") ||
+            errorText.includes("is not configured on this proxy") ||
+            errorText.includes("OpenAI API key is required"))
+        ) {
+          try {
+            const fallbackClient = await getAiClient("serve-models", {
+              ...opts.configOverrides,
+              provider: providerOverride as never,
+              mock: true as const,
+            } as never);
+            const models = await fallbackClient.listModels(modality as never, accepts as never);
+            getLogger().warn(
+              {
+                provider: providerOverride,
+                modality,
+                accepts,
+                errorName: err instanceof Error ? err.name : typeof err,
+              },
+              "GET /models: provider inactive, served static model catalog",
+            );
+            res.json(models);
+            return;
+          } catch (fallbackErr) {
+            getLogger().warn(
+              {
+                provider: providerOverride,
+                modality,
+                accepts,
+                fallbackErrorName:
+                  fallbackErr instanceof Error ? fallbackErr.name : typeof fallbackErr,
+              },
+              "GET /models: static fallback failed",
+            );
+          }
+        }
         getLogger().warn(
           {
             provider: providerOverride,

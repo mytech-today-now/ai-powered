@@ -1795,7 +1795,7 @@
    *      instead of sending a file the server will reject with a cryptic 415.
    *
    *   2. **Large files** — Modern phones produce 8-15 MB JPEGs.  Uploading them
-   *      raw over an ngrok tunnel is slow and can time out.  We downsample to
+   *      raw over a public HTTPS proxy or tunnel is slow and can time out.  We downsample to
    *      ≤ 2048 px on the long edge and re-encode at 85 % JPEG quality, which
    *      typically brings a 10 MB photo to under 1.5 MB with no visible loss.
    *
@@ -2487,7 +2487,7 @@
   }
 
   /**
-   * Shows or hides the Luma AI tunnel warning banner based on three conditions:
+   * Shows or hides the Luma AI public-URL warning banner based on three conditions:
    *   1. The selected video provider is "lumaai"
    *   2. A reference image has been uploaded (currentFileRef is set)
    *   3. The server does NOT have PROXY_PUBLIC_BASE_URL configured
@@ -2601,7 +2601,7 @@
   //
   // Supersedes the former video-only provider listener. The video modality
   // receives an additional updateLumaTunnelWarn() call because the provider
-  // determines whether the Luma reverse-tunnel banner should be shown.
+  // determines whether the Luma public-URL banner should be shown.
   for (const [modality, providerSel] of Object.entries(PROVIDER_SELECTS)) {
     if (!providerSel) continue;
     providerSel.addEventListener("change", async () => {
@@ -5599,9 +5599,8 @@ ${combinedSection}${shotCards}
       showError(
         videoOutput,
         new Error(
-          "Luma AI image-to-video requires a public tunnel.\n" +
-            "Restart the proxy with:  .\\scripts\\cycle-service.ps1 -Ngrok\n" +
-            "Or set PROXY_PUBLIC_BASE_URL to your server's public address before starting.",
+          "Luma AI image-to-video requires a public HTTPS URL.\n" +
+            "Set PROXY_PUBLIC_BASE_URL to your server's public HTTPS address before starting.",
         ),
       );
       return;

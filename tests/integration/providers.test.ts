@@ -945,6 +945,33 @@ describe("GET /models — server route", () => {
       }
     }
   });
+
+  it("returns fallback video models for openai when OPENAI_API_KEY is absent", async () => {
+    const saved = process.env["OPENAI_API_KEY"];
+    delete process.env["OPENAI_API_KEY"];
+
+    try {
+      const res = await getModels(port, "provider=openai&modality=video");
+      expect(res.statusCode).toBe(200);
+
+      const body = (await readBody(res)) as unknown[];
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "mock-video-v1",
+            capabilities: expect.arrayContaining(["video"]),
+          }),
+        ]),
+      );
+    } finally {
+      if (saved === undefined) {
+        delete process.env["OPENAI_API_KEY"];
+      } else {
+        process.env["OPENAI_API_KEY"] = saved;
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -787,11 +787,9 @@ A time-lapse of clouds drifting over mountain peaks at golden hour</textarea
           <div id="video-file-thumbs" class="file-thumbs hidden"></div>
           <!-- Shown when Luma AI is selected with an image but PROXY_PUBLIC_BASE_URL is not set -->
           <div id="video-luma-tunnel-warn" class="warn-box hidden">
-            ⚠ <strong>Public tunnel required.</strong> Luma AI image-to-video needs a publicly
-            accessible URL for the keyframe image. Restart the proxy with an ngrok tunnel:<br />
-            <code>.\scripts\cycle-service.ps1 -Ngrok</code><br />
-            Or set <code>PROXY_PUBLIC_BASE_URL</code> to your server's public address before
-            starting.
+            ⚠ <strong>Public HTTPS URL required.</strong> Luma AI image-to-video needs a publicly
+            accessible URL for the keyframe image. Set <code>PROXY_PUBLIC_BASE_URL</code> to your
+            server's public HTTPS address before starting.
           </div>
 
           <!-- ── Video size / duration controls ───────────────────── -->
