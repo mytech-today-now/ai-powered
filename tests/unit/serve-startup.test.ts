@@ -42,3 +42,16 @@ describe("render deployment config", () => {
     expect(renderYaml).toContain("startCommand: npm start");
   });
 });
+
+describe("package scripts", () => {
+  it("keeps npm start on the lightweight proxy entrypoint", () => {
+    const packageJson = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+
+    expect(packageJson.scripts?.build).toContain("npm run build:web");
+    expect(packageJson.scripts?.start).toBe("node dist/ai-powered/cli/index.js serve");
+    expect(packageJson.scripts?.serve).toBe("node dist/ai-powered/cli/index.js serve");
+    expect(packageJson.scripts?.prestart).toBeUndefined();
+  });
+});
