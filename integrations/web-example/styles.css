@@ -2428,6 +2428,11 @@ body:has(.info-header) .info-shell {
   border-color: var(--danger-border);
   color: var(--danger);
 }
+.credential-status[data-state="warning"] {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: #92400e;
+}
 
 @media (max-width: 640px) {
   #api-key-input,
@@ -2437,3 +2442,4 @@ body:has(.info-header) .info-shell {
     min-width: 0;
   }
 }
+

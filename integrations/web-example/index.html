@@ -144,7 +144,7 @@
         </div>
       </div>
 
-      <section class="mode-section" hidden aria-hidden="true">
+      <section class="mode-section">
         <!-- Mode toggle -->
         <div class="mode-row">
           <label for="mode-select">Mode:</label>
@@ -170,40 +170,56 @@
 
         <!-- Direct config (shown only when Direct is selected) -->
         <div id="direct-config" class="connection-config hidden">
-          <div class="hint">
-            Direct mode settings live on the Info page under Settings / Configuration. Open it from the header to change your
-            provider, API key, or budget.
-          </div>
-          <div hidden aria-hidden="true">
-            <div class="direct-row">
-              <label for="provider-select">Provider:</label>
-              <select id="provider-select">
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="venice">Venice</option>
-                <option value="xai">xAI</option>
-                <option value="openrouter">OpenRouter</option>
-              </select>
-              <label for="api-key-input">API Key:</label>
-              <input
-                id="api-key-input"
-                type="password"
-                placeholder="sk-…"
-                spellcheck="false"
-                autocomplete="off"
-                style="width: 220px"
-              />
-              <label for="direct-budget">Budget (USD):</label>
-              <input
-                id="direct-budget"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="∞ (no limit)"
-                style="width: 8rem"
-              />
+          <div class="direct-row settings-credential-row">
+            <label for="provider-select">Provider:</label>
+            <select id="provider-select">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="venice">Venice</option>
+              <option value="xai">xAI</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+            <label for="api-key-input">Credential:</label>
+            <input
+              id="api-key-input"
+              type="password"
+              placeholder="Enter the selected provider credential"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <div class="settings-credential-actions">
+              <button id="btn-verify-settings" class="btn btn-ghost" type="button">
+                Verify
+              </button>
+              <button id="btn-save-settings" class="btn btn-primary" type="button">Save</button>
+              <span
+                id="credential-status"
+                class="info-status credential-status"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                data-state="idle"
+              >
+                Enter a credential to verify or save.
+              </span>
             </div>
           </div>
+          <div class="direct-row">
+            <label for="direct-budget">Budget (USD):</label>
+            <input
+              id="direct-budget"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="∞ (no limit)"
+              style="width: 8rem"
+            />
+          </div>
+          <p class="hint">
+            Verified credentials are stored locally in this browser for the selected provider.
+            Direct mode still exposes them to the browser environment, so use proxy mode in
+            production.
+          </p>
         </div>
       </section>
     </header>
@@ -981,6 +997,8 @@ List 3 programming languages. Return a JSON array where each object has: name (s
     </script>
   </body>
 </html>
+
+
 
 
 

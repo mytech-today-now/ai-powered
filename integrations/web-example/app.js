@@ -58,6 +58,9 @@
   const proxyUrlInput = $("proxy-url");
   const providerSelect = $("provider-select");
   const apiKeyInput = $("api-key-input");
+  const verifyButton = $("btn-verify-settings");
+  const saveButton = $("btn-save-settings");
+  const credentialStatus = $("credential-status");
   const connectionStorageKeys = {
     mode: "ai-powered:connection:mode",
     proxyUrl: "ai-powered:connection:proxy-url",
@@ -72,19 +75,19 @@
   }
 
   function syncConnectionFromStorage() {
-    const storedMode = localStorage.getItem(connectionStorageKeys.mode);
+    const rawStoredMode = localStorage.getItem(connectionStorageKeys.mode);
+    const storedMode = rawStoredMode === "direct" ? "direct" : "proxy";
     const storedProxyUrl = localStorage.getItem(connectionStorageKeys.proxyUrl);
-    const resolvedMode = storedMode === "direct" ? "direct" : "proxy";
     const resolvedProxyUrl = storedProxyUrl === null ? detectDefaultProxyUrl() : storedProxyUrl;
 
     if (modeSelect) {
-      modeSelect.value = resolvedMode;
+      modeSelect.value = storedMode;
     }
     if (proxyUrlInput) {
       proxyUrlInput.value = resolvedProxyUrl;
     }
-    if (storedMode !== resolvedMode) {
-      localStorage.setItem(connectionStorageKeys.mode, resolvedMode);
+    if (rawStoredMode !== storedMode) {
+      localStorage.setItem(connectionStorageKeys.mode, storedMode);
     }
     if (storedProxyUrl === null) {
       localStorage.setItem(connectionStorageKeys.proxyUrl, resolvedProxyUrl);
@@ -93,65 +96,382 @@
 
   const directConfigStorageKeys = {
     provider: "ai-powered:direct:provider",
-    apiKey: "ai-powered:direct:api-key",
+    apiKeyPrefix: "ai-powered:direct:api-key:",
     budget: "ai-powered:direct:budget-usd",
   };
+  const DIRECT_PROVIDER_BASE_URLS = {
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com/v1",
+    venice: "https://api.venice.ai/api/v1",
+    xai: "https://api.x.ai/v1",
+    openrouter: "https://openrouter.ai/api/v1",
+  };
+  const DIRECT_PROVIDER_LABELS = {
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    venice: "Venice",
+    xai: "xAI",
+    openrouter: "OpenRouter",
+  };
+  const DIRECT_PROVIDER_NAMES = new Set(Object.keys(DIRECT_PROVIDER_BASE_URLS));
+  const directCredentialCache = new Map();
+  const verifiedDraftCache = new Map();
+  let credentialStorageState = "available";
+
+  function noteStorageFailure(storage) {
+    if (storage === localStorage) {
+      if (credentialStorageState === "available") credentialStorageState = "session";
+    } else {
+      credentialStorageState = "unavailable";
+    }
+  }
+
+  function safeGetItem(storage, key) {
+    try {
+      return storage.getItem(key);
+    } catch {
+      noteStorageFailure(storage);
+      return null;
+    }
+  }
+
+  function safeSetItem(storage, key, value) {
+    try {
+      storage.setItem(key, value);
+      if (storage === localStorage) credentialStorageState = "available";
+      return true;
+    } catch {
+      noteStorageFailure(storage);
+      return false;
+    }
+  }
+
+  function safeRemoveItem(storage, key) {
+    try {
+      storage.removeItem(key);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function directProviderLabel(provider) {
+    return DIRECT_PROVIDER_LABELS[provider] ?? provider;
+  }
+
+  function credentialStorageKey(provider) {
+    return `${directConfigStorageKeys.apiKeyPrefix}${provider}`;
+  }
+
+  function setCredentialStatus(state, message) {
+    if (!credentialStatus) return;
+    credentialStatus.dataset.state = state;
+    credentialStatus.textContent = message;
+  }
+
+  function setCredentialInvalid(invalid) {
+    if (!apiKeyInput) return;
+    apiKeyInput.setAttribute("aria-invalid", invalid ? "true" : "false");
+  }
+
+  function syncCredentialPlaceholder(provider) {
+    if (!apiKeyInput) return;
+    apiKeyInput.placeholder = `Enter the ${directProviderLabel(provider)} credential`;
+  }
+
+  function loadDirectCredential(provider) {
+    const key = credentialStorageKey(provider);
+    const stored = safeGetItem(localStorage, key);
+    if (stored !== null && stored.trim() !== "") {
+      directCredentialCache.set(provider, stored);
+      verifiedDraftCache.set(provider, stored);
+      return stored;
+    }
+
+    const sessionValue = safeGetItem(sessionStorage, key);
+    if (sessionValue !== null && sessionValue.trim() !== "") {
+      directCredentialCache.set(provider, sessionValue);
+      verifiedDraftCache.set(provider, sessionValue);
+      credentialStorageState = "session";
+      return sessionValue;
+    }
+
+    return verifiedDraftCache.get(provider) ?? directCredentialCache.get(provider) ?? "";
+  }
+
+  function storeDirectCredential(provider, value) {
+    const key = credentialStorageKey(provider);
+    const trimmed = value.trim();
+    const localSaved = safeSetItem(localStorage, key, trimmed);
+    if (localSaved) {
+      safeRemoveItem(sessionStorage, key);
+      directCredentialCache.set(provider, trimmed);
+      verifiedDraftCache.set(provider, trimmed);
+      credentialStorageState = "available";
+      return "local";
+    }
+
+    if (safeSetItem(sessionStorage, key, trimmed)) {
+      directCredentialCache.set(provider, trimmed);
+      verifiedDraftCache.set(provider, trimmed);
+      credentialStorageState = "session";
+      return "session";
+    }
+
+    directCredentialCache.set(provider, trimmed);
+    verifiedDraftCache.set(provider, trimmed);
+    credentialStorageState = "unavailable";
+    return "memory";
+  }
+
+  function syncDirectCredentialStatus(provider) {
+    if (!apiKeyInput || !credentialStatus) return;
+    const value = apiKeyInput.value.trim();
+    const savedValue = directCredentialCache.get(provider) ?? "";
+    const verifiedValue = verifiedDraftCache.get(provider) ?? "";
+
+    if (!value) {
+      if (credentialStorageState === "available") {
+        setCredentialStatus(
+          "idle",
+          `Enter the ${directProviderLabel(provider)} credential, then Verify or Save.`,
+        );
+      } else if (credentialStorageState === "session") {
+        setCredentialStatus(
+          "warning",
+          `Local browser storage is unavailable. Enter and verify the ${directProviderLabel(provider)} credential for this session.`,
+        );
+      } else {
+        setCredentialStatus(
+          "warning",
+          `Browser storage is unavailable. Enter and verify the ${directProviderLabel(provider)} credential to use it in this session.`,
+        );
+      }
+      return;
+    }
+
+    if (value === savedValue) {
+      if (credentialStorageState === "available") {
+        setCredentialStatus(
+          "saved",
+          `${directProviderLabel(provider)} credential saved in this browser.`,
+        );
+      } else if (credentialStorageState === "session") {
+        setCredentialStatus(
+          "warning",
+          `${directProviderLabel(provider)} credential is saved for this session only because local browser storage is unavailable.`,
+        );
+      } else {
+        setCredentialStatus(
+          "warning",
+          `${directProviderLabel(provider)} credential is available only in memory because browser storage is unavailable.`,
+        );
+      }
+      return;
+    }
+
+    if (value === verifiedValue) {
+      if (credentialStorageState === "available") {
+        setCredentialStatus(
+          "verified",
+          `${directProviderLabel(provider)} credential verified. Click Save to store it in this browser.`,
+        );
+      } else {
+        setCredentialStatus(
+          "warning",
+          `${directProviderLabel(provider)} credential verified, but browser storage is unavailable. It will remain available for this session only.`,
+        );
+      }
+      return;
+    }
+
+    if (credentialStorageState === "available") {
+      setCredentialStatus(
+        "idle",
+        `${directProviderLabel(provider)} credential ready to verify or save.`,
+      );
+    } else {
+      setCredentialStatus(
+        "warning",
+        `${directProviderLabel(provider)} credential ready to verify or save, but browser storage is unavailable.`,
+      );
+    }
+  }
+
+  function buildDirectHeaders(provider, apiKey) {
+    if (provider === "anthropic") {
+      return {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      };
+    }
+
+    return { Authorization: `Bearer ${apiKey}` };
+  }
+
+  async function verifyDirectCredential(provider, apiKey) {
+    const baseUrl = DIRECT_PROVIDER_BASE_URLS[provider];
+    if (!baseUrl) {
+      throw new Error(`The ${directProviderLabel(provider)} credential cannot be verified in this browser.`);
+    }
+
+    const response = await fetch(`${baseUrl}/models`, {
+      method: "GET",
+      headers: buildDirectHeaders(provider, apiKey),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to verify the ${directProviderLabel(provider)} credential against /models. The provider returned HTTP ${response.status}.`,
+      );
+    }
+  }
 
   function syncDirectConfigFromStorage() {
-    const storedProvider = localStorage.getItem(directConfigStorageKeys.provider);
-    const storedApiKey = localStorage.getItem(directConfigStorageKeys.apiKey);
-    const storedBudget = localStorage.getItem(directConfigStorageKeys.budget);
+    const storedProvider = safeGetItem(localStorage, directConfigStorageKeys.provider);
+    const storedBudget = safeGetItem(localStorage, directConfigStorageKeys.budget);
+    const provider = storedProvider || providerSelect?.value || "openai";
 
     if (providerSelect && storedProvider !== null) {
       providerSelect.value = storedProvider || providerSelect.value;
     }
-    if (apiKeyInput && storedApiKey !== null) {
-      apiKeyInput.value = storedApiKey;
+    if (apiKeyInput) {
+      apiKeyInput.value = loadDirectCredential(provider);
+      setCredentialInvalid(false);
+      syncCredentialPlaceholder(provider);
+      syncDirectCredentialStatus(provider);
     }
     if (directBudgetInput && storedBudget !== null) {
       directBudgetInput.value = storedBudget;
     }
   }
 
-  function syncDirectConfigToStorage() {
-    if (providerSelect) {
-      localStorage.setItem(directConfigStorageKeys.provider, providerSelect.value || "");
-    }
+  function persistDirectProviderSelection() {
+    if (!providerSelect) return;
+    safeSetItem(localStorage, directConfigStorageKeys.provider, providerSelect.value || "openai");
+  }
+
+  function persistDirectBudget() {
+    if (!directBudgetInput) return;
+    safeSetItem(localStorage, directConfigStorageKeys.budget, directBudgetInput.value.trim());
+  }
+
+  function handleDirectProviderChange() {
+    persistDirectProviderSelection();
+    const provider = providerSelect?.value || "openai";
     if (apiKeyInput) {
-      localStorage.setItem(directConfigStorageKeys.apiKey, apiKeyInput.value.trim());
-    }
-    if (directBudgetInput) {
-      localStorage.setItem(directConfigStorageKeys.budget, directBudgetInput.value.trim());
+      apiKeyInput.value = loadDirectCredential(provider);
+      setCredentialInvalid(false);
+      syncCredentialPlaceholder(provider);
+      syncDirectCredentialStatus(provider);
     }
   }
 
-  syncDirectConfigFromStorage();
-  syncConnectionFromStorage();
-  if (providerSelect) {
-    providerSelect.addEventListener("change", syncDirectConfigToStorage);
-  }
-  if (apiKeyInput) {
-    apiKeyInput.addEventListener("input", syncDirectConfigToStorage);
-  }
-  if (directBudgetInput) {
-    directBudgetInput.addEventListener("input", syncDirectConfigToStorage);
+  function handleDirectCredentialInput() {
+    if (!apiKeyInput || !providerSelect) return;
+    setCredentialInvalid(false);
+    syncDirectCredentialStatus(providerSelect.value || "openai");
   }
 
-  window.addEventListener("storage", (event) => {
+  async function handleDirectVerifyClick() {
+    if (!apiKeyInput || !providerSelect) return;
+    const provider = providerSelect.value || "openai";
+    const value = apiKeyInput.value.trim();
+    if (!value) {
+      setCredentialInvalid(true);
+      setCredentialStatus("error", `Enter the ${directProviderLabel(provider)} credential before verifying.`);
+      return;
+    }
+
+    setCredentialInvalid(false);
+    setCredentialStatus("idle", `Verifying the ${directProviderLabel(provider)} credential…`);
+    try {
+      await verifyDirectCredential(provider, value);
+      verifiedDraftCache.set(provider, value);
+      syncDirectCredentialStatus(provider);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : `Unable to verify the ${directProviderLabel(provider)} credential.`;
+      setCredentialInvalid(true);
+      setCredentialStatus("error", message);
+    }
+  }
+
+  async function handleDirectSaveClick() {
+    if (!apiKeyInput || !providerSelect) return;
+    const provider = providerSelect.value || "openai";
+    const value = apiKeyInput.value.trim();
+    if (!value) {
+      setCredentialInvalid(true);
+      setCredentialStatus("error", `Enter the ${directProviderLabel(provider)} credential before saving.`);
+      return;
+    }
+
+    setCredentialInvalid(false);
+    const verifiedValue = verifiedDraftCache.get(provider) ?? "";
+    try {
+      if (verifiedValue !== value) {
+        setCredentialStatus("idle", `Verifying the ${directProviderLabel(provider)} credential…`);
+        await verifyDirectCredential(provider, value);
+        verifiedDraftCache.set(provider, value);
+      }
+
+      storeDirectCredential(provider, value);
+      apiKeyInput.value = value;
+      syncDirectCredentialStatus(provider);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : `Unable to verify the ${directProviderLabel(provider)} credential.`;
+      setCredentialInvalid(true);
+      setCredentialStatus("error", message);
+    }
+  }
+
+  function handleDirectStorageEvent(event) {
     if (!event.key) {
       syncDirectConfigFromStorage();
       syncConnectionFromStorage();
       applyModeUi();
       return;
     }
-    if (Object.values(directConfigStorageKeys).includes(event.key)) {
+
+    if (
+      event.key === connectionStorageKeys.mode ||
+      event.key === connectionStorageKeys.proxyUrl ||
+      event.key === directConfigStorageKeys.provider ||
+      event.key === directConfigStorageKeys.budget ||
+      event.key.startsWith(directConfigStorageKeys.apiKeyPrefix)
+    ) {
       syncDirectConfigFromStorage();
+      if (event.key === connectionStorageKeys.mode || event.key === connectionStorageKeys.proxyUrl) {
+        syncConnectionFromStorage();
+        applyModeUi();
+      }
     }
-    if (Object.values(connectionStorageKeys).includes(event.key)) {
-      syncConnectionFromStorage();
-      applyModeUi();
-    }
-  });
+  }
+
+  syncDirectConfigFromStorage();
+  syncConnectionFromStorage();
+  if (providerSelect) {
+    providerSelect.addEventListener("change", handleDirectProviderChange);
+  }
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener("input", handleDirectCredentialInput);
+  }
+  if (directBudgetInput) {
+    directBudgetInput.addEventListener("input", persistDirectBudget);
+  }
+  if (verifyButton) {
+    verifyButton.addEventListener("click", handleDirectVerifyClick);
+  }
+  if (saveButton) {
+    saveButton.addEventListener("click", handleDirectSaveClick);
+  }
+
+  window.addEventListener("storage", handleDirectStorageEvent);
   const tabBtns = document.querySelectorAll(".tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
   const historyPanelWrap = $("history-panel-wrap");
@@ -6229,6 +6549,14 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
+
+
+
+
+
+
+
+
 
 
 

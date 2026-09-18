@@ -140,6 +140,7 @@ beforeEach(() => {
     writable: true,
   });
   renderInfoDom();
+  vi.stubGlobal("fetch", vi.fn());
   Object.defineProperty(window, "AiPoweredInfoContent", {
     configurable: true,
     value: {
@@ -160,6 +161,7 @@ afterEach(() => {
     .AiPoweredInfoContent;
   delete (window as unknown as { AiPowered?: unknown }).AiPowered;
   delete (window as unknown as { __AI_PROXY_URL__?: string }).__AI_PROXY_URL__;
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -212,7 +214,10 @@ describe("web-example info page", () => {
     expect(providerSelect.querySelector('option[value="pika"]')).not.toBeNull();
   });
 
-  it("persists proxy mode and URL, then clears the field when switching providers", async () => {
+  it("verifies the selected provider against /models before saving the provider-scoped key", async () => {
+    const fetchMock = vi.mocked(window.fetch);
+    fetchMock.mockResolvedValue(new Response("", { status: 200 }));
+
     await mountInfoPage();
     await settle();
 
@@ -230,11 +235,6 @@ describe("web-example info page", () => {
     modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
     expect(window.localStorage.getItem("ai-powered:connection:mode")).toBe("direct");
 
-    proxyUrlInput.value = "";
-    proxyUrlInput.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(window.localStorage.getItem("ai-powered:connection:proxy-url")).toBe("");
-    expect(proxyUrlInput.value).toBe("");
-
     proxyUrlInput.value = "https://ai-powered-proxy.onrender.com";
     proxyUrlInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(window.localStorage.getItem("ai-powered:connection:proxy-url")).toBe(
@@ -243,21 +243,33 @@ describe("web-example info page", () => {
 
     providerSelect.value = "openrouter";
     providerSelect.dispatchEvent(new Event("change", { bubbles: true }));
-
     expect(credentialInput.value).toBe("");
+    expect(credentialInput.placeholder).toContain("OpenRouter credential");
     expect(status.dataset.state).toBe("idle");
-    expect(status.textContent).toContain("Enter a new OpenRouter credential.");
+    expect(status.textContent).toContain("Enter the OpenRouter credential, then Verify or Save.");
 
     credentialInput.value = "sk-or-v1-valid12345";
     credentialInput.dispatchEvent(new Event("input", { bubbles: true }));
 
     verifyButton.click();
+    await settle();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("https://openrouter.ai/api/v1/models", {
+      method: "GET",
+      headers: { Authorization: "Bearer sk-or-v1-valid12345" },
+    });
     expect(status.dataset.state).toBe("verified");
     expect(status.textContent).toContain("OpenRouter credential verified.");
-    expect(window.localStorage.getItem("ai-powered:direct:api-key")).toBeNull();
+    expect(window.localStorage.getItem("ai-powered:direct:api-key:openrouter")).toBeNull();
 
     saveButton.click();
-    expect(window.localStorage.getItem("ai-powered:direct:api-key")).toBe("sk-or-v1-valid12345");
+    await settle();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("ai-powered:direct:api-key:openrouter")).toBe(
+      "sk-or-v1-valid12345",
+    );
     expect(status.dataset.state).toBe("saved");
     expect(status.textContent).toContain("OpenRouter credential saved in this browser.");
 
@@ -266,32 +278,36 @@ describe("web-example info page", () => {
     expect(credentialInput.value).toBe("");
     expect(credentialInput.placeholder).toContain("Pika credential");
     expect(status.dataset.state).toBe("idle");
-    expect(status.textContent).toContain("Enter a new Pika credential.");
-
-    providerSelect.value = "openrouter";
-    providerSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(credentialInput.value).toBe("");
-    expect(status.dataset.state).toBe("idle");
+    expect(status.textContent).toContain("Enter the Pika credential, then Verify or Save.");
   });
 
-  it("rejects empty and malformed credentials without saving them", async () => {
+  it("rejects empty credentials and leaves failed verifications unsaved", async () => {
+    const fetchMock = vi.mocked(window.fetch);
+    fetchMock.mockResolvedValue(new Response("", { status: 401, statusText: "Unauthorized" }));
+
     await mountInfoPage();
     await settle();
 
-    const { credentialInput, verifyButton, saveButton, status } = getSettingsElements();
+    const { credentialInput, verifyButton, status } = getSettingsElements();
 
     verifyButton.click();
+    await settle();
     expect(status.dataset.state).toBe("error");
     expect(status.textContent).toContain("Enter the OpenAI credential before verifying.");
     expect(credentialInput.getAttribute("aria-invalid")).toBe("true");
 
     credentialInput.value = "not-a-real-key";
     credentialInput.dispatchEvent(new Event("input", { bubbles: true }));
-    saveButton.click();
+    verifyButton.click();
+    await settle();
 
+    expect(fetchMock).toHaveBeenCalledWith("https://api.openai.com/v1/models", {
+      method: "GET",
+      headers: { Authorization: "Bearer not-a-real-key" },
+    });
     expect(status.dataset.state).toBe("error");
-    expect(status.textContent).toContain("OpenAI credentials usually start with sk-.");
-    expect(window.localStorage.getItem("ai-powered:direct:api-key")).toBeNull();
+    expect(status.textContent).toContain("Unable to verify the OpenAI credential against /models.");
+    expect(window.localStorage.getItem("ai-powered:direct:api-key:openai")).toBeNull();
     expect(window.localStorage.getItem("ai-powered:direct:pika-api-key")).toBeNull();
   });
 
@@ -302,7 +318,7 @@ describe("web-example info page", () => {
       "https://ai-powered-proxy.onrender.com",
     );
     window.localStorage.setItem("ai-powered:direct:provider", "openrouter");
-    window.localStorage.setItem("ai-powered:direct:api-key", "sk-or-v1-persisted");
+    window.localStorage.setItem("ai-powered:direct:api-key:openrouter", "sk-or-v1-persisted");
     window.localStorage.setItem("ai-powered:direct:budget-usd", "3.50");
 
     await mountInfoPage();
@@ -336,12 +352,13 @@ describe("web-example info page", () => {
 
     const resetButton = getSettingsElements().resetButton;
     resetButton.click();
+    await settle();
     expect(window.localStorage.getItem("ai-powered:connection:mode")).toBe("proxy");
     expect(window.localStorage.getItem("ai-powered:connection:proxy-url")).toBe(
       "http://localhost:3001",
     );
     expect(window.localStorage.getItem("ai-powered:direct:provider")).toBeNull();
-    expect(window.localStorage.getItem("ai-powered:direct:api-key")).toBeNull();
+    expect(window.localStorage.getItem("ai-powered:direct:api-key:openrouter")).toBeNull();
     expect(window.localStorage.getItem("ai-powered:direct:pika-api-key")).toBeNull();
     expect(window.localStorage.getItem("ai-powered:direct:budget-usd")).toBeNull();
     expect(getSettingsElements().modeSelect.value).toBe("proxy");

@@ -12,6 +12,7 @@
     proxyUrl: "ai-powered:connection:proxy-url",
     provider: "ai-powered:direct:provider",
     apiKey: "ai-powered:direct:api-key",
+    apiKeyPrefix: "ai-powered:direct:api-key:",
     pikaApiKey: "ai-powered:direct:pika-api-key",
     budget: "ai-powered:direct:budget-usd",
   };
@@ -28,6 +29,17 @@
   };
 
   const KNOWN_PROVIDERS = new Set(Object.keys(PROVIDER_LABELS));
+  const DIRECT_PROVIDER_BASE_URLS = {
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com/v1",
+    venice: "https://api.venice.ai/api/v1",
+    xai: "https://api.x.ai/v1",
+    openrouter: "https://openrouter.ai/api/v1",
+  };
+  const DIRECT_PROVIDER_NAMES = new Set(Object.keys(DIRECT_PROVIDER_BASE_URLS));
+  const directCredentialCache = new Map();
+  const verifiedDraftCache = new Map();
+  let credentialStorageState = "available";
 
   const aiPowered = window.AiPowered ?? window.AiPoweredInfoContent ?? {};
   const loadReadmeMarkdown =
@@ -72,7 +84,9 @@
   }
 
   function credentialStorageKey(provider) {
-    return provider === "pika" ? STORAGE_KEYS.pikaApiKey : STORAGE_KEYS.apiKey;
+    return provider === "pika"
+      ? STORAGE_KEYS.pikaApiKey
+      : `${STORAGE_KEYS.apiKeyPrefix}${provider}`;
   }
 
   function setCredentialStatus(state, message) {
@@ -98,9 +112,39 @@
     return detected || DEFAULT_PROXY_URL;
   }
 
+  function safeGetItem(storage, key) {
+    try {
+      return storage.getItem(key);
+    } catch {
+      credentialStorageState = credentialStorageState === "available" ? "session" : credentialStorageState;
+      return null;
+    }
+  }
+
+  function safeSetItem(storage, key, value) {
+    try {
+      storage.setItem(key, value);
+      credentialStorageState = "available";
+      return true;
+    } catch {
+      if (credentialStorageState === "available") credentialStorageState = "session";
+      return false;
+    }
+  }
+
+  function safeRemoveItem(storage, key) {
+    try {
+      storage.removeItem(key);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function syncConnectionFromStorage() {
-    const storedMode = normalizeMode(localStorage.getItem(STORAGE_KEYS.mode));
-    const storedProxyUrl = localStorage.getItem(STORAGE_KEYS.proxyUrl);
+    const rawStoredMode = safeGetItem(localStorage, STORAGE_KEYS.mode);
+    const storedMode = normalizeMode(rawStoredMode);
+    const storedProxyUrl = safeGetItem(localStorage, STORAGE_KEYS.proxyUrl);
     const proxyUrl = storedProxyUrl === null ? detectProxyUrlFallback() : storedProxyUrl;
 
     if (modeSelect) {
@@ -110,22 +154,135 @@
       proxyUrlInput.value = proxyUrl;
     }
 
-    if (localStorage.getItem(STORAGE_KEYS.mode) !== storedMode) {
-      localStorage.setItem(STORAGE_KEYS.mode, storedMode);
+    if (rawStoredMode !== storedMode) {
+      safeSetItem(localStorage, STORAGE_KEYS.mode, storedMode);
     }
     if (storedProxyUrl === null) {
-      localStorage.setItem(STORAGE_KEYS.proxyUrl, proxyUrl);
+      safeSetItem(localStorage, STORAGE_KEYS.proxyUrl, proxyUrl);
     }
   }
 
-  function readStoredCredential(provider) {
-    return localStorage.getItem(credentialStorageKey(provider)) ?? "";
+  function resolveCredential(provider) {
+    return verifiedDraftCache.get(provider) ?? directCredentialCache.get(provider) ?? "";
   }
 
-  function syncSettingsFromStorage({ clearCredential = false } = {}) {
-    const storedProvider = normalizeProvider(localStorage.getItem(STORAGE_KEYS.provider));
-    const storedBudget = localStorage.getItem(STORAGE_KEYS.budget);
-    const storedCredential = readStoredCredential(storedProvider);
+  function loadCredential(provider) {
+    const key = credentialStorageKey(provider);
+    const stored = safeGetItem(localStorage, key);
+    if (stored !== null) {
+      directCredentialCache.set(provider, stored);
+      verifiedDraftCache.set(provider, stored);
+      return stored;
+    }
+
+    const sessionValue = safeGetItem(sessionStorage, key);
+    if (sessionValue !== null) {
+      directCredentialCache.set(provider, sessionValue);
+      verifiedDraftCache.set(provider, sessionValue);
+      if (credentialStorageState === "available") credentialStorageState = "session";
+      return sessionValue;
+    }
+
+    return resolveCredential(provider);
+  }
+
+  function storeCredential(provider, value) {
+    const key = credentialStorageKey(provider);
+    const trimmed = value.trim();
+    if (safeSetItem(localStorage, key, trimmed)) {
+      safeRemoveItem(sessionStorage, key);
+      directCredentialCache.set(provider, trimmed);
+      verifiedDraftCache.set(provider, trimmed);
+      return "local";
+    }
+    if (safeSetItem(sessionStorage, key, trimmed)) {
+      directCredentialCache.set(provider, trimmed);
+      verifiedDraftCache.set(provider, trimmed);
+      credentialStorageState = "session";
+      return "session";
+    }
+
+    directCredentialCache.set(provider, trimmed);
+    verifiedDraftCache.set(provider, trimmed);
+    credentialStorageState = "unavailable";
+    return "memory";
+  }
+
+  function clearCredential(provider) {
+    const key = credentialStorageKey(provider);
+    directCredentialCache.delete(provider);
+    verifiedDraftCache.delete(provider);
+    safeRemoveItem(localStorage, key);
+    safeRemoveItem(sessionStorage, key);
+  }
+
+  function syncCredentialStatus(provider) {
+    if (!credentialInput) return;
+    const value = credentialInput.value.trim();
+    const savedValue = directCredentialCache.get(provider) ?? "";
+    const verifiedValue = verifiedDraftCache.get(provider) ?? "";
+
+    if (!value) {
+      if (credentialStorageState === "available") {
+        setCredentialStatus(
+          "idle",
+          `Enter the ${providerLabel(provider)} credential, then Verify or Save.`,
+        );
+      } else {
+        setCredentialStatus(
+          "warning",
+          `Browser storage is unavailable. Enter and verify the ${providerLabel(provider)} credential to use it in this session.`,
+        );
+      }
+      return;
+    }
+
+    if (value === savedValue) {
+      if (credentialStorageState === "available") {
+        setCredentialStatus(
+          "saved",
+          `${providerLabel(provider)} credential saved in this browser.`,
+        );
+      } else {
+        setCredentialStatus(
+          "warning",
+          `${providerLabel(provider)} credential is saved for this session only because browser storage is unavailable.`,
+        );
+      }
+      return;
+    }
+
+    if (value === verifiedValue) {
+      if (credentialStorageState === "available") {
+        setCredentialStatus(
+          "verified",
+          `${providerLabel(provider)} credential verified. Click Save to store it in this browser.`,
+        );
+      } else {
+        setCredentialStatus(
+          "warning",
+          `${providerLabel(provider)} credential verified, but browser storage is unavailable. It will remain available for this session only.`,
+        );
+      }
+      return;
+    }
+
+    if (credentialStorageState === "available") {
+      setCredentialStatus(
+        "idle",
+        `${providerLabel(provider)} credential ready to verify or save.`,
+      );
+    } else {
+      setCredentialStatus(
+        "warning",
+        `${providerLabel(provider)} credential ready to verify or save, but browser storage is unavailable.`,
+      );
+    }
+  }
+
+  function syncSettingsFromStorage() {
+    const storedProvider = normalizeProvider(safeGetItem(localStorage, STORAGE_KEYS.provider));
+    const storedBudget = safeGetItem(localStorage, STORAGE_KEYS.budget);
 
     syncConnectionFromStorage();
 
@@ -136,29 +293,10 @@
       directBudgetInput.value = storedBudget ?? "";
     }
     if (credentialInput) {
-      credentialInput.value = clearCredential ? "" : storedCredential;
+      credentialInput.value = loadCredential(storedProvider);
       setCredentialInvalid(false);
       syncCredentialPlaceholder(storedProvider);
-    }
-
-    if (clearCredential) {
-      setCredentialStatus(
-        "idle",
-        `Enter a new ${providerLabel(storedProvider)} credential.`,
-      );
-      return;
-    }
-
-    if (storedCredential.trim()) {
-      setCredentialStatus(
-        "saved",
-        `${providerLabel(storedProvider)} credential saved in this browser.`,
-      );
-    } else {
-      setCredentialStatus(
-        "idle",
-        `Enter the ${providerLabel(storedProvider)} credential, then Verify or Save.`,
-      );
+      syncCredentialStatus(storedProvider);
     }
   }
 
@@ -171,60 +309,45 @@
       };
     }
 
-    switch (provider) {
-      case "anthropic":
-        if (!value.startsWith("sk-ant-")) {
-          return {
-            ok: false,
-            message: "Anthropic credentials usually start with sk-ant-.",
-          };
-        }
-        break;
-      case "openrouter":
-        if (!value.startsWith("sk-or-v1-")) {
-          return {
-            ok: false,
-            message: "OpenRouter credentials usually start with sk-or-v1-.",
-          };
-        }
-        break;
-      case "openai":
-        if (!value.startsWith("sk-") || value.startsWith("sk-ant-") || value.startsWith("sk-or-v1-")) {
-          return {
-            ok: false,
-            message: "OpenAI credentials usually start with sk-.",
-          };
-        }
-        break;
-      case "venice":
-        if (!value.startsWith("ven-")) {
-          return {
-            ok: false,
-            message: "Venice credentials usually start with ven-.",
-          };
-        }
-        break;
-      case "xai":
-        if (!value.startsWith("xai-")) {
-          return {
-            ok: false,
-            message: "xAI credentials usually start with xai-.",
-          };
-        }
-        break;
-      case "pika":
-        if (value.length < 8) {
-          return {
-            ok: false,
-            message: "Pika credentials look too short.",
-          };
-        }
-        break;
-      default:
-        break;
+    if (provider === "pika" && value.length < 8) {
+      return {
+        ok: false,
+        message: "Pika credentials look too short.",
+      };
     }
 
     return { ok: true, value };
+  }
+
+  function buildDirectHeaders(provider, apiKey) {
+    if (provider === "anthropic") {
+      return {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      };
+    }
+
+    return { Authorization: `Bearer ${apiKey}` };
+  }
+
+  async function verifyDirectCredential(provider, apiKey) {
+    if (!DIRECT_PROVIDER_NAMES.has(provider)) {
+      throw new Error(
+        `${providerLabel(provider)} credentials are not verified through the /models endpoint in this demo.`,
+      );
+    }
+
+    const baseUrl = DIRECT_PROVIDER_BASE_URLS[provider];
+    const response = await fetch(`${baseUrl}/models`, {
+      method: "GET",
+      headers: buildDirectHeaders(provider, apiKey),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to verify the ${providerLabel(provider)} credential against /models. The provider returned HTTP ${response.status}.`,
+      );
+    }
   }
 
   async function renderReadmeOverview() {
@@ -290,7 +413,13 @@
 
   function handleProviderChange() {
     persistProviderSelection();
-    syncSettingsFromStorage({ clearCredential: true });
+    const provider = normalizeProvider(providerSelect?.value ?? DEFAULT_PROVIDER);
+    if (credentialInput) {
+      credentialInput.value = loadCredential(provider);
+      setCredentialInvalid(false);
+      syncCredentialPlaceholder(provider);
+      syncCredentialStatus(provider);
+    }
   }
 
   function handleModeChange() {
@@ -319,7 +448,7 @@
     }
   }
 
-  function handleVerifyClick() {
+  async function handleVerifyClick() {
     if (!credentialInput || !providerSelect) return;
     const provider = normalizeProvider(providerSelect.value);
     const result = validateCredential(provider, credentialInput.value);
@@ -330,10 +459,28 @@
     }
 
     setCredentialInvalid(false);
-    setCredentialStatus("verified", `${providerLabel(provider)} credential verified.`);
+    if (!DIRECT_PROVIDER_NAMES.has(provider)) {
+      verifiedDraftCache.set(provider, result.value);
+      syncCredentialStatus(provider);
+      return;
+    }
+
+    setCredentialStatus("idle", `Verifying the ${providerLabel(provider)} credential…`);
+    try {
+      await verifyDirectCredential(provider, result.value);
+      verifiedDraftCache.set(provider, result.value);
+      syncCredentialStatus(provider);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : `Unable to verify the ${providerLabel(provider)} credential.`;
+      setCredentialInvalid(true);
+      setCredentialStatus("error", message);
+    }
   }
 
-  function handleSaveClick() {
+  async function handleSaveClick() {
     if (!credentialInput || !providerSelect) return;
     const provider = normalizeProvider(providerSelect.value);
     const result = validateCredential(provider, credentialInput.value);
@@ -343,10 +490,28 @@
       return;
     }
 
-    localStorage.setItem(credentialStorageKey(provider), result.value);
     setCredentialInvalid(false);
-    credentialInput.value = result.value;
-    setCredentialStatus("saved", `${providerLabel(provider)} credential saved in this browser.`);
+    const value = result.value;
+    const verifiedValue = verifiedDraftCache.get(provider) ?? "";
+
+    try {
+      if (DIRECT_PROVIDER_NAMES.has(provider) && verifiedValue !== value) {
+        setCredentialStatus("idle", `Verifying the ${providerLabel(provider)} credential…`);
+        await verifyDirectCredential(provider, value);
+        verifiedDraftCache.set(provider, value);
+      }
+
+      storeCredential(provider, value);
+      credentialInput.value = value;
+      syncCredentialStatus(provider);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : `Unable to verify the ${providerLabel(provider)} credential.`;
+      setCredentialInvalid(true);
+      setCredentialStatus("error", message);
+    }
   }
 
   function handleReset() {
@@ -356,6 +521,12 @@
     localStorage.removeItem(STORAGE_KEYS.apiKey);
     localStorage.removeItem(STORAGE_KEYS.pikaApiKey);
     localStorage.removeItem(STORAGE_KEYS.budget);
+    for (const provider of DIRECT_PROVIDER_NAMES) {
+      localStorage.removeItem(credentialStorageKey(provider));
+      sessionStorage.removeItem(credentialStorageKey(provider));
+    }
+    directCredentialCache.clear();
+    verifiedDraftCache.clear();
     syncSettingsFromStorage();
   }
 
@@ -365,7 +536,15 @@
       return;
     }
 
-    if (Object.values(STORAGE_KEYS).includes(event.key)) {
+    if (
+      event.key === STORAGE_KEYS.mode ||
+      event.key === STORAGE_KEYS.proxyUrl ||
+      event.key === STORAGE_KEYS.provider ||
+      event.key === STORAGE_KEYS.apiKey ||
+      event.key === STORAGE_KEYS.pikaApiKey ||
+      event.key === STORAGE_KEYS.budget ||
+      event.key.startsWith(STORAGE_KEYS.apiKeyPrefix)
+    ) {
       syncSettingsFromStorage();
     }
   }
@@ -412,4 +591,12 @@
   setActiveTab(getTabFromHash(), false);
   void renderReadmeOverview();
 })();
+
+
+
+
+
+
+
+
 
