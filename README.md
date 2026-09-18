@@ -1015,7 +1015,7 @@ console.log(message.content[0]?.type === "text" ? message.content[0].text : "");
 
 ## Browser / Web Usage
 
-The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`) with **no Node.js built-in dependencies**.
+The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`) with **no Node.js built-in dependencies**. The default `npm run build` script now emits both `dist/` and `dist-web/`, so production hosts can serve the browser demo without a separate browser-build step.
 
 ### Two modes
 
@@ -1051,7 +1051,7 @@ Start the proxy server on your backend:
 ai-powered serve --port 3001
 ```
 
-For Render, use the included Blueprint or `npm start`. The proxy binds to the
+For Render, use `npm start` so the build runs before the proxy boots and `dist-web/` is available to the browser demo. The proxy binds to the
 deployment `PORT` automatically and keeps the browser-facing proxy contract the
 same. Set `CORS_ORIGIN` for the browser app origin and `PROXY_PUBLIC_BASE_URL`
 for public media URLs when needed.

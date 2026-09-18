@@ -19,9 +19,10 @@
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json && node -e \"const fs=require('fs');const src='src/ai-powered/providers/configs';const dst='dist/ai-powered/providers/configs';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.json')).forEach(f=>{fs.copyFileSync(src+'/'+f,dst+'/'+f);console.log('Copied',f,'to',dst);});\"",
+    "build": "tsc --project tsconfig.json && node -e \"const fs=require('fs');const src='src/ai-powered/providers/configs';const dst='dist/ai-powered/providers/configs';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.json')).forEach(f=>{fs.copyFileSync(src+'/'+f,dst+'/'+f);console.log('Copied',f,'to',dst);});\" && npm run build:web",
     "build:web": "vite build",
     "dev:web": "vite",
+    "prestart": "npm run build",
     "start": "node dist/ai-powered/cli/index.js serve",
     "serve": "node dist/ai-powered/cli/index.js serve",
     "serve:ngrok": "node dist/ai-powered/cli/index.js serve --cors-origin \"https://*.ngrok-free.dev\"",
