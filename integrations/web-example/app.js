@@ -1341,14 +1341,38 @@
         proxyUrl: proxyUrlInput.value.trim() || "http://localhost:3001",
       });
     }
-    const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) throw new Error("API key is required for Direct mode.");
-    const budgetValue = directBudgetInput?.value ?? "";
+
+    const storedProvider =
+      localStorage.getItem(directConfigStorageKeys.provider) ||
+      sessionStorage.getItem(directConfigStorageKeys.provider);
+    const provider = storedProvider && DIRECT_PROVIDER_LABELS[storedProvider] ? storedProvider : "";
+    if (!provider) {
+      throw new Error(
+        "Direct mode is not configured. Open Settings / Configuration and save the provider API key there.",
+      );
+    }
+
+    const apiKey = (
+      localStorage.getItem(`${directConfigStorageKeys.apiKeyPrefix}${provider}`) ||
+      sessionStorage.getItem(`${directConfigStorageKeys.apiKeyPrefix}${provider}`) ||
+      ""
+    ).trim();
+    if (!apiKey) {
+      throw new Error(
+        `Direct mode is not configured for ${DIRECT_PROVIDER_LABELS[provider]}. Open Settings / Configuration and save the API key there.`,
+      );
+    }
+
+    const budgetValue =
+      localStorage.getItem(directConfigStorageKeys.budget) ||
+      sessionStorage.getItem(directConfigStorageKeys.budget) ||
+      "";
     const parsedBudget = Number.parseFloat(budgetValue);
     const budgetUsd = Number.isFinite(parsedBudget) ? parsedBudget : Infinity;
+
     return createWebClient({
       mode: "direct",
-      provider: providerSelect.value,
+      provider,
       apiKey,
       budgetUsd,
     });
@@ -2343,15 +2367,18 @@
         )?.id ?? "openai";
 
       let provider = defaultProvider;
+      let providerWarning = "";
       if (saved) {
-        const isKnown = allProviders.some((p) => p.id === saved.provider);
-        if (isKnown) {
+        const savedProviderMeta = allProviders.find((p) => p.id === saved.provider) ?? null;
+        if (savedProviderMeta && savedProviderMeta.active !== false) {
           provider = saved.provider;
         } else {
-          console.warn(
-            `[fallback-model] Saved provider "${saved.provider}" not found for` +
-              ` modality "${modality}"; falling back to default.`,
-          );
+          const fallbackProviderMeta = allProviders.find((p) => p.id === defaultProvider) ?? null;
+          const fallbackLabel = fallbackProviderMeta?.name ?? defaultProvider;
+          const savedLabel = savedProviderMeta?.name ?? saved.provider;
+          const reason = savedProviderMeta ? "inactive" : "not configured";
+          providerWarning = `Saved provider "${savedLabel}" is ${reason} on this proxy. Using "${fallbackLabel}" instead.`;
+          console.warn(`[fallback-model] ${providerWarning} modality "${modality}".`);
           // provider remains defaultProvider; stale key overwritten via persistSelection below.
         }
       }
@@ -2438,6 +2465,9 @@
 
       tabState.set(modality, { provider, model });
       persistSelection(modality, provider, model); // REQ-LS-01, REQ-LS-05 seed
+      if (providerWarning) {
+        showModelWarning(modality, providerWarning);
+      }
     }
   }
 
@@ -2571,8 +2601,12 @@
   /* ── Mode toggle ─────────────────────────────────────────── */
   function applyModeUi() {
     const isProxy = modeSelect.value === "proxy";
-    proxyConfig.classList.toggle("hidden", !isProxy);
-    directConfig.classList.toggle("hidden", isProxy);
+    if (proxyConfig) {
+      proxyConfig.classList.toggle("hidden", !isProxy);
+    }
+    if (directConfig) {
+      directConfig.classList.toggle("hidden", isProxy);
+    }
     if (isProxy) loadProviders();
   }
   modeSelect.addEventListener("change", () => {
@@ -6548,6 +6582,9 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
+
+
+
 
 
 

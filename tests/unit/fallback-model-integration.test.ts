@@ -19,6 +19,7 @@ interface ModelEntry {
   costPerUnit?: number | null;
 }
 type ModelsResponse = ModelEntry[] | { error: string; code?: string };
+type ProviderEntry = string | { id: string; active?: boolean; name?: string };
 type TabState = Map<string, { provider: string; model: string }>;
 
 function persistSelection(ls: Storage, modality: string, provider: string, model: string): void {
@@ -131,7 +132,7 @@ function simulateModelChange(
 /** Mirrors the initTabSelections logic for a single modality. */
 async function simulateInitModality(
   modality: string,
-  allProviderIds: string[],
+  allProviders: ProviderEntry[],
   defaultProvider: string,
   providerSel: HTMLSelectElement,
   modelSel: HTMLSelectElement,
@@ -142,12 +143,42 @@ async function simulateInitModality(
 ): Promise<void> {
   const saved = restoreSelection(ls, modality);
   let provider = defaultProvider;
+
   if (saved) {
-    if (allProviderIds.includes(saved.provider)) {
+    const savedProviderMeta =
+      allProviders.find((provider) =>
+        typeof provider === "string" ? provider === saved.provider : provider.id === saved.provider,
+      ) ?? null;
+    if (
+      savedProviderMeta &&
+      (typeof savedProviderMeta === "string" || savedProviderMeta.active !== false)
+    ) {
       provider = saved.provider;
     } else {
+      const fallbackProviderMeta =
+        allProviders.find((provider) =>
+          typeof provider === "string"
+            ? provider === defaultProvider
+            : provider.id === defaultProvider,
+        ) ?? null;
+      const savedLabel =
+        savedProviderMeta && typeof savedProviderMeta !== "string" && savedProviderMeta.name
+          ? savedProviderMeta.name
+          : saved.provider;
+      const fallbackLabel =
+        fallbackProviderMeta &&
+        typeof fallbackProviderMeta !== "string" &&
+        fallbackProviderMeta.name
+          ? fallbackProviderMeta.name
+          : defaultProvider;
+      const reason =
+        savedProviderMeta &&
+        typeof savedProviderMeta !== "string" &&
+        savedProviderMeta.active === false
+          ? "inactive"
+          : "not configured";
       warnSpy(
-        `[fallback-model] Saved provider "${saved.provider}" not found for modality "${modality}"; falling back to default.`,
+        `[fallback-model] Saved provider "${savedLabel}" is ${reason} on this proxy. Using "${fallbackLabel}" instead.`,
       );
     }
   }
@@ -272,7 +303,7 @@ describe("T-PM-09: page-load restores saved selections", () => {
       tabState,
       ls,
       async () => [
-        { id: "dream-machine", costPerUnit: 0.01 },
+        { id: "dream-machine", costPerUnit: 0.12 },
         { id: "ray2", costPerUnit: 0.05 },
       ],
       warnSpy,
@@ -280,6 +311,49 @@ describe("T-PM-09: page-load restores saved selections", () => {
 
     expect(tabState.get("video")).toEqual({ provider: "lumaai", model: "dream-machine" });
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the default active provider when the saved provider is inactive", async () => {
+    const ls = window.localStorage;
+    ls.clear();
+    ls.setItem("ai-powered:provider:text", "openrouter");
+    ls.setItem("ai-powered:model:text", "gpt-4o-mini");
+
+    const tabState: TabState = new Map();
+    const providerSel = makeSelect("openrouter", "openai");
+    const modelSel = makeSelect();
+    const warnSpy = vi.fn();
+
+    await simulateInitModality(
+      "text",
+      [
+        { id: "openrouter", name: "OpenRouter", active: false },
+        { id: "openai", name: "OpenAI", active: true },
+      ],
+      "openai",
+      providerSel,
+      modelSel,
+      tabState,
+      ls,
+      async (_modality, provider) => {
+        expect(provider).toBe("openai");
+        return [
+          { id: "gpt-4o-mini", costPerUnit: 0.05 },
+          { id: "gpt-4o", costPerUnit: 0.1 },
+        ];
+      },
+      warnSpy,
+    );
+
+    expect(tabState.get("text")).toEqual({ provider: "openai", model: "gpt-4o-mini" });
+    expect(providerSel.value).toBe("openai");
+    expect(modelSel.value).toBe("gpt-4o-mini");
+    expect(ls.getItem("ai-powered:provider:text")).toBe("openai");
+    expect(ls.getItem("ai-powered:model:text")).toBe("gpt-4o-mini");
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("OpenRouter");
+    expect(warnSpy.mock.calls[0][0]).toContain("inactive");
+    expect(warnSpy.mock.calls[0][0]).toContain('Using "OpenAI" instead');
   });
 });
 

@@ -15,7 +15,13 @@ describe("web example loader", () => {
     expect(html).toMatch(/<section class="mode-section">/);
     expect(html).toContain('id="mode-select"');
     expect(html).toContain('id="proxy-url"');
-    expect(html).toContain('id="btn-verify-settings"');
-    expect(html).toContain('id="btn-save-settings"');
+    expect(html).not.toContain('id="provider-select"');
+    expect(html).not.toContain('id="api-key-input"');
+    expect(html).not.toContain('id="btn-verify-settings"');
+    expect(html).not.toContain('id="btn-save-settings"');
+    expect(html).not.toContain('id="direct-budget"');
+    expect(html).not.toContain('id="credential-status"');
+    expect(html).not.toContain('id="direct-config"');
+    expect(html).not.toContain("Enter a credential to verify or save.");
   });
 });

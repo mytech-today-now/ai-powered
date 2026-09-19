@@ -40,6 +40,19 @@ describe("render deployment config", () => {
 
     expect(renderYaml).toContain("buildCommand: npm ci && npm run build && npm run build:web");
     expect(renderYaml).toContain("startCommand: npm start");
+    for (const envVar of [
+      "OPENAI_API_KEY",
+      "OPENROUTER_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "XAI_API_KEY",
+      "VENICE_API_KEY",
+      "LUMAAI_API_KEY",
+      "RUNWAYML_API_SECRET",
+      "PIKA_API_KEY",
+      "VIBEVOICE_API_URL",
+    ]) {
+      expect(renderYaml).toContain(`- key: ${envVar}`);
+    }
   });
 });
 

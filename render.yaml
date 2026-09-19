@@ -1,7 +1,6 @@
 services:
   - type: web
-    name: ai-powered
-    runtime: node
+    name: ai-powered-proxy
     region: oregon
     plan: 1c-2g
     branch: main
@@ -13,6 +12,7 @@ services:
       - key: NODE_ENV
         value: production
 
+      # Startup defaults only; browser proxy requests can still override provider/model per tab.
       - key: AI_PROVIDER
         value: openai
 
@@ -26,4 +26,28 @@ services:
         value: https://ai-powered.onrender.com
 
       - key: OPENAI_API_KEY
+        sync: false
+
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      - key: XAI_API_KEY
+        sync: false
+
+      - key: VENICE_API_KEY
+        sync: false
+
+      - key: LUMAAI_API_KEY
+        sync: false
+
+      - key: RUNWAYML_API_SECRET
+        sync: false
+
+      - key: PIKA_API_KEY
+        sync: false
+
+      - key: VIBEVOICE_API_URL
         sync: false
