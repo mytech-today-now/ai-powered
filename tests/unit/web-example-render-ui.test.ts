@@ -28,4 +28,33 @@ describe("web-example proxy UI", () => {
     expect(appJs).not.toContain("cycle-service.ps1 -Ngrok");
     expect(appJs).not.toContain("ngrok tunnel");
   });
+  it("uses the requested header, history placement, and aligned control markup", () => {
+    expect(indexHtml).toContain("<h1>AI-Powered</h1>");
+    expect(indexHtml).toContain(
+      '<a class="header-attribution" href="https://mytech.today">by myTech.Today</a>',
+    );
+
+    const mainEnd = indexHtml.indexOf("</main>");
+    const historyStart = indexHtml.indexOf('<section id="history-panel-wrap"');
+    expect(mainEnd).toBeGreaterThanOrEqual(0);
+    expect(historyStart).toBeGreaterThan(mainEnd);
+
+    for (const id of [
+      "text-provider-select",
+      "text-model-select",
+      "image-provider-select",
+      "image-model-select",
+      "audio-provider-select",
+      "tts-model-select",
+      "video-provider-select",
+      "video-model-select",
+      "structured-provider-select",
+      "structured-model-select",
+    ]) {
+      expect(indexHtml).toContain('id="' + id + '"');
+    }
+
+    const ids = [...indexHtml.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+    expect(ids).toEqual([...new Set(ids)]);
+  });
 });

@@ -15,6 +15,7 @@ import {
   listPrefsByPrefix,
   readJsonPreference,
   recordDownloadName,
+  recordDownloadJsonPayload,
   recordDownloadPayload,
   recordSummaryText,
   recordToManifest,
@@ -121,6 +122,61 @@ describe("browser storage helpers", () => {
     expect(summary.totalRecords).toBe(1);
     expect(summary.countsByModality.text).toBe(1);
     expect(await store.listRecords("text")).toHaveLength(1);
+  });
+
+  it("exports a complete, parseable per-record JSON manifest", async () => {
+    const store = createBrowserRecordStore({ backend: "memory" });
+    await store.ready;
+    const saved = await store.saveRecord({
+      modality: "video",
+      kind: "artifact",
+      status: "complete",
+      title: "Unicode / long prompt",
+      prompt: "line one\nline two \u{1F3AC}",
+      provider: "lumaai",
+      model: "ray-2",
+      seed: 0,
+      duration: 8,
+      aspectRatio: "16:9",
+      metadata: {
+        schemaVersion: 2,
+        historyEvent: {
+          requested: {
+            effectivePrompt: "line one\nline two \u{1F3AC}",
+            referenceImages: [
+              {
+                fileName: "ref.png",
+                fileRef: "ref-token",
+                url: "https://proxy.example.test/files/ref-token",
+              },
+            ],
+            options: { seed: 0, nested: { keep: true } },
+          },
+          result: { artifact: { url: "https://cdn.example.test/video.mp4" } },
+        },
+      },
+    });
+
+    const payload = recordDownloadJsonPayload(saved);
+    expect(payload.blob.type).toBe("application/json");
+    expect(payload.filename).toMatch(/^ai-powered-video-.*-.*\.json$/);
+    const manifest = JSON.parse(await payload.blob.text());
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      id: saved.id,
+      prompt: "line one\nline two \u{1F3AC}",
+      seed: 0,
+      metadata: {
+        historyEvent: {
+          requested: {
+            options: { seed: 0, nested: { keep: true } },
+          },
+        },
+      },
+      artifact: {
+        resultUrl: "https://cdn.example.test/video.mp4",
+      },
+    });
   });
 
   it("clears app-owned browser state while leaving unrelated keys intact", async () => {

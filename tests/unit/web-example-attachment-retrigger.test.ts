@@ -81,7 +81,7 @@ function runRetrigger({
 }
 
 describe("web-example attachment retrigger", () => {
-  it("refreshes the active provider and model dropdowns after an attachment change", async () => {
+  it("refreshes models without changing the selected provider after an attachment change", async () => {
     const { calls, providerSelect, retrigger } = runRetrigger({
       mode: "proxy",
       activeTabValue: "video",
@@ -92,8 +92,8 @@ describe("web-example attachment retrigger", () => {
 
     await retrigger();
 
-    expect(calls).toEqual([["refresh", "video"], ["load", "video", "image-video"], ["notice"]]);
-    expect(providerSelect.value).toBe("image-video");
+    expect(calls).toEqual([["load", "video", ""], ["notice"]]);
+    expect(providerSelect.value).toBe("default-video");
   });
 
   it("still updates the attachment notice when re-triggering is skipped", async () => {

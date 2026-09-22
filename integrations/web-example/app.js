@@ -33,6 +33,7 @@
     loadDiscoveryPosts,
     loadReadmeMarkdown,
     recordDownloadName,
+    recordDownloadJsonPayload,
     recordDownloadPayload,
     recordSummaryText,
     recordToManifest,
@@ -41,6 +42,7 @@
     writeJsonPreference,
     DEFAULT_BROWSER_DB_NAME,
     DEFAULT_UI_KEYS,
+    BROWSER_RECORD_SCHEMA_VERSION,
     DEFAULT_STORAGE_PREFIXES,
     DEFAULT_REMOTE_CACHE_PREFIXES,
   } = window.AiPowered;
@@ -695,10 +697,10 @@
   /* ── File upload state ──────────────────────────────────── */
   /** UUID token returned by POST /upload; attached to subsequent generation requests (text tab). */
   let currentFileRef = null;
-  /** UUID tokens for image-tab multi-image uploads. */
-  let imageFileRefs = [];
-  /** UUID tokens for video-tab multi-image uploads (up to 2 for Luma AI). */
-  let videoFileRefs = [];
+  /** Ordered reference items for the image tab. The item ID is stable across uploads and renders. */
+  let imageReferenceItems = [];
+  /** Ordered reference items for the video tab. This collection is independent from image tab state. */
+  let videoReferenceItems = [];
 
   /**
    * Cached server capability: true when the proxy has PROXY_PUBLIC_BASE_URL set
@@ -710,12 +712,125 @@
   /** True when the user has a reference image attached; drives provider/model filtering. */
   let hasImageAttached = false;
 
+  function createReferenceId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function referenceFingerprint(file) {
+    return [file.name, file.type, file.size, file.lastModified].join("\u001f");
+  }
+
+  function referenceFileRefs(items) {
+    return items
+      .filter((item) => item.uploadState === "ready" && typeof item.fileRef === "string")
+      .map((item) => item.fileRef);
+  }
+
+  function referenceUrlForFileRef(fileRef) {
+    if (!fileRef) return null;
+    const base = proxyUrlInput?.value.trim() || "http://localhost:3001";
+    return `${base.replace(/\/+$/, "")}/files/${encodeURIComponent(fileRef)}`;
+  }
+
+  function snapshotReferenceItems(items) {
+    return items.map((item) => ({
+      id: item.id,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      sizeBytes: item.sizeBytes,
+      fileRef: item.fileRef ?? null,
+      url: item.fileRef ? referenceUrlForFileRef(item.fileRef) : null,
+      uploadState: item.uploadState,
+      error: item.error ?? null,
+      referenceState: item.referenceState ?? null,
+    }));
+  }
+
+  function updateImageAttachmentState() {
+    const hasSupported = (items) =>
+      items.some((item) => item.referenceKind === "image" || item.referenceKind === "video");
+    const active = typeof activeTab === "function" ? activeTab() : "image";
+    hasImageAttached =
+      active === "video"
+        ? hasSupported(videoReferenceItems)
+        : active === "image"
+          ? hasSupported(imageReferenceItems)
+          : hasSupported(imageReferenceItems) || hasSupported(videoReferenceItems);
+  }
+
+  function buildReferenceRequest(items, label, modality = label === "video" ? "video" : "image") {
+    const policy = referencePolicyFor(modality);
+    const states = classifyReferenceItems(items, policy);
+    const pending = states.filter((entry) => entry.state === "pending").length;
+    const invalid = states.filter((entry) => entry.state === "invalid").length;
+    const excess = states.filter((entry) => entry.state === "excess").length;
+    const usedItems = states
+      .filter((entry) => entry.state === "used" && entry.item.uploadState === "ready")
+      .map((entry) => entry.item);
+
+    if (pending > 0) {
+      throw new Error(
+        "Wait for " +
+          pending +
+          " " +
+          label +
+          " reference upload" +
+          (pending === 1 ? "" : "s") +
+          " to finish.",
+      );
+    }
+    if (invalid > 0) {
+      throw new Error(
+        "Remove " +
+          invalid +
+          " invalid " +
+          label +
+          " reference" +
+          (invalid === 1 ? "" : "s") +
+          " before processing.",
+      );
+    }
+    if (excess > 0) {
+      throw new Error(
+        "Remove " +
+          excess +
+          " excess " +
+          label +
+          " reference" +
+          (excess === 1 ? "" : "s") +
+          " before processing. " +
+          policy.modelLabel +
+          " accepts " +
+          referenceLimitText(policy.imageMax) +
+          ".",
+      );
+    }
+    if (items.length > 0 && usedItems.length === 0) {
+      throw new Error(
+        policy.modelLabel +
+          " cannot process these " +
+          label +
+          " references. Remove them or choose a compatible model.",
+      );
+    }
+
+    return {
+      fileRefs: usedItems.map((item) => item.fileRef),
+      referenceImages: snapshotReferenceItems(items),
+    };
+  }
   /* ── Provider cache (populated by loadProviders) ────────── */
   let allProviders = []; // All providers from /providers, including inactive
 
   /* ── Image / video model capability caches ──────────────── */
   let imageModelsCache = []; // Full ModelDescriptor objects for the active image provider
   let videoModelsCache = []; // Full ModelDescriptor objects for the active video provider
+
+  // Each model refresh gets a monotonically increasing token. Reference-file
+  // changes can trigger overlapping refreshes, so only the newest response
+  // may replace the model options or tab state.
+  const modelRefreshVersions = new Map();
 
   /** Modality that each tab represents. */
   const TAB_MODALITY = {
@@ -738,6 +853,147 @@
    * All API call functions read from tabState.get(modality) exclusively.
    */
   const tabState = new Map();
+
+  function modelDescriptorFor(modality) {
+    const modelSelect = MODEL_SELECTS[modality];
+    const modelId = modelSelect?.value || tabState.get(modality)?.model || "";
+    const cache =
+      modality === "image" ? imageModelsCache : modality === "video" ? videoModelsCache : [];
+    return cache.find((model) => model.id === modelId) ?? null;
+  }
+
+  function referencePolicyFor(modality) {
+    const descriptor = modelDescriptorFor(modality);
+    const requirements = Array.isArray(descriptor?.inputRequirements)
+      ? descriptor.inputRequirements
+      : [];
+    const requirementFor = (inputModality) =>
+      requirements.find((requirement) => requirement?.modality === inputModality) ?? null;
+    const imageRequirement = requirementFor("image");
+    const videoRequirement = requirementFor("video");
+    const supportsImage = descriptor?.inputCapabilities?.includes("image") ?? false;
+
+    // The current image-capable provider paths consume the first image when a
+    // descriptor does not publish an explicit count. Keep that safe behavior
+    // visible to the user instead of silently sending an arbitrary list.
+    const maxFor = (requirement, fallback) => {
+      if (!requirement) return fallback;
+      if (requirement.max === undefined || requirement.max === null) return Infinity;
+      const max = Number(requirement.max);
+      return Number.isFinite(max) ? Math.max(0, max) : fallback;
+    };
+
+    const imageMax = maxFor(imageRequirement, supportsImage ? 1 : 0);
+    const videoMax = modality === "video" ? maxFor(videoRequirement, 0) : 0;
+    const modelLabel = descriptor?.name || descriptor?.id || "selected model";
+
+    return {
+      descriptor,
+      modelLabel,
+      imageMax,
+      videoMax,
+    };
+  }
+
+  function classifyReferenceItems(items, policy) {
+    let imageUsed = 0;
+    let videoUsed = 0;
+    return items.map((item) => {
+      if (item.uploadState === "pending") return { item, state: "pending" };
+      if (item.uploadState !== "ready") return { item, state: "invalid" };
+
+      const kind = item.mimeType?.startsWith("video/") ? "video" : "image";
+      const max = kind === "video" ? policy.videoMax : policy.imageMax;
+      const used = kind === "video" ? videoUsed : imageUsed;
+      if (used >= max) return { item, state: "excess" };
+
+      if (kind === "video") videoUsed++;
+      else imageUsed++;
+      return { item, state: "used" };
+    });
+  }
+
+  function referenceLimitText(max) {
+    if (max === Infinity) return "all valid reference images";
+    if (max === 1) return "1 reference image";
+    return String(max) + " reference images";
+  }
+
+  function updateReferenceNotice(modality, states, policy) {
+    const notice = document.getElementById(
+      modality === "image" ? "image-reference-notice" : "video-reference-notice",
+    );
+    if (!notice) return;
+
+    const used = states.filter((entry) => entry.state === "used").length;
+    const excess = states.filter((entry) => entry.state === "excess").length;
+    const invalid = states.filter((entry) => entry.state === "invalid").length;
+    const pending = states.filter((entry) => entry.state === "pending").length;
+    const limit = referenceLimitText(policy.imageMax);
+
+    let message = policy.modelLabel + " permits " + limit + ".";
+    if (policy.imageMax === 0) {
+      message =
+        policy.modelLabel +
+        " does not accept reference images. Remove them before processing.";
+    } else if (used || excess) {
+      message += " " + used + " will be used";
+      if (excess) {
+        message +=
+          "; " +
+          excess +
+          " excess image" +
+          (excess === 1 ? "" : "s") +
+          " must be deleted";
+      }
+      message += ".";
+    }
+    if (pending) {
+      message += " " + pending + " upload" + (pending === 1 ? "" : "s") + " still pending.";
+    }
+    if (invalid) {
+      message +=
+        " " +
+        invalid +
+        " invalid reference" +
+        (invalid === 1 ? "" : "s") +
+        " must be removed.";
+    }
+
+    notice.textContent = message;
+    notice.classList.toggle("hidden", states.length === 0);
+    notice.classList.toggle("reference-notice--error", policy.imageMax === 0 || invalid > 0);
+    notice.classList.toggle("reference-notice--warning", excess > 0 || pending > 0);
+  }
+
+  function applyReferenceVisualState(modality) {
+    const items = modality === "image" ? imageReferenceItems : videoReferenceItems;
+    const thumbs = modality === "image" ? imageFileThumbsEl : videoFileThumbsEl;
+    if (!thumbs) return;
+    const policy = referencePolicyFor(modality);
+    const states = classifyReferenceItems(items, policy);
+    const statesById = new Map(states.map((entry) => [entry.item.id, entry.state]));
+
+    [...thumbs.children].forEach((thumb) => {
+      const state = statesById.get(thumb.dataset.referenceId) ?? "invalid";
+      thumb.classList.toggle("file-thumb--used", state === "used");
+      thumb.classList.toggle("file-thumb--excess", state === "excess");
+      thumb.classList.toggle("file-thumb--invalid", state === "invalid");
+      thumb.classList.toggle("file-thumb--pending", state === "pending");
+      const stateLabel = thumb.querySelector?.(".file-thumb-state");
+      if (stateLabel) {
+        stateLabel.textContent =
+          state === "used"
+            ? "Used"
+            : state === "excess"
+              ? "Delete"
+              : state === "pending"
+                ? "Uploading"
+                : "Invalid";
+      }
+    });
+    updateReferenceNotice(modality, states, policy);
+  }
 
   /* ── localStorage persistence helpers (fallback-model) ─── */
 
@@ -811,7 +1067,12 @@
    * @param {Array<{id: string, name?: string}>} modelList
    * @param {string} [placeholderText="No compatible models"]
    */
-  function populateModelSelect(selectEl, modelList, placeholderText = "No compatible models") {
+  function populateModelSelect(
+    selectEl,
+    modelList,
+    placeholderText = "No compatible models",
+    preferredModel = selectEl.value,
+  ) {
     selectEl.innerHTML = "";
     if (modelList.length === 0) {
       const placeholder = document.createElement("option");
@@ -829,6 +1090,10 @@
       opt.textContent = m.name || m.id;
       selectEl.appendChild(opt);
     }
+
+    if (preferredModel && modelList.some((model) => model.id === preferredModel)) {
+      selectEl.value = preferredModel;
+    }
   }
 
   /**
@@ -840,7 +1105,7 @@
   function getModelWarningAnchor(target) {
     const modelSel = typeof target === "string" ? MODEL_SELECTS[target] : target;
     if (!modelSel) return null;
-    return modelSel.closest(".model-row, .video-settings-bar");
+    return modelSel.closest(".model-row, .video-settings-bar, .processing-settings-row");
   }
 
   /**
@@ -1165,12 +1430,16 @@
       (max, requirement) => Math.max(max, Number(requirement.max ?? 0)),
       0,
     );
-    const label = document.querySelector(`label[for="${inputId}"]`);
+    const label = document.querySelector(
+      'label[for="' + inputId + '"]',
+    );
     if (label) {
-      label.textContent = maxReferences ? `${activeLabel} (up to ${maxReferences})` : defaultLabel;
+      label.textContent = maxReferences
+        ? activeLabel + " (up to " + maxReferences + ")"
+        : defaultLabel;
     }
+    applyReferenceVisualState(inputId === "image-file-upload-input" ? "image" : "video");
   }
-
   /**
    * Syncs the image upload label to the capabilities of the selected image model.
    *
@@ -1230,6 +1499,12 @@
         },
       );
       syncPikaOptions(null);
+      syncReferenceUploadLabel(
+        "video-file-upload-input",
+        null,
+        "Attach reference images or video",
+        "Attach reference media",
+      );
       return;
     }
 
@@ -2007,114 +2282,222 @@
   }
 
   /**
-   * Wires a multi-file <input> for image/video tabs.
-   *
-   * Each time the user selects files the entire list is cleared and re-uploaded.
-   * A thumbnail gallery is rendered with per-item remove buttons so users can
-   * deselect individual images before generating.
-   *
-   * @param {HTMLInputElement}  inputEl    - The file input (must have `multiple`).
-   * @param {HTMLElement}       statusEl   - Status feedback <span>.
-   * @param {HTMLElement}       thumbsEl   - Container for thumbnail previews.
-   * @param {string[]}          refsArray  - Per-tab mutable array that receives UUID tokens.
-   * @param {Function|null}     onDone     - Optional callback after upload cycle completes.
-   * @param {Function|null}     getMaxFiles - Optional model-aware reference limit getter.
+   * Wires a multi-file input to one authoritative ordered collection.
+   * Selection events append stable-ID items. Upload completion updates the
+   * matching item, so out-of-order responses cannot reorder or resurrect files.
    */
-  function wireMultiFileUpload(inputEl, statusEl, thumbsEl, refsArray, onDone, getMaxFiles) {
+  function wireMultiFileUpload(inputEl, statusEl, thumbsEl, items, onDone, getMaxFiles) {
     if (!inputEl || !statusEl) return;
 
-    function clearThumbs() {
-      refsArray.length = 0;
-      if (thumbsEl) {
-        thumbsEl.innerHTML = "";
-        thumbsEl.classList.add("hidden");
+    const modality = inputEl === videoFileUploadInput ? "video" : "image";
+    const defaultPolicy = { imageMax: Infinity, videoMax: Infinity };
+
+    function currentPolicy() {
+      const value = getMaxFiles ? getMaxFiles() : null;
+      if (typeof value === "number") {
+        return { imageMax: value, videoMax: modality === "video" ? value : 0 };
+      }
+      return value ?? defaultPolicy;
+    }
+
+    function classify() {
+      const policy = currentPolicy();
+      let imageUsed = 0;
+      let videoUsed = 0;
+      return items.map((item) => {
+        if (item.uploadState === "pending") return { item, state: "pending" };
+        if (item.uploadState !== "ready") return { item, state: "invalid" };
+        const kind = item.mimeType?.startsWith("video/") ? "video" : "image";
+        const max = kind === "video" ? policy.videoMax : policy.imageMax;
+        const used = kind === "video" ? videoUsed : imageUsed;
+        if (used >= max) return { item, state: "excess" };
+        if (kind === "video") videoUsed++;
+        else imageUsed++;
+        return { item, state: "used" };
+      });
+    }
+
+    function updateStatus() {
+      const pending = items.filter((item) => item.uploadState === "pending").length;
+      const ready = items.filter((item) => item.uploadState === "ready").length;
+      const failed = items.filter((item) => item.uploadState === "error").length;
+      if (!items.length) {
+        statusEl.textContent = "No files attached";
+      } else if (pending > 0) {
+        statusEl.textContent =
+          "Uploading " +
+          pending +
+          " of " +
+          items.length +
+          " reference" +
+          (items.length === 1 ? "" : "s") +
+          "...";
+      } else if (failed > 0 && ready > 0) {
+        statusEl.textContent = "Warning: " + ready + " ready, " + failed + " failed";
+      } else if (failed > 0) {
+        statusEl.textContent = failed + " upload" + (failed === 1 ? "" : "s") + " failed";
+      } else {
+        statusEl.textContent = ready === 1 ? "1 file attached" : ready + " files attached";
       }
     }
 
-    function addThumb(file, fileRef) {
-      if (!thumbsEl) return;
-      const wrap = document.createElement("div");
-      wrap.className = "file-thumb";
-      wrap.dataset.fileRef = fileRef;
-
-      const img = document.createElement("img");
-      img.alt = file.name;
-      const objUrl = URL.createObjectURL(file);
-      img.src = objUrl;
-      img.onload = () => URL.revokeObjectURL(objUrl);
-
-      const btn = document.createElement("button");
-      btn.className = "file-thumb-remove";
-      btn.title = "Remove " + file.name;
-      btn.textContent = "✕";
-      btn.addEventListener("click", () => {
-        const idx = refsArray.indexOf(fileRef);
-        if (idx !== -1) refsArray.splice(idx, 1);
-        wrap.remove();
-        if (!thumbsEl.children.length) thumbsEl.classList.add("hidden");
-        const count = refsArray.length;
-        statusEl.textContent =
-          count === 0
-            ? "No files attached"
-            : count === 1
-              ? "1 file attached"
-              : count + " files attached";
-        hasImageAttached = refsArray.length > 0;
-        if (onDone) onDone();
-      });
-
-      wrap.appendChild(img);
-      wrap.appendChild(btn);
-      thumbsEl.appendChild(wrap);
-      thumbsEl.classList.remove("hidden");
+    function revokePreview(item) {
+      if (!item.previewUrl) return;
+      try {
+        URL.revokeObjectURL(item.previewUrl);
+      } catch (_) {}
+      item.previewUrl = null;
     }
 
-    inputEl.addEventListener("change", async (e) => {
-      const selectedFiles = Array.from(e.target.files || []);
-      const maxFiles = getMaxFiles ? getMaxFiles() : undefined;
-      const files = maxFiles && maxFiles > 0 ? selectedFiles.slice(0, maxFiles) : selectedFiles;
-      clearThumbs();
-      if (!files.length) {
-        statusEl.textContent = "No files attached";
-        hasImageAttached = false;
-        await retriggerAttachmentDropdowns();
-        if (onDone) onDone();
+    function removeReference(itemId) {
+      const index = items.findIndex((item) => item.id === itemId);
+      if (index === -1) return;
+      const removed = items.splice(index, 1)[0];
+      revokePreview(removed);
+      updateImageAttachmentState();
+      updateStatus();
+      render();
+      void retriggerAttachmentDropdowns();
+      if (onDone) void onDone();
+    }
+
+    function render() {
+      if (!thumbsEl) return;
+      const states = classify();
+      thumbsEl.innerHTML = "";
+      thumbsEl.classList.toggle("hidden", items.length === 0);
+      for (const entry of states) {
+        const item = entry.item;
+        const state = entry.state;
+        item.referenceState = state;
+        const wrap = document.createElement("div");
+        wrap.className = "file-thumb file-thumb--" + state;
+        wrap.classList.toggle("file-thumb--used", state === "used");
+        wrap.classList.toggle("file-thumb--excess", state === "excess");
+        wrap.classList.toggle("file-thumb--invalid", state === "invalid");
+        wrap.dataset.referenceId = item.id;
+        if (item.fileRef) wrap.dataset.fileRef = item.fileRef;
+        wrap.title = item.error ? item.fileName + ": " + item.error : item.fileName;
+
+        if (item.mimeType.startsWith("image/") && item.previewUrl) {
+          const img = document.createElement("img");
+          img.alt = item.fileName;
+          img.src = item.previewUrl;
+          wrap.appendChild(img);
+        } else {
+          const label = document.createElement("span");
+          label.className = "file-thumb-label";
+          label.textContent = item.fileName;
+          wrap.appendChild(label);
+        }
+
+        const stateLabel = document.createElement("span");
+        stateLabel.className = "file-thumb-state";
+        stateLabel.textContent =
+          state === "used"
+            ? "Used"
+            : state === "excess"
+              ? "Delete"
+              : state === "pending"
+                ? "Uploading"
+                : "Invalid";
+        stateLabel.setAttribute("aria-label", stateLabel.textContent);
+        wrap.appendChild(stateLabel);
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "file-thumb-remove";
+        btn.title = "Remove " + item.fileName;
+        btn.setAttribute("aria-label", "Remove " + item.fileName);
+        btn.textContent = "x";
+        btn.addEventListener("click", () => removeReference(item.id));
+        wrap.appendChild(btn);
+        thumbsEl.appendChild(wrap);
+      }
+      if (typeof updateReferenceNotice === "function") {
+        updateReferenceNotice(modality, states, currentPolicy());
+      }
+    }
+
+    function isSupportedReference(file) {
+      const mimeType = file.type || "";
+      return modality === "video"
+        ? mimeType.startsWith("image/") || mimeType.startsWith("video/")
+        : mimeType.startsWith("image/");
+    }
+
+    inputEl.addEventListener("change", async (event) => {
+      const selectedFiles = Array.from(event.target.files || []);
+      inputEl.value = "";
+      if (!selectedFiles.length) {
+        updateStatus();
+        if (onDone) void onDone();
         return;
       }
-      const truncatedNotice =
-        files.length < selectedFiles.length ? ` (limited to ${files.length})` : "";
-      statusEl.textContent = `Uploading ${files.length} file${files.length > 1 ? "s" : ""}${truncatedNotice}…`;
-      let successCount = 0;
-      let lastErr = null;
-      for (const file of files) {
-        try {
-          const uploadReady = await compressImageForUpload(file);
-          const ref = await uploadFileRaw(
-            uploadReady,
-            tabState.get(inputEl === videoFileUploadInput ? "video" : "image")?.provider,
-          );
-          refsArray.push(ref);
-          addThumb(file, ref);
-          successCount++;
-        } catch (err) {
-          lastErr = err;
-        }
+
+      const known = new Set(items.map((item) => item.fingerprint));
+      const accepted = [];
+      for (const file of selectedFiles) {
+        const fingerprint = referenceFingerprint(file);
+        if (known.has(fingerprint)) continue;
+        known.add(fingerprint);
+        const supported = isSupportedReference(file);
+        const mimeType = file.type || "application/octet-stream";
+        const item = {
+          id: createReferenceId(),
+          file,
+          fileName: file.name,
+          mimeType,
+          sizeBytes: file.size,
+          fingerprint,
+          previewUrl: supported ? URL.createObjectURL(file) : null,
+          referenceKind: supported
+            ? mimeType.startsWith("video/")
+              ? "video"
+              : "image"
+            : "invalid",
+          uploadState: supported ? "pending" : "error",
+          fileRef: null,
+          error: supported ? null : "Unsupported reference file type.",
+        };
+        items.push(item);
+        if (supported) accepted.push(item);
       }
-      if (successCount === 0) {
-        statusEl.textContent = `✗ Upload failed: ${lastErr?.message ?? "unknown error"}`;
-        hasImageAttached = false;
-      } else if (lastErr) {
-        statusEl.textContent = `⚠ ${successCount} of ${files.length} uploaded`;
-        hasImageAttached = true;
-      } else {
-        statusEl.textContent =
-          successCount === 1 ? "1 file attached" : successCount + " files attached";
-        hasImageAttached = true;
-      }
-      // Reset input so re-selecting the same files triggers a new change event.
-      inputEl.value = "";
+
+      updateImageAttachmentState();
+      render();
+      updateStatus();
+      void retriggerAttachmentDropdowns();
+
+      await Promise.all(
+        accepted.map(async (item) => {
+          try {
+            const uploadReady = await compressImageForUpload(item.file);
+            const ref = await uploadFileRaw(
+              uploadReady,
+              tabState.get(inputEl === videoFileUploadInput ? "video" : "image")?.provider,
+            );
+            const current = items.find((candidate) => candidate.id === item.id);
+            if (!current) return;
+            current.fileRef = ref;
+            current.uploadState = "ready";
+            current.error = null;
+          } catch (err) {
+            const current = items.find((candidate) => candidate.id === item.id);
+            if (!current) return;
+            current.uploadState = "error";
+            current.error = err?.message ?? String(err);
+          }
+          updateImageAttachmentState();
+          render();
+          updateStatus();
+        }),
+      );
+
+      updateImageAttachmentState();
+      updateStatus();
       await retriggerAttachmentDropdowns();
-      if (onDone) onDone();
+      if (onDone) await onDone();
     });
   }
 
@@ -2267,12 +2650,19 @@
     if (modeSelect.value !== "proxy") return false;
 
     const state = tabState.get(modality) ?? {};
-    const provider = providerOverride !== undefined ? providerOverride : state.provider || "";
+    const provider =
+      providerOverride !== undefined ? providerOverride : state.provider || "";
     const modelSel = MODEL_SELECTS[modality];
     if (!modelSel) return false;
 
+    const refreshVersion = (modelRefreshVersions.get(modality) ?? 0) + 1;
+    modelRefreshVersions.set(modality, refreshVersion);
+    const preferredModel =
+      providerOverride === undefined ? modelSel.value || state.model || "" : "";
     const acceptsImage = hasImageAttached && providerSupportsInputModality(provider, "image");
     const result = await fetchModelList(modality, provider, acceptsImage);
+
+    if (modelRefreshVersions.get(modality) !== refreshVersion) return true;
     if (!result.ok) {
       showModelWarning(modality, formatModelWarning(modality, provider, result.error));
       return false;
@@ -2282,6 +2672,7 @@
     let modelList = result.modelList;
     if (acceptsImage && Array.isArray(modelList) && modelList.length === 0) {
       const fallbackResult = await fetchModelList(modality, provider, false);
+      if (modelRefreshVersions.get(modality) !== refreshVersion) return true;
       if (!fallbackResult.ok) {
         showModelWarning(modality, formatModelWarning(modality, provider, fallbackResult.error));
         return false;
@@ -2289,36 +2680,55 @@
       modelList = fallbackResult.modelList;
     }
 
-    // Image/video: update the descriptor cache before repopulating the select
-    // so the matching sync helper can look up the newly selected model immediately.
-    if (modality === "image") {
-      imageModelsCache = modelList;
-    }
-    if (modality === "video") {
-      videoModelsCache = modelList;
+    // Keep the current model visible when an attachment-aware filter would
+    // otherwise remove it. Its capability notice then explains why processing
+    // is unavailable instead of silently changing the user's selection.
+    if (
+      providerOverride === undefined &&
+      preferredModel &&
+      !modelList.some((model) => model.id === preferredModel)
+    ) {
+      const unfiltered = await fetchModelList(modality, provider, false);
+      if (modelRefreshVersions.get(modality) !== refreshVersion) return true;
+      if (unfiltered.ok) {
+        const preserved = unfiltered.modelList.find((model) => model.id === preferredModel);
+        if (preserved) modelList = [preserved, ...modelList];
+      }
     }
 
-    // Repopulate model <select> (REQ-PM-02 — compatible models only)
-    populateModelSelect(modelSel, modelList);
+    if (modality === "image") imageModelsCache = modelList;
+    if (modality === "video") videoModelsCache = modelList;
 
-    // Auto-select cheapest model (REQ-PM-03)
-    const cheapest = autoSelectCheapest(modelList);
-    const model = cheapest ?? "";
+    const currentState = tabState.get(modality) ?? {};
+    const currentModel =
+      providerOverride === undefined
+        ? modelSel.value || currentState.model || preferredModel
+        : "";
+    const model =
+      currentModel && modelList.some((candidate) => candidate.id === currentModel)
+        ? currentModel
+        : autoSelectCheapest(modelList) ?? "";
+
+    populateModelSelect(modelSel, modelList, "No compatible models", model);
     modelSel.value = model;
 
-    // Image/video: sync attachment controls to the newly selected model.
-    // Programmatic .value assignment does not fire a DOM change event, so we
-    // call the relevant helper directly.
+    if (currentModel && currentModel !== model) {
+      showModelWarning(
+        modality,
+        "The previously selected model is no longer available for this provider. " +
+          "The interface selected the first available model.",
+      );
+    }
+
     if (modality === "image") {
-      const descriptor = imageModelsCache.find((m) => m.id === model) ?? null;
+      const descriptor = imageModelsCache.find((item) => item.id === model) ?? null;
       syncImageConstraints(descriptor);
     }
     if (modality === "video") {
-      const descriptor = videoModelsCache.find((m) => m.id === model) ?? null;
+      const descriptor = videoModelsCache.find((item) => item.id === model) ?? null;
       syncVideoConstraints(descriptor);
     }
 
-    // Persist updated state (REQ-LS-01 — atomic dual write)
     tabState.set(modality, { provider, model });
     persistSelection(modality, provider, model);
     return true;
@@ -2526,7 +2936,7 @@
     const warn = document.getElementById("video-luma-tunnel-warn");
     if (!warn) return;
     const provider = videoProviderSelect?.value || "";
-    const hasFile = videoFileRefs.length > 0;
+    const hasFile = videoReferenceItems.length > 0;
     const needsTunnel = provider === "lumaai" && hasFile && serverLumaImageToVideoEnabled === false;
     warn.classList.toggle("hidden", !needsTunnel);
   }
@@ -2568,8 +2978,9 @@
   async function retriggerAttachmentDropdowns() {
     const modality = TAB_MODALITY[activeTab()] ?? "text";
     if (modeSelect.value === "proxy" && allProviders.length > 0) {
-      const providerSelect = refreshProviderDropdown(modality);
-      await loadTabModels(modality, providerSelect?.value);
+      // Reference mutations refresh model metadata for the current provider,
+      // but never rebuild provider options or change the provider selection.
+      await loadTabModels(modality);
     }
     updateAttachmentNotice();
   }
@@ -2690,27 +3101,17 @@
     imageFileUploadInput,
     imageFileUploadStatus,
     imageFileThumbsEl,
-    imageFileRefs,
+    imageReferenceItems,
     undefined,
-    () => {
-      const descriptor = imageModelsCache.find((model) => model.id === imageModelSelect?.value);
-      const requirements = descriptor?.inputRequirements;
-      if (!Array.isArray(requirements) || requirements.length === 0) return undefined;
-      return Math.max(...requirements.map((requirement) => Number(requirement.max ?? 0)));
-    },
+    () => referencePolicyFor("image"),
   );
   wireMultiFileUpload(
     videoFileUploadInput,
     videoFileUploadStatus,
     videoFileThumbsEl,
-    videoFileRefs,
+    videoReferenceItems,
     updateLumaTunnelWarn,
-    () => {
-      const descriptor = videoModelsCache.find((model) => model.id === videoModelSelect?.value);
-      const requirements = descriptor?.inputRequirements;
-      if (!Array.isArray(requirements) || requirements.length === 0) return undefined;
-      return Math.max(...requirements.map((requirement) => Number(requirement.max ?? 0)));
-    },
+    () => referencePolicyFor("video"),
   );
 
   applyModeUi();
@@ -2723,6 +3124,7 @@
       b.setAttribute("aria-selected", on ? "true" : "false");
     });
     tabPanels.forEach((p) => p.classList.toggle("hidden", p.id !== "panel-" + target));
+    updateImageAttachmentState();
 
     // Reload models scoped to the newly activated tab only (Design D5 — no
     // cross-tab pollution; replaces old loadAllModels() that reloaded every tab).
@@ -3003,17 +3405,112 @@
     return compact.length > limit ? `${compact.slice(0, limit)}...` : compact;
   }
 
+  function sanitizeHistoryText(value) {
+    return String(value ?? "")
+      .replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-****")
+      .replace(/sk-or-v1-[A-Za-z0-9_-]+/g, "sk-or-v1-****")
+      .replace(/sk-[A-Za-z0-9_-]+/g, "sk-****")
+      .replace(/xai-[A-Za-z0-9_-]+/g, "xai-****")
+      .replace(/VENICE_INFERENCE_KEY_[A-Za-z0-9_-]+/g, "VENICE_INFERENCE_KEY_****");
+  }
+
+  function sanitizeHistoryValue(value) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return typeof value === "string" ? sanitizeHistoryText(value) : value;
+    }
+    if (Array.isArray(value)) return value.map((entry) => sanitizeHistoryValue(entry));
+    if (typeof value === "object") {
+      if (value instanceof Blob) return null;
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, sanitizeHistoryValue(entry)]),
+      );
+    }
+    return null;
+  }
+
+  function buildHistoryEvent({
+    modality,
+    originalPrompt,
+    effectivePrompt,
+    requestPayload,
+    requestedProvider,
+    requestedModel,
+    referenceImages = [],
+    startedAt,
+    completedAt,
+    response,
+    artifactBlob,
+    artifactFileName,
+    artifactMimeType,
+    artifactUrl,
+    status = "complete",
+    error,
+  }) {
+    const responseProvider = response?.provider ?? requestedProvider ?? null;
+    const responseModel = response?.model ?? requestedModel ?? null;
+    return {
+      schemaVersion: BROWSER_RECORD_SCHEMA_VERSION,
+      modality,
+      status,
+      createdAt: startedAt,
+      completedAt: completedAt ?? null,
+      elapsedMs:
+        completedAt && startedAt
+          ? Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime())
+          : null,
+      requested: {
+        provider: requestedProvider || null,
+        model: requestedModel || null,
+        prompt: originalPrompt,
+        effectivePrompt,
+        referenceImages,
+        options: sanitizeHistoryValue(requestPayload ?? {}),
+      },
+      routing: {
+        providerRequested: requestedProvider || null,
+        providerUsed: responseProvider,
+        modelRequested: requestedModel || null,
+        modelUsed: responseModel,
+        requestedReferenceCount: referenceImages.length,
+        sentReferenceCount: referenceImages.filter((item) => item.uploadState === "ready").length,
+      },
+      result: {
+        provider: responseProvider,
+        model: responseModel,
+        artifact: {
+          url: /^https?:\/\//.test(artifactUrl ?? "") ? artifactUrl : null,
+          fileName: artifactFileName ?? null,
+          mimeType: artifactMimeType ?? artifactBlob?.type ?? null,
+          sizeBytes: artifactBlob?.size ?? 0,
+        },
+        actualDuration: response?.duration ?? null,
+        usage: sanitizeHistoryValue(response?.usage ?? null),
+        cost: sanitizeHistoryValue(response?.cost ?? null),
+      },
+      error: error
+        ? {
+            code: error.code ?? error.name ?? "PROCESSING_ERROR",
+            statusCode: error.statusCode ?? null,
+            message: sanitizeHistoryText(error.message ?? String(error)),
+          }
+        : null,
+    };
+  }
+
   function buildArtifactRecordDraft(modality, prompt, resultText, artifactBlob, extra = {}) {
     const { provider, model } = tabState.get(modality) ?? {};
     const title = extra.title || summarizeText(resultText || prompt, 80) || `${modality} result`;
+    const { preview: _preview, historyEvent, ...recordExtra } = extra;
+    const status = recordExtra.status ?? "complete";
+    const originalPrompt = recordExtra.originalPrompt ?? prompt;
     return {
       modality,
       kind: "artifact",
-      status: "complete",
+      status,
       title,
-      prompt,
-      provider: provider ?? "",
-      model: model ?? "",
+      prompt: originalPrompt,
+      provider: recordExtra.actualProvider ?? provider ?? "",
+      model: recordExtra.actualModel ?? model ?? "",
       styleId: styleController.style.id,
       seed: extra.seed ?? null,
       aspectRatio: extra.aspectRatio ?? "",
@@ -3021,9 +3518,9 @@
       quality: extra.quality ?? "",
       duration: extra.duration ?? null,
       fps: extra.fps ?? null,
-      transcript: resultText || prompt,
-      outputText: resultText || prompt,
-      outputSummary: summarizeText(resultText || prompt, 160),
+      transcript: resultText || (status === "error" ? "" : prompt),
+      outputText: resultText || (status === "error" ? "" : prompt),
+      outputSummary: summarizeText(resultText || (status === "error" ? "" : prompt), 160),
       fileName: extra.fileName || "",
       mimeType: extra.mimeType ?? artifactBlob?.type ?? null,
       artifact: artifactBlob ?? null,
@@ -3032,7 +3529,9 @@
       tags: [],
       favorite: false,
       metadata: {
-        ...extra,
+        schemaVersion: BROWSER_RECORD_SCHEMA_VERSION,
+        ...sanitizeHistoryValue(recordExtra),
+        ...(historyEvent ? { historyEvent: sanitizeHistoryValue(historyEvent) } : {}),
         source: "web-demo",
       },
     };
@@ -3212,6 +3711,96 @@
       .replace(/[^a-z0-9\-]/g, "");
   }
 
+  function historyEventForRecord(record) {
+    const event = record.metadata?.historyEvent;
+    return event && typeof event === "object" ? event : {};
+  }
+
+  function appendHistoryField(container, label, value, className = "") {
+    const dt = document.createElement("dt");
+    dt.className = "history-detail-label";
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.className = `history-detail-value${className ? ` ${className}` : ""}`;
+    if (value instanceof Node) {
+      dd.appendChild(value);
+    } else {
+      dd.textContent = value === null || value === undefined || value === "" ? "Not recorded" : String(value);
+    }
+    container.append(dt, dd);
+  }
+
+  function appendHistoryDetails(container, record) {
+    const event = historyEventForRecord(record);
+    const requested = event.requested && typeof event.requested === "object" ? event.requested : {};
+    const options = requested.options && typeof requested.options === "object" ? requested.options : {};
+    const result = event.result && typeof event.result === "object" ? event.result : {};
+    const routing = event.routing && typeof event.routing === "object" ? event.routing : {};
+    const error = event.error && typeof event.error === "object" ? event.error : null;
+    const grid = document.createElement("dl");
+    grid.className = "history-details-grid";
+
+    const prompt = document.createElement("pre");
+    prompt.className = "history-detail-pre";
+    prompt.textContent = requested.prompt ?? record.prompt ?? "";
+    appendHistoryField(grid, "Prompt", prompt);
+    const effectivePrompt = document.createElement("pre");
+    effectivePrompt.className = "history-detail-pre";
+    effectivePrompt.textContent = requested.effectivePrompt ?? record.prompt ?? "";
+    appendHistoryField(grid, "Effective prompt", effectivePrompt);
+    appendHistoryField(grid, "Negative prompt", options.negativePrompt ?? null);
+    appendHistoryField(grid, "Provider", `${routing.providerRequested ?? record.provider ?? "Not recorded"} -> ${routing.providerUsed ?? record.provider ?? "Not recorded"}`);
+    appendHistoryField(grid, "Model", `${routing.modelRequested ?? record.model ?? "Not recorded"} -> ${routing.modelUsed ?? record.model ?? "Not recorded"}`);
+    appendHistoryField(grid, "Seed", Object.prototype.hasOwnProperty.call(options, "seed") ? options.seed : record.seed);
+    appendHistoryField(grid, "Requested duration", Object.prototype.hasOwnProperty.call(options, "duration") ? options.duration : record.duration);
+    appendHistoryField(grid, "Result duration", result.actualDuration ?? null);
+    appendHistoryField(grid, "Elapsed processing", event.elapsedMs === null || event.elapsedMs === undefined ? null : `${event.elapsedMs} ms`);
+    appendHistoryField(grid, "Aspect ratio", options.aspectRatio ?? record.aspectRatio);
+    appendHistoryField(grid, "Dimensions", options.width || options.height ? `${options.width ?? "?"} x ${options.height ?? "?"}` : null);
+    appendHistoryField(grid, "Resolution", options.resolution ?? record.resolution);
+    appendHistoryField(grid, "Quality", options.quality ?? record.quality);
+    appendHistoryField(grid, "FPS", options.fps ?? record.fps);
+    appendHistoryField(grid, "Transition duration", options.transitionDuration ?? null);
+    appendHistoryField(grid, "Timestamp", event.createdAt ?? record.createdAt);
+    appendHistoryField(grid, "Completed", event.completedAt ?? record.updatedAt);
+    appendHistoryField(grid, "Status", record.status);
+
+    const referenceList = document.createElement("ul");
+    referenceList.className = "history-reference-list";
+    const references = Array.isArray(requested.referenceImages) ? requested.referenceImages : [];
+    for (const reference of references) {
+      const li = document.createElement("li");
+      li.textContent = `${reference.fileName ?? "Reference"} (${reference.mimeType ?? "unknown"}, ${reference.sizeBytes ?? 0} bytes, ${reference.uploadState ?? "unknown"})`;
+      if (typeof reference.url === "string" && /^https?:\/\//.test(reference.url)) {
+        const link = document.createElement("a");
+        link.href = reference.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = " Open reference";
+        li.appendChild(link);
+      }
+      referenceList.appendChild(li);
+    }
+    if (references.length === 0) {
+      const li = document.createElement("li");
+      li.textContent = "No reference images";
+      referenceList.appendChild(li);
+    }
+    appendHistoryField(grid, "Reference images", referenceList);
+
+    const artifact = result.artifact && typeof result.artifact === "object" ? result.artifact : {};
+    appendHistoryField(
+      grid,
+      "Artifact",
+      `${artifact.fileName ?? record.fileName ?? "Not recorded"} (${artifact.mimeType ?? record.mimeType ?? "unknown"}, ${artifact.sizeBytes ?? record.artifact?.size ?? 0} bytes)`,
+    );
+    appendHistoryField(grid, "Usage", result.usage ? JSON.stringify(result.usage) : null);
+    appendHistoryField(grid, "Cost", result.cost ? JSON.stringify(result.cost) : null);
+    appendHistoryField(grid, "Routing", `${routing.sentReferenceCount ?? 0} of ${routing.requestedReferenceCount ?? references.length} references sent`);
+    if (error) appendHistoryField(grid, "Error", `${error.code ?? "PROCESSING_ERROR"}: ${error.message ?? "Unknown error"}`);
+    container.appendChild(grid);
+  }
+
   function buildHistoryRow(record) {
     const row = document.createElement("div");
     row.className = `history-row history-row--${record.modality}`;
@@ -3263,7 +3852,15 @@
     const exportBtn = document.createElement("button");
     exportBtn.className = "history-export";
     exportBtn.type = "button";
-    exportBtn.textContent = "Export";
+    exportBtn.textContent = "Download artifact";
+    exportBtn.title = "Download the generated artifact";
+
+    const jsonBtn = document.createElement("button");
+    jsonBtn.className = "history-export history-export-json";
+    jsonBtn.type = "button";
+    jsonBtn.textContent = "Download JSON";
+    jsonBtn.title = "Download complete processing metadata as JSON";
+    jsonBtn.setAttribute("aria-label", `Download JSON for ${record.title}`);
 
     const delBtn = document.createElement("button");
     delBtn.className = "history-delete";
@@ -3271,7 +3868,7 @@
     delBtn.textContent = "Delete";
     delBtn.setAttribute("aria-label", `Delete record: ${record.title}`);
 
-    actions.append(favoriteBtn, exportBtn, delBtn);
+    actions.append(favoriteBtn, exportBtn, jsonBtn, delBtn);
     summary.append(chevron, titleWrap, meta, actions);
 
     const details = document.createElement("div");
@@ -3292,6 +3889,8 @@
         record.mimeType || (record.modality === "text" ? "text/plain" : "application/octet-stream"),
       filename: recordDownloadName(record),
     });
+
+    appendHistoryDetails(details, record);
 
     if (record.modality === "text") {
       const transcript = document.createElement("pre");
@@ -3360,6 +3959,11 @@
 
     exportBtn.addEventListener("click", () => {
       const payload = recordDownloadPayload(record);
+      triggerDownload(payload.blob, payload.filename);
+    });
+
+    jsonBtn.addEventListener("click", () => {
+      const payload = recordDownloadJsonPayload(record);
       triggerDownload(payload.blob, payload.filename);
     });
 
@@ -3728,14 +4332,21 @@
 
   /* ── IMAGE TAB ───────────────────────────────────────────── */
   async function handleImageGenerate() {
-    const prompt = imagePromptEl.value.trim();
+    const originalPrompt = imagePromptEl.value;
+    const prompt = originalPrompt.trim();
     if (!prompt) return;
+    const startedAt = new Date().toISOString();
+    const imageSelection = tabState.get("image") ?? {};
+    const requestedProvider = imageSelection.provider ?? "";
+    const requestedModel = imageSelection.model ?? "";
+    let imageRequestPayload = { prompt };
+    let imageReferenceSnapshot = snapshotReferenceItems(imageReferenceItems);
+    let imgResult = null;
     setLoading([btnImageGenerate], true);
     showSpinner(imageOutput, "Generating image…");
     imageUsage.textContent = "";
     try {
       let blob;
-      let imgResult = null;
       if (modeSelect.value === "proxy") {
         const isCustom = imageRatioCategory.value === "custom";
         const imgAspectRatio = imageAspectRatio.value || undefined;
@@ -3743,7 +4354,7 @@
         const imgWidth = isCustom ? parseInt(imageWidthInput.value, 10) || undefined : undefined;
         const imgHeight = isCustom ? parseInt(imageHeightInput.value, 10) || undefined : undefined;
         // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
-        const { provider: imgProvider, model: imgModel } = tabState.get("image") ?? {};
+        const { provider: imgProvider, model: imgModel } = imageSelection;
         const imgPayload = {
           prompt,
           provider: imgProvider || undefined,
@@ -3753,11 +4364,14 @@
           height: imgHeight,
           quality: imgQuality,
         };
-        if (imageFileRefs.length === 1) {
-          imgPayload.fileRef = imageFileRefs[0];
-        } else if (imageFileRefs.length > 1) {
-          imgPayload.fileRefs = imageFileRefs.slice();
+        const imageReferenceRequest = buildReferenceRequest(imageReferenceItems, "image");
+        imageReferenceSnapshot = imageReferenceRequest.referenceImages;
+        if (imageReferenceRequest.fileRefs.length === 1) {
+          imgPayload.fileRef = imageReferenceRequest.fileRefs[0];
+        } else if (imageReferenceRequest.fileRefs.length > 1) {
+          imgPayload.fileRefs = imageReferenceRequest.fileRefs.slice();
         }
+        imageRequestPayload = { ...imgPayload };
         imgResult = await proxyPost("/image", imgPayload);
         // Proxy may return a data URI ("data:image/png;base64,…"), a plain
         // URL ("https://…"), or raw base64 in b64_json — handle all three,
@@ -3799,14 +4413,55 @@
       } else {
         imageUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
       }
+      const completedAt = new Date().toISOString();
+      const artifactFileName = "ai-image.png";
       await persistArtifactRecord("image", prompt, prompt, blob, {
-        fileName: "ai-image.png",
+        originalPrompt,
+        fileName: artifactFileName,
         mimeType: blob.type || imgResult?.mimeType || "image/png",
         aspectRatio: imageAspectRatio.value || "",
         quality: imageQuality.value || "",
         preview: blob,
+        actualProvider: imgResult?.provider,
+        actualModel: imgResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "image",
+          originalPrompt,
+          effectivePrompt: prompt,
+          requestPayload: imageRequestPayload,
+          requestedProvider,
+          requestedModel,
+          referenceImages: imageReferenceSnapshot,
+          startedAt,
+          completedAt,
+          response: imgResult,
+          artifactBlob: blob,
+          artifactFileName,
+          artifactMimeType: blob.type || imgResult?.mimeType || "image/png",
+          artifactUrl: imgResult?.url ?? (imgResult?.data && /^https?:\/\//.test(imgResult.data) ? imgResult.data : null),
+        }),
       });
     } catch (err) {
+      await persistArtifactRecord("image", prompt, "", null, {
+        status: "error",
+        originalPrompt,
+        actualProvider: imgResult?.provider,
+        actualModel: imgResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "image",
+          originalPrompt,
+          effectivePrompt: prompt,
+          requestPayload: imageRequestPayload,
+          requestedProvider,
+          requestedModel,
+          referenceImages: imageReferenceSnapshot,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          response: imgResult,
+          status: "error",
+          error: err,
+        }),
+      });
       showError(imageOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
@@ -3845,24 +4500,31 @@
 
   /* ── AUDIO TAB — TTS ─────────────────────────────────────── */
   async function handleTtsSpeak() {
-    const text = ttsTextEl.value.trim();
+    const originalPrompt = ttsTextEl.value;
+    const text = originalPrompt.trim();
     if (!text) return;
+    const startedAt = new Date().toISOString();
+    const audioSelection = tabState.get("audio") ?? {};
+    const requestedProvider = audioSelection.provider ?? "";
+    const requestedModel = ttsModelSelect.value || audioSelection.model || "";
+    let ttsRequestPayload = { text, model: requestedModel || undefined };
+    let ttsResult = null;
     setLoading([btnTtsSpeak], true);
     showSpinner(ttsOutput, "Synthesizing speech…");
     try {
       let blob;
-      let ttsResult = null;
       const ttsModel = ttsModelSelect.value || undefined;
       if (modeSelect.value === "proxy") {
         // TASK-12: Read audio provider from tabState. TTS model comes from its own
         // dedicated select (ttsModelSelect) which is separate from the transcription
         // model select tracked in tabState.get("audio").model (REQ-PM-01, S-09).
-        const { provider: audioProvider } = tabState.get("audio") ?? {};
-        ttsResult = await proxyPost("/audio/speak", {
+        const { provider: audioProvider } = audioSelection;
+        ttsRequestPayload = {
           text,
           provider: audioProvider || undefined,
           model: ttsModel,
-        });
+        };
+        ttsResult = await proxyPost("/audio/speak", ttsRequestPayload);
         blob = base64ToBlob(ttsResult.audio, ttsResult.mimeType || "audio/mpeg");
       } else {
         blob = await getClient().synthesizeSpeech(text, { model: ttsModel });
@@ -3890,12 +4552,50 @@
       } else {
         audioUsage.textContent += " · " + Math.round(blob.size / 1024) + " KB";
       }
+      const completedAt = new Date().toISOString();
+      const artifactFileName = "ai-speech.mp3";
       await persistArtifactRecord("audio", `Speak ${text.slice(0, 80)}`, text, blob, {
-        fileName: "ai-speech.mp3",
+        originalPrompt,
+        fileName: artifactFileName,
         mimeType: blob.type || ttsResult?.mimeType || "audio/mpeg",
         preview: blob,
+        actualProvider: ttsResult?.provider,
+        actualModel: ttsResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "audio",
+          originalPrompt,
+          effectivePrompt: text,
+          requestPayload: ttsRequestPayload,
+          requestedProvider,
+          requestedModel,
+          startedAt,
+          completedAt,
+          response: ttsResult,
+          artifactBlob: blob,
+          artifactFileName,
+          artifactMimeType: blob.type || ttsResult?.mimeType || "audio/mpeg",
+        }),
       });
     } catch (err) {
+      await persistArtifactRecord("audio", originalPrompt, "", null, {
+        status: "error",
+        originalPrompt,
+        actualProvider: ttsResult?.provider,
+        actualModel: ttsResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "audio",
+          originalPrompt,
+          effectivePrompt: text,
+          requestPayload: ttsRequestPayload,
+          requestedProvider,
+          requestedModel,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          response: ttsResult,
+          status: "error",
+          error: err,
+        }),
+      });
       showError(ttsOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
@@ -3942,12 +4642,22 @@
 
   async function handleTranscribe() {
     if (!selectedAudioBlob) return;
+    const originalPrompt = `Transcribe ${selectedAudioBlob.name || "audio"}`;
+    const startedAt = new Date().toISOString();
+    const audioSelection = tabState.get("audio") ?? {};
+    const requestedProvider = audioSelection.provider ?? "";
+    const requestedModel = audioSelection.model ?? "";
+    let transcribeRequestPayload = {
+      provider: requestedProvider || undefined,
+      model: requestedModel || undefined,
+      mimeType: selectedAudioBlob.type || undefined,
+    };
+    let transcribeResult = null;
     setLoading([btnTranscribe], true);
     showSpinner(transcribeOutput, "Transcribing…");
     try {
       let text;
-      let transcribeResult = null;
-      const { model: audioModel } = tabState.get("audio") ?? {};
+      const { provider: audioProvider, model: audioModel } = audioSelection;
       if (modeSelect.value === "proxy") {
         const audioBase64 = await new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -3957,7 +4667,7 @@
         });
         // TASK-12: Read provider + model from tabState["audio"] (REQ-PM-01, S-09).
         // tabState.get("audio").model mirrors transcribeModelSelect.value (MODEL_SELECTS["audio"]).
-        transcribeResult = await proxyPost("/audio/transcribe", {
+        transcribeRequestPayload = {
           audioBase64,
           // Forward the Blob's MIME type so the proxy can pass it to Whisper,
           // giving the model the correct file-format hint for video containers
@@ -3968,7 +4678,8 @@
           mimeType: selectedAudioBlob.type || undefined,
           provider: audioProvider || undefined,
           model: audioModel || undefined,
-        });
+        };
+        transcribeResult = await proxyPost("/audio/transcribe", transcribeRequestPayload);
         text = transcribeResult.text;
       } else {
         text = await getClient().transcribeAudio(selectedAudioBlob, {
@@ -3991,18 +4702,56 @@
       addUsage(transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
       setUsageText(audioUsage, transcribeResult?.usage ?? null, transcribeResult?.cost ?? null);
       const transcriptBlob = new Blob([text], { type: "text/plain" });
+      const completedAt = new Date().toISOString();
+      const artifactFileName = "transcript.txt";
       await persistArtifactRecord(
         "audio",
-        `Transcribe ${selectedAudioBlob.name || "audio"}`,
+        originalPrompt,
         text,
         transcriptBlob,
         {
-          fileName: "transcript.txt",
+          originalPrompt,
+          fileName: artifactFileName,
           mimeType: "text/plain",
           preview: transcriptBlob,
+          actualProvider: transcribeResult?.provider,
+          actualModel: transcribeResult?.model,
+          historyEvent: buildHistoryEvent({
+            modality: "audio",
+            originalPrompt,
+            effectivePrompt: originalPrompt,
+            requestPayload: transcribeRequestPayload,
+            requestedProvider,
+            requestedModel,
+            startedAt,
+            completedAt,
+            response: transcribeResult,
+            artifactBlob: transcriptBlob,
+            artifactFileName,
+            artifactMimeType: "text/plain",
+          }),
         },
       );
     } catch (err) {
+      await persistArtifactRecord("audio", originalPrompt, "", null, {
+        status: "error",
+        originalPrompt,
+        actualProvider: transcribeResult?.provider,
+        actualModel: transcribeResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "audio",
+          originalPrompt,
+          effectivePrompt: originalPrompt,
+          requestPayload: transcribeRequestPayload,
+          requestedProvider,
+          requestedModel,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          response: transcribeResult,
+          status: "error",
+          error: err,
+        }),
+      });
       showError(transcribeOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
@@ -5607,11 +6356,20 @@ ${combinedSection}${shotCards}
   /* ── VIDEO TAB ───────────────────────────────────────────── */
   async function handleVideoGenerate() {
     // Guard 1: prompt must be non-empty
-    const prompt = videoPromptEl ? videoPromptEl.value.trim() : "";
+    const originalPrompt = videoPromptEl ? videoPromptEl.value : "";
+    const prompt = originalPrompt.trim();
     if (!prompt) {
       showError(videoOutput, new Error("Please enter a prompt before generating."));
       return;
     }
+
+    const startedAt = new Date().toISOString();
+    const videoSelection = tabState.get("video") ?? {};
+    const requestedProvider = videoSelection.provider ?? "";
+    const requestedModel = videoSelection.model ?? "";
+    let videoRequestPayload = { prompt };
+    let videoReferenceSnapshot = snapshotReferenceItems(videoReferenceItems);
+    let videoResult = null;
 
     // Guard 2: video generation is proxy-only — fail fast with a clear message
     if (modeSelect.value !== "proxy") {
@@ -5627,7 +6385,7 @@ ${combinedSection}${shotCards}
     const _videoProvider = videoProviderSelect?.value || "";
     if (
       _videoProvider === "lumaai" &&
-      videoFileRefs.length > 0 &&
+      videoReferenceItems.length > 0 &&
       serverLumaImageToVideoEnabled === false
     ) {
       showError(
@@ -5658,10 +6416,11 @@ ${combinedSection}${shotCards}
       if (dur > 0) videoOptions.duration = dur;
       const fpsVal = Number(videoFps?.value);
       if (fpsVal > 0) videoOptions.fps = fpsVal;
-      const negativePrompt = videoNegativePrompt?.value.trim();
+      const negativePrompt = videoNegativePrompt?.value?.trim() ?? "";
       if (negativePrompt) videoOptions.negativePrompt = negativePrompt;
-      const seed = Number(videoSeed?.value);
-      if (Number.isFinite(seed)) videoOptions.seed = seed;
+      const seedInput = videoSeed?.value?.trim() ?? "";
+      const seed = Number(seedInput);
+      if (seedInput !== "" && Number.isFinite(seed)) videoOptions.seed = seed;
       const transitionDuration = Number(videoTransitionDuration?.value);
       if (Number.isFinite(transitionDuration) && transitionDuration > 0) {
         videoOptions.transitionDuration = transitionDuration;
@@ -5676,7 +6435,7 @@ ${combinedSection}${shotCards}
       // TASK-12: Read provider + model from tabState["video"] so the correct
       // provider (e.g. Luma AI) is forwarded to the proxy (REQ-PM-01, S-09).
       // tabState is the single source of truth — direct DOM reads removed.
-      const { provider: videoProvider, model: videoModel } = tabState.get("video") ?? {};
+      const { provider: videoProvider, model: videoModel } = videoSelection;
       if (videoProvider) videoOptions.provider = videoProvider;
       if (videoModel) videoOptions.model = videoModel;
       const descriptor = videoModelsCache.find((model) => model.id === videoModel) ?? null;
@@ -5691,16 +6450,20 @@ ${combinedSection}${shotCards}
         modifyRegionMask: videoOptions.modifyRegionMask,
       });
       // Attach the uploaded image references for image-to-video generation.
-      if (videoFileRefs.length === 1) {
-        videoOptions.fileRef = videoFileRefs[0];
-      } else if (videoFileRefs.length > 1) {
-        videoOptions.fileRefs = videoFileRefs.slice();
+      const videoReferenceRequest = buildReferenceRequest(videoReferenceItems, "video");
+      videoReferenceSnapshot = videoReferenceRequest.referenceImages;
+      if (videoReferenceRequest.fileRefs.length === 1) {
+        videoOptions.fileRef = videoReferenceRequest.fileRefs[0];
+      } else if (videoReferenceRequest.fileRefs.length > 1) {
+        videoOptions.fileRefs = videoReferenceRequest.fileRefs.slice();
       }
+
+      videoRequestPayload = { prompt, ...videoOptions };
 
       // Call proxyPost directly (like image/audio/structured tabs) so the request
       // is not funnelled through the pre-built UMD bundle, which would silently
       // drop the provider/model/fileRef fields added above.
-      const videoResult = await proxyPost("/video", { prompt, ...videoOptions });
+      videoResult = await proxyPost("/video", videoRequestPayload);
 
       // Convert the JSON response to a Blob.  The proxy may return:
       //   • data   – data URI  ("data:video/mp4;base64,…")  — Luma, mock
@@ -5735,11 +6498,32 @@ ${combinedSection}${shotCards}
         if (videoUsage)
           videoUsage.textContent =
             "Video · " + Math.round(placeholderBlob.size / 1024) + " KB (preview)";
+        const completedAt = new Date().toISOString();
+        const artifactFileName = "ai-video.mp4";
         await persistArtifactRecord("video", prompt, prompt, placeholderBlob, {
-          fileName: "ai-video.mp4",
+          originalPrompt,
+          fileName: artifactFileName,
           mimeType: placeholderBlob.type || "video/mp4",
           preview: placeholderBlob,
           stubPreview: true,
+          actualProvider: videoResult?.provider,
+          actualModel: videoResult?.model,
+          historyEvent: buildHistoryEvent({
+            modality: "video",
+            originalPrompt,
+            effectivePrompt: prompt,
+            requestPayload: videoRequestPayload,
+            requestedProvider,
+            requestedModel,
+            referenceImages: videoReferenceSnapshot,
+            startedAt,
+            completedAt,
+            response: videoResult,
+            artifactBlob: placeholderBlob,
+            artifactFileName,
+            artifactMimeType: placeholderBlob.type || "video/mp4",
+            artifactUrl: videoResult?.url,
+          }),
         });
         return;
       }
@@ -5762,12 +6546,53 @@ ${combinedSection}${shotCards}
       addUsage(videoResult?.usage ?? null, videoResult?.cost ?? null);
       setUsageText(videoUsage, videoResult?.usage ?? null, videoResult?.cost ?? null);
       if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
+      const completedAt = new Date().toISOString();
+      const artifactFileName = "ai-video.mp4";
       await persistArtifactRecord("video", prompt, prompt, blob, {
-        fileName: "ai-video.mp4",
+        originalPrompt,
+        fileName: artifactFileName,
         mimeType: blob.type || videoResult?.mimeType || "video/mp4",
         preview: blob,
+        actualProvider: videoResult?.provider,
+        actualModel: videoResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "video",
+          originalPrompt,
+          effectivePrompt: prompt,
+          requestPayload: videoRequestPayload,
+          requestedProvider,
+          requestedModel,
+          referenceImages: videoReferenceSnapshot,
+          startedAt,
+          completedAt,
+          response: videoResult,
+          artifactBlob: blob,
+          artifactFileName,
+          artifactMimeType: blob.type || videoResult?.mimeType || "video/mp4",
+          artifactUrl: videoResult?.url,
+        }),
       });
     } catch (err) {
+      await persistArtifactRecord("video", prompt, "", null, {
+        status: "error",
+        originalPrompt,
+        actualProvider: videoResult?.provider,
+        actualModel: videoResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "video",
+          originalPrompt,
+          effectivePrompt: prompt,
+          requestPayload: videoRequestPayload,
+          requestedProvider,
+          requestedModel,
+          referenceImages: videoReferenceSnapshot,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          response: videoResult,
+          status: "error",
+          error: err,
+        }),
+      });
       showError(videoOutput, err);
       if (err instanceof ProxyError) {
         switch (err.statusCode) {
@@ -5800,41 +6625,88 @@ ${combinedSection}${shotCards}
 
   /* ── STRUCTURED TAB ──────────────────────────────────────── */
   async function handleStructuredGenerate() {
-    const prompt = structuredPromptEl.value.trim();
+    const originalPrompt = structuredPromptEl.value;
+    const prompt = originalPrompt.trim();
     if (!prompt) return;
+    const startedAt = new Date().toISOString();
+    const structuredSelection = tabState.get("structured") ?? {};
+    const requestedProvider = structuredSelection.provider ?? "";
+    const requestedModel = structuredSelection.model ?? "";
+    let structuredRequestPayload = { prompt };
+    let structuredResult = null;
     setLoading([btnStructuredGenerate], true);
     showSpinner(structuredOutput, "Generating structured output…");
     structuredUsage.textContent = "";
     structuredOutput.classList.add("json-output");
     try {
-      let result;
       if (modeSelect.value === "proxy") {
         // TASK-12: Read provider + model from tabState["structured"] (REQ-PM-01, S-09).
-        const { provider: structProvider, model: structModel } = tabState.get("structured") ?? {};
-        result = await proxyPost("/structured", {
+        const { provider: structProvider, model: structModel } = structuredSelection;
+        structuredRequestPayload = {
           prompt,
           provider: structProvider || undefined,
           model: structModel || undefined,
-        });
+        };
+        structuredResult = await proxyPost("/structured", structuredRequestPayload);
       } else {
-        result = await getClient().generateStructured(prompt);
+        structuredResult = await getClient().generateStructured(prompt);
       }
-      renderJson(structuredOutput, result.data);
-      addUsage(result?.usage ?? null, result?.cost ?? null);
+      renderJson(structuredOutput, structuredResult.data);
+      addUsage(structuredResult?.usage ?? null, structuredResult?.cost ?? null);
       const providerModel =
-        "Provider: " + (result.provider || "—") + " · Model: " + (result.model || "—");
-      setUsageText(structuredUsage, result?.usage ?? null, result?.cost ?? null);
+        "Provider: " + (structuredResult.provider || "—") + " · Model: " + (structuredResult.model || "—");
+      setUsageText(structuredUsage, structuredResult?.usage ?? null, structuredResult?.cost ?? null);
       structuredUsage.textContent =
         (structuredUsage.textContent ? structuredUsage.textContent + " · " : "") + providerModel;
       const structuredText =
-        typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
+        typeof structuredResult.data === "string"
+          ? structuredResult.data
+          : JSON.stringify(structuredResult.data, null, 2);
       const structuredBlob = new Blob([structuredText], { type: "application/json" });
+      const completedAt = new Date().toISOString();
+      const artifactFileName = "ai-structured.json";
       await persistArtifactRecord("structured", prompt, structuredText, structuredBlob, {
-        fileName: "ai-structured.json",
+        originalPrompt,
+        fileName: artifactFileName,
         mimeType: "application/json",
         preview: structuredBlob,
+        actualProvider: structuredResult?.provider,
+        actualModel: structuredResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "structured",
+          originalPrompt,
+          effectivePrompt: prompt,
+          requestPayload: structuredRequestPayload,
+          requestedProvider,
+          requestedModel,
+          startedAt,
+          completedAt,
+          response: structuredResult,
+          artifactBlob: structuredBlob,
+          artifactFileName,
+          artifactMimeType: "application/json",
+        }),
       });
     } catch (err) {
+      await persistArtifactRecord("structured", prompt, "", null, {
+        status: "error",
+        originalPrompt,
+        actualProvider: structuredResult?.provider,
+        actualModel: structuredResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "structured",
+          originalPrompt,
+          effectivePrompt: prompt,
+          requestPayload: structuredRequestPayload,
+          requestedProvider,
+          requestedModel,
+          startedAt,
+          completedAt: new Date().toISOString(),
+          response: structuredResult,
+          status: "error",
+          error: err,
+        }),
+      });
       structuredOutput.classList.remove("json-output");
       showError(structuredOutput, err);
       if (err instanceof ProxyError) {

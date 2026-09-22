@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 2,
+  "id": "5386c342-5235-4ff6-bfbf-e5fabbe2c2fb",
+  "modality": "image",
+  "kind": "artifact",
+  "title": "A serene mountain lake at sunrise, photorealistic, 4k",
+  "prompt": "A serene mountain lake at sunrise, photorealistic, 4k",
+  "provider": "openai",
+  "model": "gpt-image-1",
+  "styleId": "studio",
+  "seed": null,
+  "aspectRatio": "",
+  "resolution": "",
+  "quality": "",
+  "duration": null,
+  "fps": null,
+  "notes": "",
+  "tags": [],
+  "favorite": false,
+  "status": "error",
+  "transcript": "",
+  "messages": [],
+  "outputText": "",
+  "outputSummary": "",
+  "fileName": "",
+  "mimeType": "image/png",
+  "createdAt": "2026-09-21T04:23:40.076Z",
+  "updatedAt": "2026-09-21T04:23:40.076Z",
+  "hasArtifact": false,
+  "artifactSize": 0,
+  "previewSize": 0,
+  "artifact": {
+    "available": false,
+    "fileName": null,
+    "mimeType": "image/png",
+    "sizeBytes": 0,
+    "previewSizeBytes": 0,
+    "resultUrl": null
+  },
+  "metadata": {
+    "schemaVersion": 2,
+    "status": "error",
+    "originalPrompt": "A serene mountain lake at sunrise, photorealistic, 4k",
+    "actualProvider": null,
+    "actualModel": null,
+    "historyEvent": {
+      "schemaVersion": 2,
+      "modality": "image",
+      "status": "error",
+      "createdAt": "2026-09-21T04:23:38.783Z",
+      "completedAt": "2026-09-21T04:23:40.075Z",
+      "elapsedMs": 1292,
+      "requested": {
+        "provider": "openai",
+        "model": "gpt-image-1",
+        "prompt": "A serene mountain lake at sunrise, photorealistic, 4k",
+        "effectivePrompt": "A serene mountain lake at sunrise, photorealistic, 4k",
+        "referenceImages": [
+          {
+            "id": "d9fbe074-d006-4c83-b008-51f55113081e",
+            "fileName": "reference-a.png",
+            "mimeType": "image/png",
+            "sizeBytes": 182,
+            "fileRef": "b5e3859a-224c-4f72-af5d-1daa89aacb48",
+            "url": "http://localhost:3001/files/b5e3859a-224c-4f72-af5d-1daa89aacb48",
+            "uploadState": "ready",
+            "error": null
+          },
+          {
+            "id": "87a36794-ae60-4e66-b292-5cb76969f389",
+            "fileName": "reference-c.png",
+            "mimeType": "image/png",
+            "sizeBytes": 201,
+            "fileRef": "05974d98-0e1d-4056-a489-bce17287282e",
+            "url": "http://localhost:3001/files/05974d98-0e1d-4056-a489-bce17287282e",
+            "uploadState": "ready",
+            "error": null
+          }
+        ],
+        "options": {
+          "prompt": "A serene mountain lake at sunrise, photorealistic, 4k",
+          "provider": "openai",
+          "model": "gpt-image-1",
+          "aspectRatio": null,
+          "width": null,
+          "height": null,
+          "quality": null,
+          "fileRefs": ["b5e3859a-224c-4f72-af5d-1daa89aacb48", "05974d98-0e1d-4056-a489-bce17287282e"]
+        }
+      },
+      "routing": {
+        "providerRequested": "openai",
+        "providerUsed": "openai",
+        "modelRequested": "gpt-image-1",
+        "modelUsed": "gpt-image-1",
+        "requestedReferenceCount": 2,
+        "sentReferenceCount": 2
+      },
+      "result": {
+        "provider": "openai",
+        "model": "gpt-image-1",
+        "artifact": {
+          "url": null,
+          "fileName": null,
+          "mimeType": null,
+          "sizeBytes": 0
+        },
+        "actualDuration": null,
+        "usage": null,
+        "cost": null
+      },
+      "error": {
+        "code": "ProxyError",
+        "statusCode": 503,
+        "message": "All providers exhausted. Failures — openai: [openai] 400 Invalid image file or mode for image 1, please check your image file. If you believe this is an error, contact us at help.openai.com and include the request ID req_995f9ec6928b4024b06ad0e6123cdeb5."
+      }
+    },
+    "source": "web-demo"
+  }
+}

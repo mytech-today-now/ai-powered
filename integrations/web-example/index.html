@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ai-powered — web demo</title>
+    <title>ai-powered · web demo</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
       /* Modality badges — preflight shot list */
@@ -51,6 +51,46 @@
         border: 1px solid #e2e8f0;
         flex-shrink: 0;
       }
+
+      .file-thumb--pending {
+        opacity: 0.72;
+      }
+
+      .file-thumb--error {
+        border-color: #dc2626;
+      }
+
+      .file-thumb-label {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        padding: 4px;
+        color: #475569;
+        font-size: 10px;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+
+      .file-thumb--pending {
+        opacity: 0.72;
+      }
+
+      .file-thumb--error {
+        border-color: #dc2626;
+      }
+
+      .file-thumb-label {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        padding: 4px;
+        color: #475569;
+        font-size: 10px;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
       .file-thumb img {
         width: 100%;
         height: 100%;
@@ -75,6 +115,32 @@
       }
       .file-thumb-remove:hover {
         background: rgba(220, 38, 38, 0.85);
+      }
+
+      .file-thumb-state {
+        position: absolute;
+        left: 2px;
+        bottom: 2px;
+        max-width: calc(100% - 4px);
+        padding: 1px 3px;
+        border-radius: 3px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        font-size: 9px;
+        line-height: 1.1;
+      }
+
+      .file-thumb-state {
+        position: absolute;
+        left: 2px;
+        bottom: 2px;
+        max-width: calc(100% - 4px);
+        padding: 1px 3px;
+        border-radius: 3px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        font-size: 9px;
+        line-height: 1.1;
       }
 
       /* Global error banner — severity modifiers */
@@ -103,8 +169,9 @@
     <header class="app-header">
       <div class="header-title">
         <div class="header-title-copy">
-          <h1>ai-powered · web demo</h1>
+          <h1>AI-Powered</h1>
           <p class="header-subtitle">Persistent multi-modal browser workbench</p>
+          <a class="header-attribution" href="https://mytech.today">by myTech.Today</a>
         </div>
         <div class="header-title-badges">
           <span class="version-badge" id="lib-version">UMD</span>
@@ -181,33 +248,6 @@
       </button>
     </nav>
 
-    <section id="history-panel-wrap" class="history-panel-wrap" aria-label="Persistent history">
-      <div id="history-panel-header" class="history-panel-header">
-        <button id="btn-history-toggle" class="btn btn--ghost" aria-expanded="false">
-          <span id="history-chevron">&#9658;</span>
-          <span id="history-panel-label">History</span>
-          (<span id="history-count">0</span>)
-        </button>
-        <div class="history-panel-actions">
-          <button
-            id="btn-history-export-all"
-            class="btn btn--ghost"
-            title="Download the visible history"
-          >
-            Export All
-          </button>
-          <button
-            id="btn-history-clear-all"
-            class="btn btn--ghost btn--danger"
-            title="Delete the visible history"
-          >
-            Clear All
-          </button>
-        </div>
-      </div>
-      <div id="history-panel-body" class="history-panel-body hidden" role="list"></div>
-      <p id="history-panel-warning" class="hidden" aria-live="polite"></p>
-    </section>
 
     <main>
       <!-- ── TEXT TAB ──────────────────────────────────────────────── -->
@@ -268,15 +308,17 @@ Explain quantum entanglement in two sentences.</textarea
           </div>
           <span class="char-counter" id="text-prompt-counter"></span>
         </div>
-        <div class="tab-settings-bar">
-          <label class="tab-provider-label" for="text-provider-select">Provider</label>
-          <select id="text-provider-select" class="provider-select"></select>
-        </div>
-        <div class="model-row">
-          <label for="text-model-select">Model:</label>
-          <select id="text-model-select">
-            <option value="">Default</option>
-          </select>
+        <div class="processing-settings-row">
+          <div class="setting-control-group">
+            <label class="tab-provider-label" for="text-provider-select">Provider</label>
+            <select id="text-provider-select" class="provider-select"></select>
+          </div>
+          <div class="setting-control-group">
+            <label for="text-model-select">Model:</label>
+            <select id="text-model-select">
+              <option value="">Default</option>
+            </select>
+          </div>
         </div>
         <div class="input-group file-input-group">
           <label for="file-upload-input" class="file-label">Attach file</label>
@@ -330,15 +372,17 @@ A serene mountain lake at sunrise, photorealistic, 4k</textarea
           </div>
           <span class="char-counter" id="image-prompt-counter"></span>
         </div>
-        <div class="tab-settings-bar">
-          <label class="tab-provider-label" for="image-provider-select">Provider</label>
-          <select id="image-provider-select" class="provider-select"></select>
-        </div>
-        <div class="model-row">
-          <label for="image-model-select">Model:</label>
-          <select id="image-model-select">
-            <option value="">Default</option>
-          </select>
+        <div class="processing-settings-row">
+          <div class="setting-control-group">
+            <label class="tab-provider-label" for="image-provider-select">Provider</label>
+            <select id="image-provider-select" class="provider-select"></select>
+          </div>
+          <div class="setting-control-group">
+            <label for="image-model-select">Model:</label>
+            <select id="image-model-select">
+              <option value="">Default</option>
+            </select>
+          </div>
         </div>
 
         <!-- ── Image size controls ───────────────────────────────── -->
@@ -410,6 +454,7 @@ A serene mountain lake at sunrise, photorealistic, 4k</textarea
           <span id="image-file-upload-status" class="filename-display">No files attached</span>
         </div>
         <div id="image-file-thumbs" class="file-thumbs hidden"></div>
+        <p id="image-reference-notice" class="reference-notice hidden" role="status" aria-live="polite"></p>
         <div class="btn-row">
           <button id="btn-image-generate" class="btn-primary">Generate Image</button>
         </div>
@@ -419,9 +464,17 @@ A serene mountain lake at sunrise, photorealistic, 4k</textarea
 
       <!-- ── AUDIO TAB ─────────────────────────────────────────────── -->
       <section class="tab-panel hidden" id="panel-audio" role="tabpanel">
-        <div class="tab-settings-bar">
-          <label class="tab-provider-label" for="audio-provider-select">Provider</label>
-          <select id="audio-provider-select" class="provider-select"></select>
+        <div class="processing-settings-row">
+          <div class="setting-control-group">
+            <label class="tab-provider-label" for="audio-provider-select">Provider</label>
+            <select id="audio-provider-select" class="provider-select"></select>
+          </div>
+          <div class="setting-control-group">
+            <label for="tts-model-select">Model:</label>
+            <select id="tts-model-select">
+              <option value="">Default</option>
+            </select>
+          </div>
         </div>
         <!-- TTS sub-section -->
         <div class="audio-section">
@@ -458,12 +511,7 @@ Hello! This demonstrates text-to-speech synthesis.</textarea
             </div>
             <span class="char-counter" id="tts-text-counter" data-maxlength="4096"></span>
           </div>
-          <div class="model-row">
-            <label for="tts-model-select">Model:</label>
-            <select id="tts-model-select">
-              <option value="">Default</option>
-            </select>
-          </div>
+
           <div class="btn-row">
             <button id="btn-tts-speak" class="btn-primary">Synthesize Speech</button>
           </div>
@@ -485,7 +533,7 @@ Hello! This demonstrates text-to-speech synthesis.</textarea
             />
             <span id="audio-filename" class="filename-display">No file selected</span>
           </div>
-          <div class="model-row">
+          <div class="processing-settings-row audio-transcription-settings">
             <label for="transcribe-model-select">Model:</label>
             <select id="transcribe-model-select">
               <option value="">Default</option>
@@ -506,15 +554,19 @@ Hello! This demonstrates text-to-speech synthesis.</textarea
         </div>
 
         <!-- ── Shared provider + model picker (governs both Batch and Single Video) ── -->
-        <div class="video-settings-bar">
-          <label for="video-provider-select">Provider:</label>
-          <select id="video-provider-select" title="Video AI provider">
-            <option value="">Default</option>
-          </select>
-          <label for="video-model-select">Model:</label>
-          <select id="video-model-select">
-            <option value="">Default</option>
-          </select>
+        <div class="processing-settings-row video-settings-bar">
+          <div class="setting-control-group">
+            <label for="video-provider-select">Provider:</label>
+            <select id="video-provider-select" title="Video AI provider">
+              <option value="">Default</option>
+            </select>
+          </div>
+          <div class="setting-control-group">
+            <label for="video-model-select">Model:</label>
+            <select id="video-model-select">
+              <option value="">Default</option>
+            </select>
+          </div>
         </div>
 
         <!-- ── Video sub-tab navigation ───────────────────────────────── -->
@@ -731,6 +783,7 @@ A time-lapse of clouds drifting over mountain peaks at golden hour</textarea
             <span id="video-file-upload-status" class="filename-display">No files attached</span>
           </div>
           <div id="video-file-thumbs" class="file-thumbs hidden"></div>
+          <p id="video-reference-notice" class="reference-notice hidden" role="status" aria-live="polite"></p>
           <!-- Shown when Luma AI is selected with an image but PROXY_PUBLIC_BASE_URL is not set -->
           <div id="video-luma-tunnel-warn" class="warn-box hidden">
             ⚠ <strong>Public HTTPS URL required.</strong> Luma AI image-to-video needs a publicly
@@ -857,15 +910,17 @@ List 3 programming languages. Return a JSON array where each object has: name (s
           </div>
           <span class="char-counter" id="structured-prompt-counter"></span>
         </div>
-        <div class="tab-settings-bar">
-          <label class="tab-provider-label" for="structured-provider-select">Provider</label>
-          <select id="structured-provider-select" class="provider-select"></select>
-        </div>
-        <div class="model-row">
-          <label for="structured-model-select">Model:</label>
-          <select id="structured-model-select">
-            <option value="">Default</option>
-          </select>
+        <div class="processing-settings-row">
+          <div class="setting-control-group">
+            <label class="tab-provider-label" for="structured-provider-select">Provider</label>
+            <select id="structured-provider-select" class="provider-select"></select>
+          </div>
+          <div class="setting-control-group">
+            <label for="structured-model-select">Model:</label>
+            <select id="structured-model-select">
+              <option value="">Default</option>
+            </select>
+          </div>
         </div>
         <div class="btn-row">
           <button id="btn-structured-generate" class="btn-primary">Generate JSON</button>
@@ -874,6 +929,33 @@ List 3 programming languages. Return a JSON array where each object has: name (s
         <div id="structured-usage" class="usage-bar"></div>
       </section>
     </main>
+    <section id="history-panel-wrap" class="history-panel-wrap" aria-label="Persistent history">
+      <div id="history-panel-header" class="history-panel-header">
+        <button id="btn-history-toggle" class="btn btn--ghost" aria-expanded="false">
+          <span id="history-chevron">&#9658;</span>
+          <span id="history-panel-label">History</span>
+          (<span id="history-count">0</span>)
+        </button>
+        <div class="history-panel-actions">
+          <button
+            id="btn-history-export-all"
+            class="btn btn--ghost"
+            title="Download the visible history"
+          >
+            Export All
+          </button>
+          <button
+            id="btn-history-clear-all"
+            class="btn btn--ghost btn--danger"
+            title="Delete the visible history"
+          >
+            Clear All
+          </button>
+        </div>
+      </div>
+      <div id="history-panel-body" class="history-panel-body hidden" role="list"></div>
+      <p id="history-panel-warning" class="hidden" aria-live="polite"></p>
+    </section>
 
     <!-- ── Footer: session cost tracker ──────────────────────────── -->
     <footer class="app-footer">

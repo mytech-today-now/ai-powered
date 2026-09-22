@@ -120,6 +120,7 @@ export interface ObjectUrlRegistry {
 
 export const DEFAULT_BROWSER_DB_NAME = "ai-powered-browser-workbench";
 export const DEFAULT_BROWSER_DB_VERSION = 1;
+export const BROWSER_RECORD_SCHEMA_VERSION = 2;
 export const DEFAULT_STORAGE_PREFIXES = ["ai-powered:", "ai-demo-"];
 export const DEFAULT_REMOTE_CACHE_PREFIXES = ["ai-powered:remote:"];
 
@@ -983,7 +984,12 @@ export function createBrowserRecordStore(options: BrowserStorageOptions = {}): B
 }
 
 export function recordToManifest(record: BrowserRecord): Record<string, unknown> {
+  const metadata = { ...record.metadata };
   return {
+    schemaVersion:
+      typeof metadata["schemaVersion"] === "number"
+        ? metadata["schemaVersion"]
+        : BROWSER_RECORD_SCHEMA_VERSION,
     id: record.id,
     modality: record.modality,
     kind: record.kind,
@@ -1003,6 +1009,7 @@ export function recordToManifest(record: BrowserRecord): Record<string, unknown>
     favorite: record.favorite,
     status: record.status,
     transcript: record.transcript,
+    messages: record.messages.map(cloneMessage),
     outputText: record.outputText,
     outputSummary: record.outputSummary,
     fileName: record.fileName,
@@ -1012,7 +1019,31 @@ export function recordToManifest(record: BrowserRecord): Record<string, unknown>
     hasArtifact: Boolean(record.artifact),
     artifactSize: record.artifact?.size ?? 0,
     previewSize: record.preview?.size ?? 0,
-    metadata: { ...record.metadata },
+    artifact: {
+      available: Boolean(record.artifact),
+      fileName: record.fileName || null,
+      mimeType: record.mimeType,
+      sizeBytes: record.artifact?.size ?? 0,
+      previewSizeBytes: record.preview?.size ?? 0,
+      resultUrl:
+        typeof (
+          metadata["historyEvent"] as { result?: { artifact?: { url?: unknown } } } | undefined
+        )?.result?.artifact?.url === "string"
+          ? ((metadata["historyEvent"] as { result?: { artifact?: { url?: string } } }).result
+              ?.artifact?.url ?? null)
+          : null,
+    },
+    metadata,
+  };
+}
+
+export function recordDownloadJsonPayload(record: BrowserRecord): { blob: Blob; filename: string } {
+  const stem = sanitizeFileStem(record.title || record.modality || record.id) || "record";
+  const id = sanitizeFileStem(record.id) || "record";
+  const filename = `ai-powered-${record.modality}-${stem}-${id}.json`;
+  return {
+    blob: createTextBlob(JSON.stringify(recordToManifest(record), null, 2), "application/json"),
+    filename,
   };
 }
 

@@ -3820,3 +3820,6 @@
 {"id":"bd-5pcs","status":"closed","close_reason":"done","updated_at":"2026-09-16T11:02:36Z"}
 {"id":"bd-8kfu","title":"[web-example] Verified direct-mode credential persistence in browser demo","status":"open","priority":1,"issue_type":"task","description":"Expose direct-mode API key entry in the visible browser GUI, verify keys before saving, restore provider-scoped saved keys, and handle storage fallback gracefully.","labels":[],"dependencies":[],"claimed_by":"","close_reason":"","created_at":"2026-09-17T17:39:26Z","updated_at":"2026-09-17T17:39:26Z"}
 {"id":"bd-8kfu","updated_at":"2026-09-17T17:39:34Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-8jlh","title":"Demo GUI reference images and enriched history","status":"open","priority":1,"issue_type":"task","description":"Accumulate reference images across selections, remove exact items safely, and record/export complete per-event history metadata.","labels":[],"dependencies":[],"claimed_by":"","close_reason":"","created_at":"2026-09-20T22:57:20Z","updated_at":"2026-09-20T22:57:20Z"}
+{"id":"bd-8jlh","updated_at":"2026-09-20T22:57:27Z","status":"in-progress","claimed_by":"kyle_"}
+{"id":"bd-8jlh","status":"closed","close_reason":"Implemented stable reference accumulation, safe removal, enriched history metadata, JSON export, and validation","updated_at":"2026-09-20T23:26:34Z"}

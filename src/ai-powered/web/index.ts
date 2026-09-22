@@ -47,6 +47,7 @@ export type { Template } from "../templates/builtins.js";
 export {
   DEFAULT_BROWSER_DB_NAME,
   DEFAULT_BROWSER_DB_VERSION,
+  BROWSER_RECORD_SCHEMA_VERSION,
   DEFAULT_REMOTE_CACHE_PREFIXES,
   DEFAULT_STORAGE_PREFIXES,
   DEFAULT_UI_KEYS,
@@ -57,6 +58,7 @@ export {
   listPrefsByPrefix,
   readJsonPreference,
   recordDownloadName,
+  recordDownloadJsonPayload,
   recordDownloadPayload,
   recordSummaryText,
   recordToManifest,
