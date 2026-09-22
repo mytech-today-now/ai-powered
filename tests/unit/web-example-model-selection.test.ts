@@ -3,7 +3,10 @@ import { resolve } from "node:path";
 import * as vm from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
-const source = readFileSync(resolve(process.cwd(), "integrations/web-example/app.js"), "utf8");
+const source = readFileSync(
+  resolve(process.cwd(), "integrations/web-example/app.js"),
+  "utf8",
+).replace(/\r\n/g, "\n");
 
 function sliceFunction(startMarker: string, endMarker: string): string {
   const start = source.indexOf(startMarker);
@@ -52,6 +55,7 @@ function createHarness() {
   const context: any = {
     console,
     modeSelect: { value: "proxy" },
+    currentMode: () => "proxy",
     MODEL_SELECTS: { image: select },
     tabState: new Map([["image", { provider: "mock", model: "model-keep" }]]),
     modelRefreshVersions: new Map(),

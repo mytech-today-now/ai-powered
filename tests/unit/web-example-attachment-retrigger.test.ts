@@ -52,6 +52,7 @@ function runRetrigger({
     },
     activeTab: () => activeTabValue,
     modeSelect: { value: mode },
+    currentMode: () => mode,
     allProviders,
     PROVIDER_SELECTS: {
       video: providerSelect,

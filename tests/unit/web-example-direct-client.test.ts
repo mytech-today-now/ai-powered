@@ -38,7 +38,10 @@ function createStorage(initial: Record<string, string> = {}) {
 }
 
 function buildContext(options: {
-  mode?: string;
+  mode?: string | null;
+  savedMode?: string;
+  savedProxyUrl?: string;
+  proxyUrl?: string;
   localValues?: Record<string, string>;
   sessionValues?: Record<string, string>;
 }) {
@@ -60,8 +63,10 @@ function buildContext(options: {
       openrouter: "OpenRouter",
     },
     localStorage,
-    modeSelect: { value: options.mode ?? "proxy" },
-    proxyUrlInput: { value: "http://localhost:3001" },
+    modeSelect: options.mode === null ? null : { value: options.mode ?? "proxy" },
+    proxyUrlInput: { value: options.proxyUrl ?? options.savedProxyUrl ?? "http://localhost:3001" },
+    currentMode: () => options.mode ?? options.savedMode ?? "proxy",
+    currentProxyUrl: () => options.proxyUrl ?? options.savedProxyUrl ?? "http://localhost:3001",
     sessionStorage,
   };
 
@@ -103,6 +108,36 @@ describe("web-example direct client storage", () => {
     });
   });
 
+  it("uses saved direct mode when main page controls are absent", () => {
+    const { createWebClient, getClient } = buildContext({
+      mode: null,
+      savedMode: "direct",
+      localValues: {
+        "ai-powered:direct:provider": "openai",
+        "ai-powered:direct:api-key:openai": "sk-saved-123",
+      },
+    });
+    expect(getClient()).toEqual({
+      config: { mode: "direct", provider: "openai", apiKey: "sk-saved-123", budgetUsd: Infinity },
+    });
+    expect(createWebClient).toHaveBeenCalledWith({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "sk-saved-123",
+      budgetUsd: Infinity,
+    });
+  });
+
+  it("uses the saved proxy URL when main page controls are absent", () => {
+    const { getClient } = buildContext({
+      mode: null,
+      savedMode: "proxy",
+      savedProxyUrl: "https://proxy.example.test",
+    });
+    expect(getClient()).toEqual({
+      config: { mode: "proxy", proxyUrl: "https://proxy.example.test" },
+    });
+  });
   it("fails closed when direct mode is selected without a stored API key", () => {
     const { createWebClient, getClient } = buildContext({
       mode: "direct",

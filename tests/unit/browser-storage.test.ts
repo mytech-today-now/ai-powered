@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserRecordDraft } from "../../src/ai-powered/web/browser-storage.js";
 import {
   DEFAULT_REMOTE_CACHE_PREFIXES,
+  DEFAULT_REFERENCE_CACHE_KEY,
   DEFAULT_STORAGE_PREFIXES,
   DEFAULT_UI_KEYS,
   clearPrefsByPrefix,
@@ -245,5 +246,39 @@ describe("browser storage helpers", () => {
     registry.revokeAll();
     expect(revokeObjectURL).toHaveBeenCalledWith(second);
     expect(registry.size()).toBe(0);
+  });
+
+  it("round-trips Blob-backed reference metadata through the existing cache", async () => {
+    const store = createBrowserRecordStore({ backend: "memory" });
+    await store.ready;
+    const blob = new Blob(["reference"], { type: "image/png" });
+    await store.setCache(DEFAULT_REFERENCE_CACHE_KEY, {
+      schemaVersion: 1,
+      items: [
+        {
+          id: "reference-1",
+          collection: "image",
+          fileName: "café 画像.png",
+          mimeType: "image/png",
+          sizeBytes: blob.size,
+          lastModified: 42,
+          fingerprint: "fingerprint",
+          referenceKind: "image",
+          uploadState: "ready",
+          fileRef: "file-ref",
+          error: null,
+          blob,
+        },
+      ],
+    });
+
+    const restored = await store.getCache<any>(DEFAULT_REFERENCE_CACHE_KEY);
+    expect(restored?.items[0]).toMatchObject({
+      id: "reference-1",
+      fileName: "café 画像.png",
+      mimeType: "image/png",
+      fileRef: "file-ref",
+    });
+    expect(restored?.items[0].blob).toBe(blob);
   });
 });

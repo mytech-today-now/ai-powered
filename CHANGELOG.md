@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.11] - 2026-09-21
+
+### Added
+
+- Ordered, persistent browser reference uploads now preserve exact filenames across reloads, support keyboard-accessible reorder and removal, and retain files until successful AI consumption.
+- Browser model controls now derive finite capability values and duration choices from model metadata, including ordered Pika Frames references.
+
+### Changed
+
+- Direct-mode credentials and proxy configuration remain centralized in `info.html#settings-configuration`; the main demo keeps one shared UI across local, hosted, and tunneled deployments.
+- Server-side video validation now enforces model capability values, duration ranges, and reference-count requirements.
+
+### Fixed
+
+- Failed uploads, malformed storage records, failed AI requests, and unavailable browser storage now degrade safely without losing unrelated reference state.
+
 ## [0.5.10] - 2026-09-17
 
 ### Added

@@ -143,6 +143,58 @@
         line-height: 1.1;
       }
 
+      .file-thumb {
+        width: 180px;
+        height: auto;
+        min-height: 104px;
+        padding: 4px;
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr);
+        gap: 4px;
+        overflow: visible;
+        align-items: center;
+      }
+      .file-thumb img,
+      .file-thumb-label {
+        width: 64px;
+        height: 64px;
+        grid-row: 1 / span 2;
+      }
+      .file-thumb-state {
+        position: static;
+        max-width: 100%;
+        width: fit-content;
+      }
+      .file-thumb-name {
+        grid-column: 1 / -1;
+        min-width: 0;
+        color: #334155;
+        font-size: 11px;
+        overflow-wrap: anywhere;
+      }
+      .file-thumb-reorder,
+      .file-thumb-retry,
+      .file-thumb-remove {
+        position: static;
+        width: auto;
+        min-height: 1.7rem;
+        padding: 2px 6px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        background: #fff;
+        color: #334155;
+        cursor: pointer;
+        font-size: 11px;
+        line-height: 1.2;
+      }
+      .file-thumb-reorder:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+      .file-thumb-remove {
+        color: #b91c1c;
+      }
+
       /* Global error banner — severity modifiers */
       .global-error--error {
         background: #bf2600;
@@ -171,7 +223,7 @@
         <div class="header-title-copy">
           <h1>AI-Powered</h1>
           <p class="header-subtitle">Persistent multi-modal browser workbench</p>
-          <a class="header-attribution" href="https://mytech.today">by myTech.Today</a>
+          <a class="header-attribution" href="https://mytech.today" target="_blank" rel="noopener noreferrer">by myTech.Today</a>
         </div>
         <div class="header-title-badges">
           <span class="version-badge" id="lib-version">UMD</span>
@@ -211,30 +263,7 @@
         </div>
       </div>
 
-      <section class="mode-section">
-        <!-- Mode toggle -->
-        <div class="mode-row">
-          <label for="mode-select">Mode:</label>
-          <select id="mode-select">
-            <option value="proxy">Proxy (recommended)</option>
-            <option value="direct">Direct (dev only)</option>
-          </select>
-          <label for="proxy-url">Proxy URL:</label>
-          <input
-            id="proxy-url"
-            type="text"
-            value="http://localhost:3001"
-            placeholder="http://localhost:3001"
-            spellcheck="false"
-          />
-        </div>
-
-        <!-- Proxy config -->
-        <div id="proxy-config" class="connection-config proxy-config">
-          <span class="hint">Run <code>npm run serve</code> to start the proxy server.</span>
-          <small id="attachment-notice" style="color: #888" aria-live="polite"></small>
-        </div>
-      </section>
+      <small id="attachment-notice" style="color: #888" aria-live="polite"></small>
     </header>
 
     <!-- ── Modality Tab Bar ───────────────────────────────────────── -->
@@ -633,15 +662,7 @@ Hello! This demonstrates text-to-speech synthesis.</textarea
             </div>
             <div class="size-controls-row">
               <label for="batch-duration">Duration (s):</label>
-              <input
-                id="batch-duration"
-                type="number"
-                min="1"
-                max="60"
-                step="1"
-                placeholder="e.g. 5"
-                class="dim-input"
-              />
+              <select id="batch-duration" class="dim-input" aria-label="Batch duration"></select>
 
               <label for="batch-fps">FPS:</label>
               <select id="batch-fps">
@@ -824,15 +845,7 @@ A time-lapse of clouds drifting over mountain peaks at golden hour</textarea
 
           <div class="size-controls-row">
             <label for="video-duration">Duration (s):</label>
-            <input
-              id="video-duration"
-              type="number"
-              min="1"
-              max="60"
-              step="1"
-              placeholder="e.g. 5"
-              class="dim-input"
-            />
+            <select id="video-duration" class="dim-input" aria-label="Video duration"></select>
 
             <label for="video-fps">FPS:</label>
             <select id="video-fps">
@@ -1023,8 +1036,6 @@ List 3 programming languages. Return a JSON array where each object has: name (s
     </script>
   </body>
 </html>
-
-
 
 
 

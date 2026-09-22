@@ -43,6 +43,8 @@
     DEFAULT_BROWSER_DB_NAME,
     DEFAULT_UI_KEYS,
     BROWSER_RECORD_SCHEMA_VERSION,
+    BROWSER_REFERENCE_SCHEMA_VERSION,
+    DEFAULT_REFERENCE_CACHE_KEY,
     DEFAULT_STORAGE_PREFIXES,
     DEFAULT_REMOTE_CACHE_PREFIXES,
   } = window.AiPowered;
@@ -68,6 +70,19 @@
     proxyUrl: "ai-powered:connection:proxy-url",
   };
   const DEFAULT_PROXY_URL = "http://localhost:3001";
+  let savedConnectionMode = "proxy";
+  let savedProxyUrl = DEFAULT_PROXY_URL;
+
+  function currentMode() {
+    if (modeSelect?.value === "direct") return "direct";
+    if (modeSelect?.value === "proxy") return "proxy";
+    return savedConnectionMode;
+  }
+
+  function currentProxyUrl() {
+    const value = proxyUrlInput?.value ?? savedProxyUrl;
+    return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_PROXY_URL;
+  }
 
   function detectDefaultProxyUrl() {
     const _host = window.location.hostname;
@@ -77,10 +92,13 @@
   }
 
   function syncConnectionFromStorage() {
-    const rawStoredMode = localStorage.getItem(connectionStorageKeys.mode);
+    const rawStoredMode = safeGetItem(localStorage, connectionStorageKeys.mode);
     const storedMode = rawStoredMode === "direct" ? "direct" : "proxy";
-    const storedProxyUrl = localStorage.getItem(connectionStorageKeys.proxyUrl);
+    const storedProxyUrl = safeGetItem(localStorage, connectionStorageKeys.proxyUrl);
     const resolvedProxyUrl = storedProxyUrl === null ? detectDefaultProxyUrl() : storedProxyUrl;
+
+    savedConnectionMode = storedMode;
+    savedProxyUrl = resolvedProxyUrl;
 
     if (modeSelect) {
       modeSelect.value = storedMode;
@@ -89,10 +107,10 @@
       proxyUrlInput.value = resolvedProxyUrl;
     }
     if (rawStoredMode !== storedMode) {
-      localStorage.setItem(connectionStorageKeys.mode, storedMode);
+      safeSetItem(localStorage, connectionStorageKeys.mode, storedMode);
     }
     if (storedProxyUrl === null) {
-      localStorage.setItem(connectionStorageKeys.proxyUrl, resolvedProxyUrl);
+      safeSetItem(localStorage, connectionStorageKeys.proxyUrl, resolvedProxyUrl);
     }
   }
 
@@ -701,6 +719,140 @@
   let imageReferenceItems = [];
   /** Ordered reference items for the video tab. This collection is independent from image tab state. */
   let videoReferenceItems = [];
+  let imageUploadController = null;
+  let videoUploadController = null;
+  let referencePersistenceChain = Promise.resolve();
+
+  function storageItemForReference(item, collection) {
+    if (!(item.file instanceof Blob)) return null;
+    return {
+      id: item.id,
+      collection,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      sizeBytes: item.sizeBytes,
+      lastModified: Number(item.file.lastModified ?? 0),
+      fingerprint: item.fingerprint,
+      referenceKind: item.referenceKind,
+      uploadState: item.uploadState,
+      fileRef: item.fileRef ?? null,
+      error: item.error ?? null,
+      blob: item.file,
+    };
+  }
+
+  function persistReferenceItems() {
+    const snapshot = {
+      schemaVersion: BROWSER_REFERENCE_SCHEMA_VERSION,
+      items: [
+        ...imageReferenceItems
+          .map((item) => storageItemForReference(item, "image"))
+          .filter(Boolean),
+        ...videoReferenceItems
+          .map((item) => storageItemForReference(item, "video"))
+          .filter(Boolean),
+      ],
+    };
+    referencePersistenceChain = referencePersistenceChain
+      .catch(() => undefined)
+      .then(() => browserStore.setCache(DEFAULT_REFERENCE_CACHE_KEY, snapshot))
+      .catch((error) => {
+        console.warn("Reference files could not be persisted.", error);
+      });
+    return referencePersistenceChain;
+  }
+
+  function restoredFile(entry) {
+    if (typeof File === "function") {
+      return new File([entry.blob], entry.fileName, {
+        type: entry.mimeType,
+        lastModified: Number(entry.lastModified) || 0,
+      });
+    }
+    return entry.blob;
+  }
+
+  function normalizeReferenceCache(stored) {
+    const version = Array.isArray(stored) ? 0 : Number(stored?.schemaVersion ?? 0);
+    if (!stored || (typeof stored !== "object" && !Array.isArray(stored)) || !Number.isInteger(version) || version < 0 || version > BROWSER_REFERENCE_SCHEMA_VERSION) return null;
+    return { schemaVersion: version, items: Array.isArray(stored) ? stored : Array.isArray(stored.items) ? stored.items : [] };
+  }
+  async function restorePersistedReferences() {
+    let stored;
+    try {
+      stored = await browserStore.getCache(DEFAULT_REFERENCE_CACHE_KEY);
+    } catch (error) {
+      console.warn("Reference files could not be restored.", error);
+      return;
+    }
+    const cache = normalizeReferenceCache(stored);
+    if (!cache) return;
+    const seenIds = new Set();
+    const restoreCollection = (collection, target) => {
+      for (const entry of cache.items) {
+        if (entry?.collection !== collection || seenIds.has(entry.id)) continue;
+        if (
+          typeof entry.id !== "string" ||
+          typeof entry.fileName !== "string" ||
+          typeof entry.mimeType !== "string" ||
+          !(entry.blob instanceof Blob)
+        ) {
+          continue;
+        }
+        seenIds.add(entry.id);
+        const supported = entry.referenceKind === "image" || entry.referenceKind === "video";
+        const item = {
+          id: entry.id,
+          file: restoredFile(entry),
+          fileName: entry.fileName,
+          mimeType: entry.mimeType,
+          sizeBytes: Number(entry.sizeBytes) || entry.blob.size,
+          fingerprint:
+            entry.fingerprint ||
+            [entry.fileName, entry.mimeType, entry.blob.size, entry.lastModified].join("\u001f"),
+          previewUrl: null,
+          referenceKind: supported ? entry.referenceKind : "invalid",
+          uploadState: "error",
+          fileRef: null,
+          error: supported
+            ? "Reloaded file; retry upload before processing."
+            : entry.error || "Unsupported reference file type.",
+        };
+        if (supported) {
+          try {
+            item.previewUrl = URL.createObjectURL(item.file);
+          } catch (error) {
+            item.error = "Preview unavailable; the original file is retained.";
+            console.warn("Reference preview could not be created.", error);
+          }
+        }
+        target.push(item);
+      }
+    };
+    restoreCollection("image", imageReferenceItems);
+    restoreCollection("video", videoReferenceItems);
+    updateImageAttachmentState();
+    if (cache.schemaVersion !== BROWSER_REFERENCE_SCHEMA_VERSION) await persistReferenceItems();
+  }
+
+  function consumeReferenceItems(items, ids, controller) {
+    const consumed = new Set(Array.isArray(ids) ? ids : []);
+    if (!consumed.size) return;
+    for (let index = items.length - 1; index >= 0; index--) {
+      if (!consumed.has(items[index].id)) continue;
+      const item = items.splice(index, 1)[0];
+      if (item.previewUrl) {
+        try {
+          URL.revokeObjectURL(item.previewUrl);
+        } catch (_) {}
+      }
+    }
+    updateImageAttachmentState();
+    controller?.render();
+    controller?.updateStatus();
+    void persistReferenceItems();
+    void retriggerAttachmentDropdowns();
+  }
 
   /**
    * Cached server capability: true when the proxy has PROXY_PUBLIC_BASE_URL set
@@ -817,6 +969,7 @@
 
     return {
       fileRefs: usedItems.map((item) => item.fileRef),
+      usedReferenceIds: usedItems.map((item) => item.id),
       referenceImages: snapshotReferenceItems(items),
     };
   }
@@ -1179,7 +1332,7 @@
       };
     }
 
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const base = currentProxyUrl();
     let url = `${base}/models?modality=${modality}`;
     if (provider) url += `&provider=${encodeURIComponent(provider)}`;
     if (acceptsImage) url += "&accepts=image";
@@ -1440,6 +1593,75 @@
     }
     applyReferenceVisualState(inputId === "image-file-upload-input" ? "image" : "video");
   }
+
+  function capabilityValues(descriptor, key) {
+    const values = descriptor?.[key];
+    return Array.isArray(values) ? values.map(String) : [];
+  }
+
+  function durationCapabilityValues(descriptor) {
+    const durationOption = (descriptor?.options ?? []).find((option) => option.name === "duration");
+    const finiteValues = (durationOption?.values ?? [])
+      .map(Number)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (finiteValues.length) return [...new Set(finiteValues)].sort((a, b) => a - b);
+    const range = descriptor?.durationRange;
+    if (!range || !Number.isFinite(Number(range.min)) || !Number.isFinite(Number(range.max))) {
+      return [];
+    }
+    const min = Math.ceil(Number(range.min));
+    const max = Math.floor(Number(range.max));
+    if (min > max || max - min > 120) return [];
+    return Array.from({ length: max - min + 1 }, (_, index) => min + index);
+  }
+
+  function syncCapabilitySelects(selects, values) {
+    for (const select of selects) {
+      if (!select) continue;
+      const previous = select.value;
+      select.innerHTML = "";
+      if (values.length) {
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = "Default";
+        select.appendChild(defaultOption);
+        for (const value of values) {
+          const option = document.createElement("option");
+          option.value = String(value);
+          option.textContent = String(value);
+          select.appendChild(option);
+        }
+      }
+      select.disabled = values.length === 0;
+      select.value = values.some((value) => String(value) === previous) ? previous : "";
+    }
+  }
+
+  function validateCapabilityValues(descriptor, values) {
+    const capabilityMap = {
+      aspectRatio: "aspectRatios",
+      resolution: "resolutions",
+      fps: "fpsOptions",
+      quality: "qualityOptions",
+    };
+    for (const [field, key] of Object.entries(capabilityMap)) {
+      const value = values[field];
+      if (value === undefined || value === null || value === "") continue;
+      const supported = capabilityValues(descriptor, key);
+      if (!supported.length || !supported.includes(String(value))) {
+        throw new Error(`${field} is not supported by the selected model.`);
+      }
+    }
+
+    const duration = values.duration;
+    if (duration !== undefined && duration !== null && duration !== "") {
+      const supported = durationCapabilityValues(descriptor).map(String);
+      if (!supported.includes(String(duration))) {
+        throw new Error("duration is not supported by the selected model.");
+      }
+    }
+  }
+
   /**
    * Syncs the image upload label to the capabilities of the selected image model.
    *
@@ -1448,6 +1670,8 @@
    * the default copy used in the HTML markup.
    */
   function syncImageConstraints(descriptor) {
+    syncCapabilitySelects([imageAspectRatio], capabilityValues(descriptor, "aspectRatios"));
+    syncCapabilitySelects([imageQuality], capabilityValues(descriptor, "qualityOptions"));
     syncReferenceUploadLabel(
       "image-file-upload-input",
       descriptor,
@@ -1457,6 +1681,7 @@
   }
 
   function validateVideoOptions(descriptor, values) {
+    validateCapabilityValues(descriptor, values);
     for (const option of descriptor?.options ?? []) {
       const value = values[option.name];
       if (value === undefined || value === "") continue;
@@ -1488,61 +1713,14 @@
     const fpsSelects = [videoFps, batchFpsEl].filter(Boolean);
     const qualitySelects = [videoQuality, batchQualityEl].filter(Boolean);
 
-    if (!descriptor) {
-      // No specific model — show all options
-      [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects].forEach(
-        _clearSelectFilter,
-      );
-      [...aspectSelects, ...resolutionSelects, ...fpsSelects, ...qualitySelects].forEach(
-        (select) => {
-          if (select) select.value = "";
-        },
-      );
-      syncPikaOptions(null);
-      syncReferenceUploadLabel(
-        "video-file-upload-input",
-        null,
-        "Attach reference images or video",
-        "Attach reference media",
-      );
-      return;
-    }
-
-    if (descriptor.aspectRatios && descriptor.aspectRatios.length > 0) {
-      aspectSelects.forEach((s) => _filterSelect(s, descriptor.aspectRatios));
-    } else {
-      aspectSelects.forEach((select) => {
-        _clearSelectFilter(select);
-        if (select) select.value = "";
-      });
-    }
-
-    if (descriptor.resolutions && descriptor.resolutions.length > 0) {
-      resolutionSelects.forEach((s) => _filterSelect(s, descriptor.resolutions));
-    } else {
-      resolutionSelects.forEach((select) => {
-        _clearSelectFilter(select);
-        if (select) select.value = "";
-      });
-    }
-
-    if (descriptor.fpsOptions && descriptor.fpsOptions.length > 0) {
-      fpsSelects.forEach((s) => _filterSelect(s, descriptor.fpsOptions));
-    } else {
-      fpsSelects.forEach((select) => {
-        _clearSelectFilter(select);
-        if (select) select.value = "";
-      });
-    }
-
-    if (descriptor.qualityOptions && descriptor.qualityOptions.length > 0) {
-      qualitySelects.forEach((s) => _filterSelect(s, descriptor.qualityOptions));
-    } else {
-      qualitySelects.forEach((select) => {
-        _clearSelectFilter(select);
-        if (select) select.value = "";
-      });
-    }
+    syncCapabilitySelects(aspectSelects, capabilityValues(descriptor, "aspectRatios"));
+    syncCapabilitySelects(resolutionSelects, capabilityValues(descriptor, "resolutions"));
+    syncCapabilitySelects(fpsSelects, capabilityValues(descriptor, "fpsOptions"));
+    syncCapabilitySelects(qualitySelects, capabilityValues(descriptor, "qualityOptions"));
+    syncCapabilitySelects(
+      [videoDuration, batchDurationEl].filter(Boolean),
+      durationCapabilityValues(descriptor),
+    );
     syncPikaOptions(descriptor);
   }
 
@@ -1555,7 +1733,7 @@
    */
   async function loadVideoModels(providerHint) {
     try {
-      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+      const base = currentProxyUrl();
       const provider =
         providerHint !== undefined ? providerHint : (videoProviderSelect?.value ?? "");
       let url = base + "/models?modality=video";
@@ -1610,10 +1788,10 @@
 
   /* ── Client factory ─────────────────────────────────────── */
   function getClient() {
-    if (modeSelect.value === "proxy") {
+    if (currentMode() === "proxy") {
       return createWebClient({
         mode: "proxy",
-        proxyUrl: proxyUrlInput.value.trim() || "http://localhost:3001",
+        proxyUrl: currentProxyUrl(),
       });
     }
 
@@ -2032,7 +2210,7 @@
 
   /* ── Proxy fetch helpers ─────────────────────────────────── */
   async function proxyPost(endpoint, body) {
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const base = currentProxyUrl();
     const payload = { ...body };
 
     let resp;
@@ -2062,7 +2240,7 @@
   }
 
   async function proxyStream(endpoint, body) {
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const base = currentProxyUrl();
     let resp;
     try {
       resp = await fetch(`${base}${endpoint}`, {
@@ -2175,7 +2353,7 @@
    * @returns {Promise<string>} The fileRef UUID token.
    */
   async function uploadFile(file, providerOverride) {
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const base = currentProxyUrl();
     const provider = providerOverride || tabState.get("text")?.provider || undefined;
     const formData = new FormData();
     formData.append("file", file);
@@ -2258,7 +2436,7 @@
    * @returns {Promise<string>} The fileRef UUID token.
    */
   async function uploadFileRaw(file, providerOverride) {
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const base = currentProxyUrl();
     const provider = providerOverride || undefined;
     const formData = new FormData();
     formData.append("file", file);
@@ -2267,7 +2445,7 @@
     try {
       resp = await fetch(base + "/upload", { method: "POST", body: formData });
     } catch (_) {
-      throw new Error("Cannot reach proxy server at " + base + ". Start it with: npm run serve");
+      throw new Error("Cannot reach the configured proxy server at " + base + ".");
     }
     if (!resp.ok) {
       let msg = `Server error ${resp.status}`;
@@ -2357,6 +2535,21 @@
       updateImageAttachmentState();
       updateStatus();
       render();
+      if (typeof persistReferenceItems === "function") void persistReferenceItems();
+      void retriggerAttachmentDropdowns();
+      if (onDone) void onDone();
+    }
+
+    function moveReference(itemId, offset) {
+      const index = items.findIndex((item) => item.id === itemId);
+      const nextIndex = index + offset;
+      if (index < 0 || nextIndex < 0 || nextIndex >= items.length) return;
+      const [item] = items.splice(index, 1);
+      items.splice(nextIndex, 0, item);
+      updateImageAttachmentState();
+      render();
+      updateStatus();
+      if (typeof persistReferenceItems === "function") void persistReferenceItems();
       void retriggerAttachmentDropdowns();
       if (onDone) void onDone();
     }
@@ -2404,6 +2597,43 @@
         stateLabel.setAttribute("aria-label", stateLabel.textContent);
         wrap.appendChild(stateLabel);
 
+        const fileName = document.createElement("span");
+        fileName.className = "file-thumb-name";
+        fileName.textContent = item.fileName;
+        fileName.title = item.fileName;
+        wrap.appendChild(fileName);
+
+        const moveUp = document.createElement("button");
+        moveUp.type = "button";
+        moveUp.className = "file-thumb-reorder file-thumb-move-up";
+        moveUp.title = "Move " + item.fileName + " up";
+        moveUp.setAttribute("aria-label", "Move " + item.fileName + " up");
+        moveUp.textContent = "Up";
+        moveUp.disabled = items.indexOf(item) === 0;
+        moveUp.addEventListener("click", () => moveReference(item.id, -1));
+        wrap.appendChild(moveUp);
+
+        const moveDown = document.createElement("button");
+        moveDown.type = "button";
+        moveDown.className = "file-thumb-reorder file-thumb-move-down";
+        moveDown.title = "Move " + item.fileName + " down";
+        moveDown.setAttribute("aria-label", "Move " + item.fileName + " down");
+        moveDown.textContent = "Down";
+        moveDown.disabled = items.indexOf(item) === items.length - 1;
+        moveDown.addEventListener("click", () => moveReference(item.id, 1));
+        wrap.appendChild(moveDown);
+
+        if (item.uploadState === "error" && item.referenceKind !== "invalid") {
+          const retry = document.createElement("button");
+          retry.type = "button";
+          retry.className = "file-thumb-retry";
+          retry.title = "Retry upload for " + item.fileName;
+          retry.setAttribute("aria-label", "Retry upload for " + item.fileName);
+          retry.textContent = "Retry";
+          retry.addEventListener("click", () => uploadItem(item));
+          wrap.appendChild(retry);
+        }
+
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "file-thumb-remove";
@@ -2426,6 +2656,37 @@
         : mimeType.startsWith("image/");
     }
 
+    async function uploadItem(item) {
+      if (!items.includes(item) || item.referenceKind === "invalid") return;
+      item.uploadState = "pending";
+      item.error = null;
+      item.fileRef = null;
+      updateStatus();
+      render();
+      if (typeof persistReferenceItems === "function") void persistReferenceItems();
+      try {
+        const uploadReady = await compressImageForUpload(item.file);
+        const ref = await uploadFileRaw(
+          uploadReady,
+          tabState.get(inputEl === videoFileUploadInput ? "video" : "image")?.provider,
+        );
+        const current = items.find((candidate) => candidate.id === item.id);
+        if (!current) return;
+        current.fileRef = ref;
+        current.uploadState = "ready";
+        current.error = null;
+      } catch (err) {
+        const current = items.find((candidate) => candidate.id === item.id);
+        if (!current) return;
+        current.uploadState = "error";
+        current.error = err?.message ?? String(err);
+      }
+      updateImageAttachmentState();
+      render();
+      updateStatus();
+      if (typeof persistReferenceItems === "function") await persistReferenceItems();
+    }
+
     inputEl.addEventListener("change", async (event) => {
       const selectedFiles = Array.from(event.target.files || []);
       inputEl.value = "";
@@ -2443,6 +2704,16 @@
         known.add(fingerprint);
         const supported = isSupportedReference(file);
         const mimeType = file.type || "application/octet-stream";
+        let previewUrl = null;
+        let previewError = null;
+        if (supported) {
+          try {
+            previewUrl = URL.createObjectURL(file);
+          } catch (error) {
+            previewError = "Preview unavailable; the original file is retained.";
+            console.warn("Reference preview could not be created.", error);
+          }
+        }
         const item = {
           id: createReferenceId(),
           file,
@@ -2450,7 +2721,7 @@
           mimeType,
           sizeBytes: file.size,
           fingerprint,
-          previewUrl: supported ? URL.createObjectURL(file) : null,
+          previewUrl,
           referenceKind: supported
             ? mimeType.startsWith("video/")
               ? "video"
@@ -2458,7 +2729,7 @@
             : "invalid",
           uploadState: supported ? "pending" : "error",
           fileRef: null,
-          error: supported ? null : "Unsupported reference file type.",
+          error: supported ? previewError : "Unsupported reference file type.",
         };
         items.push(item);
         if (supported) accepted.push(item);
@@ -2467,38 +2738,28 @@
       updateImageAttachmentState();
       render();
       updateStatus();
+      if (typeof persistReferenceItems === "function") void persistReferenceItems();
       void retriggerAttachmentDropdowns();
 
-      await Promise.all(
-        accepted.map(async (item) => {
-          try {
-            const uploadReady = await compressImageForUpload(item.file);
-            const ref = await uploadFileRaw(
-              uploadReady,
-              tabState.get(inputEl === videoFileUploadInput ? "video" : "image")?.provider,
-            );
-            const current = items.find((candidate) => candidate.id === item.id);
-            if (!current) return;
-            current.fileRef = ref;
-            current.uploadState = "ready";
-            current.error = null;
-          } catch (err) {
-            const current = items.find((candidate) => candidate.id === item.id);
-            if (!current) return;
-            current.uploadState = "error";
-            current.error = err?.message ?? String(err);
-          }
-          updateImageAttachmentState();
-          render();
-          updateStatus();
-        }),
-      );
+      await Promise.all(accepted.map((item) => uploadItem(item)));
 
       updateImageAttachmentState();
       updateStatus();
       await retriggerAttachmentDropdowns();
       if (onDone) await onDone();
     });
+
+    return {
+      render,
+      updateStatus,
+      moveReference,
+      retryPending: () =>
+        Promise.all(
+          items
+            .filter((item) => item.uploadState === "pending")
+            .map((item) => uploadItem(item)),
+        ),
+    };
   }
 
   /**
@@ -2515,7 +2776,7 @@
    *                                        Overrides the tabState provider when given.
    */
   async function loadModels(modality, selectEl, providerHint) {
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    const base = currentProxyUrl();
     const provider =
       providerHint !== undefined ? providerHint : tabState.get(modality)?.provider || "";
     const acceptsImage = hasImageAttached;
@@ -2613,7 +2874,7 @@
   }
 
   async function loadAllModels() {
-    if (modeSelect.value !== "proxy") return;
+    if (currentMode() !== "proxy") return;
     await Promise.all([
       loadModels("text", textModelSelect),
       loadModels("image", imageModelSelect),
@@ -2647,7 +2908,7 @@
    * @param {string} [providerOverride]  Explicit provider id to fetch models for.
    */
   async function loadTabModels(modality, providerOverride) {
-    if (modeSelect.value !== "proxy") return false;
+    if (currentMode() !== "proxy") return false;
 
     const state = tabState.get(modality) ?? {};
     const provider =
@@ -2882,8 +3143,8 @@
   }
 
   async function loadProviders() {
-    if (modeSelect.value !== "proxy") return;
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    if (currentMode() !== "proxy") return;
+    const base = currentProxyUrl();
     try {
       const data = await fetch(base + "/providers").then((r) => r.json());
       allProviders = data; // cache full list (including inactive) for modality filtering
@@ -2915,8 +3176,8 @@
    * Called after providers load (proxy URL is known to be reachable at that point).
    */
   async function fetchServerCaps() {
-    if (modeSelect.value !== "proxy") return;
-    const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    if (currentMode() !== "proxy") return;
+    const base = currentProxyUrl();
     try {
       const health = await fetch(base + "/health").then((r) => r.json());
       serverLumaImageToVideoEnabled = health.lumaImageToVideoEnabled ?? false;
@@ -2977,7 +3238,7 @@
    */
   async function retriggerAttachmentDropdowns() {
     const modality = TAB_MODALITY[activeTab()] ?? "text";
-    if (modeSelect.value === "proxy" && allProviders.length > 0) {
+    if (currentMode() === "proxy" && allProviders.length > 0) {
       // Reference mutations refresh model metadata for the current provider,
       // but never rebuild provider options or change the provider selection.
       await loadTabModels(modality);
@@ -3011,7 +3272,7 @@
 
   /* ── Mode toggle ─────────────────────────────────────────── */
   function applyModeUi() {
-    const isProxy = modeSelect.value === "proxy";
+    const isProxy = currentMode() === "proxy";
     if (proxyConfig) {
       proxyConfig.classList.toggle("hidden", !isProxy);
     }
@@ -3020,8 +3281,8 @@
     }
     if (isProxy) loadProviders();
   }
-  modeSelect.addEventListener("change", () => {
-    localStorage.setItem(
+  if (modeSelect) modeSelect.addEventListener("change", () => {
+    safeSetItem(localStorage,
       connectionStorageKeys.mode,
       modeSelect.value === "direct" ? "direct" : "proxy",
     );
@@ -3030,8 +3291,8 @@
 
   // Reload providers when proxy URL changes (debounced)
   let _proxyUrlTimer = null;
-  proxyUrlInput.addEventListener("input", () => {
-    localStorage.setItem(connectionStorageKeys.proxyUrl, proxyUrlInput.value.trim());
+  if (proxyUrlInput) proxyUrlInput.addEventListener("input", () => {
+    safeSetItem(localStorage, connectionStorageKeys.proxyUrl, proxyUrlInput.value.trim());
     clearTimeout(_proxyUrlTimer);
     _proxyUrlTimer = setTimeout(loadProviders, 600);
   });
@@ -3097,7 +3358,7 @@
   // The video upload passes updateLumaTunnelWarn as a callback so the warning
   // banner appears/disappears immediately after the image is attached or rejected.
   wireFileUpload(fileUploadInput, fileUploadStatus);
-  wireMultiFileUpload(
+  imageUploadController = wireMultiFileUpload(
     imageFileUploadInput,
     imageFileUploadStatus,
     imageFileThumbsEl,
@@ -3105,7 +3366,7 @@
     undefined,
     () => referencePolicyFor("image"),
   );
-  wireMultiFileUpload(
+  videoUploadController = wireMultiFileUpload(
     videoFileUploadInput,
     videoFileUploadStatus,
     videoFileThumbsEl,
@@ -3113,6 +3374,16 @@
     updateLumaTunnelWarn,
     () => referencePolicyFor("video"),
   );
+
+  void (async () => {
+    await restorePersistedReferences();
+    imageUploadController?.render();
+    imageUploadController?.updateStatus();
+    videoUploadController?.render();
+    videoUploadController?.updateStatus();
+    updateImageAttachmentState();
+    await retriggerAttachmentDropdowns();
+  })();
 
   applyModeUi();
 
@@ -3130,7 +3401,7 @@
     // cross-tab pollution; replaces old loadAllModels() that reloaded every tab).
     // T-22: loadTabModels falls back to an empty placeholder list when no models
     // are compatible (e.g. Audio / Structured tabs with certain providers).
-    if (modeSelect.value === "proxy" && allProviders.length > 0) {
+    if (currentMode() === "proxy" && allProviders.length > 0) {
       loadTabModels(target);
     }
 
@@ -3297,7 +3568,7 @@
       metadata: {
         source: "web-demo",
         messageCount: messages.length,
-        mode: modeSelect.value,
+        mode: currentMode(),
       },
     };
   }
@@ -4180,7 +4451,7 @@
     try {
       const fullPrompt = buildHistoryPrompt();
       let result;
-      if (modeSelect.value === "proxy") {
+      if (currentMode() === "proxy") {
         // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
         const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
         const payload = { prompt: fullPrompt };
@@ -4260,7 +4531,7 @@
     let accumulated = "";
     try {
       const fullPrompt = buildHistoryPrompt();
-      if (modeSelect.value === "proxy") {
+      if (currentMode() === "proxy") {
         // TASK-12: Read provider + model from tabState (REQ-PM-01, S-09).
         const { provider: tabProvider, model: tabModel } = tabState.get("text") ?? {};
         const payload = { prompt: fullPrompt, stream: true };
@@ -4341,13 +4612,14 @@
     const requestedModel = imageSelection.model ?? "";
     let imageRequestPayload = { prompt };
     let imageReferenceSnapshot = snapshotReferenceItems(imageReferenceItems);
+    let imageUsedReferenceIds = [];
     let imgResult = null;
     setLoading([btnImageGenerate], true);
     showSpinner(imageOutput, "Generating image…");
     imageUsage.textContent = "";
     try {
       let blob;
-      if (modeSelect.value === "proxy") {
+      if (currentMode() === "proxy") {
         const isCustom = imageRatioCategory.value === "custom";
         const imgAspectRatio = imageAspectRatio.value || undefined;
         const imgQuality = imageQuality.value || undefined;
@@ -4364,8 +4636,14 @@
           height: imgHeight,
           quality: imgQuality,
         };
+        const imageDescriptor = imageModelsCache.find((model) => model.id === imgModel) ?? null;
+        validateCapabilityValues(imageDescriptor, {
+          aspectRatio: imgAspectRatio,
+          quality: imgQuality,
+        });
         const imageReferenceRequest = buildReferenceRequest(imageReferenceItems, "image");
         imageReferenceSnapshot = imageReferenceRequest.referenceImages;
+        imageUsedReferenceIds = imageReferenceRequest.usedReferenceIds;
         if (imageReferenceRequest.fileRefs.length === 1) {
           imgPayload.fileRef = imageReferenceRequest.fileRefs[0];
         } else if (imageReferenceRequest.fileRefs.length > 1) {
@@ -4415,6 +4693,7 @@
       }
       const completedAt = new Date().toISOString();
       const artifactFileName = "ai-image.png";
+      consumeReferenceItems(imageReferenceItems, imageUsedReferenceIds, imageUploadController);
       await persistArtifactRecord("image", prompt, prompt, blob, {
         originalPrompt,
         fileName: artifactFileName,
@@ -4514,7 +4793,7 @@
     try {
       let blob;
       const ttsModel = ttsModelSelect.value || undefined;
-      if (modeSelect.value === "proxy") {
+      if (currentMode() === "proxy") {
         // TASK-12: Read audio provider from tabState. TTS model comes from its own
         // dedicated select (ttsModelSelect) which is separate from the transcription
         // model select tracked in tabState.get("audio").model (REQ-PM-01, S-09).
@@ -4658,7 +4937,7 @@
     try {
       let text;
       const { provider: audioProvider, model: audioModel } = audioSelection;
-      if (modeSelect.value === "proxy") {
+      if (currentMode() === "proxy") {
         const audioBase64 = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result.split(",")[1]);
@@ -5166,7 +5445,7 @@
   }
 
   async function fetchPreflightCostEstimate(count, model) {
-    if (modeSelect.value !== "proxy") return null;
+    if (currentMode() !== "proxy") return null;
     if (preflightAbortController) preflightAbortController.abort();
     preflightAbortController = new AbortController();
     try {
@@ -5175,7 +5454,7 @@
       if (typeof cachedRate === "number" && Number.isFinite(cachedRate)) {
         return { total: (cachedRate * count).toFixed(6), rate: cachedRate.toFixed(6), count };
       }
-      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+      const base = currentProxyUrl();
       const url = `${base}/pricing?modality=video&model=${encodeURIComponent(model)}`;
       const res = await fetch(url, { signal: preflightAbortController.signal });
       if (!res.ok) return null;
@@ -5324,8 +5603,8 @@
 
     // Fetch live video providers from the server (best-effort; empty list if unavailable)
     let liveProviders = [];
-    if (modeSelect.value === "proxy") {
-      const base = proxyUrlInput.value.trim() || "http://localhost:3001";
+    if (currentMode() === "proxy") {
+      const base = currentProxyUrl();
       try {
         const resp = await fetch(`${base}/providers`);
         if (resp.ok) {
@@ -6084,7 +6363,7 @@ ${combinedSection}${shotCards}
 
   async function runBatch() {
     if (!batchItems.length) return;
-    if (modeSelect.value !== "proxy") {
+    if (currentMode() !== "proxy") {
       alert("Batch processing requires proxy mode. Please switch to Proxy mode.");
       return;
     }
@@ -6118,7 +6397,7 @@ ${combinedSection}${shotCards}
     batchProgressBar.classList.remove("progress-bar--error");
     batchCostTally.classList.add("hidden");
 
-    const proxyBase = (proxyUrlInput.value || "http://localhost:3001").replace(/\/$/, "");
+    const proxyBase = currentProxyUrl().replace(/\/$/, "");
     // TASK-12: Read provider + model from tabState["video"] (REQ-PM-01, S-09).
     // tabState is the single source of truth; DOM selects no longer consulted.
     const { provider, model } = tabState.get("video") ?? {};
@@ -6369,10 +6648,11 @@ ${combinedSection}${shotCards}
     const requestedModel = videoSelection.model ?? "";
     let videoRequestPayload = { prompt };
     let videoReferenceSnapshot = snapshotReferenceItems(videoReferenceItems);
+    let videoUsedReferenceIds = [];
     let videoResult = null;
 
     // Guard 2: video generation is proxy-only — fail fast with a clear message
-    if (modeSelect.value !== "proxy") {
+    if (currentMode() !== "proxy") {
       const modeMsg =
         "Proxy mode required - start the server with: node dist/ai-powered/cli/index.js serve";
       showGlobalError(modeMsg);
@@ -6440,8 +6720,11 @@ ${combinedSection}${shotCards}
       if (videoModel) videoOptions.model = videoModel;
       const descriptor = videoModelsCache.find((model) => model.id === videoModel) ?? null;
       validateVideoOptions(descriptor, {
+        aspectRatio: videoOptions.aspectRatio,
         resolution: videoOptions.resolution,
+        quality: videoOptions.quality,
         duration: videoOptions.duration,
+        fps: videoOptions.fps,
         negativePrompt: videoOptions.negativePrompt,
         seed: videoOptions.seed,
         transitionDuration: videoOptions.transitionDuration,
@@ -6452,6 +6735,7 @@ ${combinedSection}${shotCards}
       // Attach the uploaded image references for image-to-video generation.
       const videoReferenceRequest = buildReferenceRequest(videoReferenceItems, "video");
       videoReferenceSnapshot = videoReferenceRequest.referenceImages;
+      videoUsedReferenceIds = videoReferenceRequest.usedReferenceIds;
       if (videoReferenceRequest.fileRefs.length === 1) {
         videoOptions.fileRef = videoReferenceRequest.fileRefs[0];
       } else if (videoReferenceRequest.fileRefs.length > 1) {
@@ -6500,6 +6784,7 @@ ${combinedSection}${shotCards}
             "Video · " + Math.round(placeholderBlob.size / 1024) + " KB (preview)";
         const completedAt = new Date().toISOString();
         const artifactFileName = "ai-video.mp4";
+        consumeReferenceItems(videoReferenceItems, videoUsedReferenceIds, videoUploadController);
         await persistArtifactRecord("video", prompt, prompt, placeholderBlob, {
           originalPrompt,
           fileName: artifactFileName,
@@ -6548,6 +6833,7 @@ ${combinedSection}${shotCards}
       if (videoUsage) videoUsage.textContent = "Video · " + Math.round(blob.size / 1024) + " KB";
       const completedAt = new Date().toISOString();
       const artifactFileName = "ai-video.mp4";
+      consumeReferenceItems(videoReferenceItems, videoUsedReferenceIds, videoUploadController);
       await persistArtifactRecord("video", prompt, prompt, blob, {
         originalPrompt,
         fileName: artifactFileName,
@@ -6639,7 +6925,7 @@ ${combinedSection}${shotCards}
     structuredUsage.textContent = "";
     structuredOutput.classList.add("json-output");
     try {
-      if (modeSelect.value === "proxy") {
+      if (currentMode() === "proxy") {
         // TASK-12: Read provider + model from tabState["structured"] (REQ-PM-01, S-09).
         const { provider: structProvider, model: structModel } = structuredSelection;
         structuredRequestPayload = {
@@ -7287,7 +7573,7 @@ ${combinedSection}${shotCards}
         }
 
         // ── Proxy mode: MediaRecorder → POST /audio/transcribe ──────
-        if (modeSelect.value === "proxy") {
+        if (currentMode() === "proxy") {
           let stream;
           try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -7454,17 +7740,6 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
-
-
-
-
-
-
-
-
-
-
-
 
 
 

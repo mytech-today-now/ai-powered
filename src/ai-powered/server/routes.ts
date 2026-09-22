@@ -57,6 +57,7 @@ import {
   ProviderError,
 } from "../types.js";
 import { getLogger, serializePublicConfig } from "../utils.js";
+import { LimitsValidator } from "../limits-validator.js";
 import type { ProviderCallOptions } from "../providers/index.js";
 import type { ServeOptions } from "./index.js";
 import { selectI2VProvider } from "./smart-default.js";
@@ -1292,6 +1293,24 @@ export function createRouter(opts: ServeOptions): Router {
         ...(fileBlock && !publicImageUrls.length ? { fileContentBlock: fileBlock } : {}),
         ...(messages ? { messages } : {}),
       };
+      if (body.model) {
+        const validationMedia = (
+          publicMediaInputs.length ? publicMediaInputs : (body.inputMedia ?? [])
+        ).map((media) => ({
+          modality: media.mimeType.startsWith("video/") ? ("video" as const) : ("image" as const),
+          url: media.url,
+          mimeType: media.mimeType,
+        }));
+        const validationOptions = {
+          ...(body.aspectRatio !== undefined ? { aspectRatio: body.aspectRatio } : {}),
+          ...(body.duration !== undefined ? { duration: body.duration } : {}),
+          ...(body.fps !== undefined ? { fps: body.fps } : {}),
+          ...(body.quality !== undefined ? { quality: body.quality } : {}),
+          ...(body.resolution !== undefined ? { resolution: body.resolution } : {}),
+          ...(validationMedia.length ? { inputMedia: validationMedia } : {}),
+        };
+        LimitsValidator.validateVideo(routedProvider, body.model, validationOptions);
+      }
       try {
         const client = await getAiClient("serve-video", {
           ...overrides,

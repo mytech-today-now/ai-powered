@@ -1026,22 +1026,30 @@ The `ai-powered/web` entry point ships a Vite-built ESM+UMD bundle (`dist-web/`)
 
 Open the built-in Info page at `info.html#settings-configuration` from the demo header to manage direct-mode credentials. The Settings / Configuration tab now includes OpenRouter in the provider selector, a dedicated Pika API key field for video workflows, and local tab-synced storage for those demo credentials. The Overview tab renders the repository README live from GitHub, falls back to the local README when needed, and keeps the local, proxy, and Render.com demos on the same GUI.
 
-### Browser client features (v0.5.10)
+Reference uploads in the Image and Video tabs keep one ordered collection per tab. Each card shows the exact filename and provides keyboard-accessible Up, Down, and Remove actions. Reference files survive reloads and failed generation attempts, and are removed only after successful AI consumption or explicit removal. Pika Frames sends selected image references in their displayed order.
+
+Image and video controls are model-aware. Aspect ratio, resolution, quality, FPS, duration, and model options are populated from metadata. Duration values are finite whole-second choices, and unsupported or manipulated values are rejected by both the browser and server.
+
+### Browser client features (v0.5.11)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
-| Feature                        | Detail                                                                                                      |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| **Circuit breaker**            | Opens after N consecutive failures; probes after a configurable reset window (App-008)                      |
-| **Automatic retry**            | Exponential back-off with jitter on transient errors (App-008)                                              |
-| **Budget enforcement**         | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown                   |
-| **Typed `ProxyError`**         | Structured error object with `code`, `message`, `severity`; severity-aware UI banners                       |
-| **Conversation history**       | Session history with soft reset; clearing the display does not drop context                                 |
-| **Archive toolbar**            | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference                        |
-| **Provider dropdown**          | Populated dynamically from `GET /providers`; per-request provider and model overrides                       |
-| **Attachment-aware pickers**   | Image attachments narrow provider/model dropdowns; Audio and Structured tabs show an explicit ignore notice |
-| **MIME-preserving transcribe** | Proxy and direct transcribe uploads keep Blob MIME types and filename extensions for audio/video containers |
-| **Live README overview**       | Overview fetches the README from GitHub, falls back locally, and keeps local/proxy/Render layouts aligned   |
+| Feature                        | Detail                                                                                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Circuit breaker**            | Opens after N consecutive failures; probes after a configurable reset window (App-008)                                                                           |
+| **Automatic retry**            | Exponential back-off with jitter on transient errors (App-008)                                                                                                   |
+| **Budget enforcement**         | `maxBudgetUsd` cap enforced client-side before each request; `BudgetExceededError` thrown                                                                        |
+| **Typed `ProxyError`**         | Structured error object with `code`, `message`, `severity`; severity-aware UI banners                                                                            |
+| **Conversation history**       | Session history with soft reset; clearing the display does not drop context                                                                                      |
+| **Archive toolbar**            | Copy · Save · Search archived transcripts; exchanges are numbered for easy reference                                                                             |
+| **Persistent references**      | Ordered image and video references retain exact filenames across reloads, support keyboard-accessible reorder/remove actions, and remain after failed generation |
+| **Model capabilities**         | Image/video controls use model metadata for aspect ratio, resolution, quality, FPS, duration, and finite option validation                                       |
+| **Pika Frames ordering**       | Ordered image references are forwarded to Pika Frames in displayed order and validated against model input requirements                                          |
+| **Centralized settings**       | Direct credentials and proxy URL are managed from `info.html#settings-configuration`; the main demo keeps the shared interface                                   |
+| **Provider dropdown**          | Populated dynamically from `GET /providers`; per-request provider and model overrides                                                                            |
+| **Attachment-aware pickers**   | Image attachments narrow provider/model dropdowns; Audio and Structured tabs show an explicit ignore notice                                                      |
+| **MIME-preserving transcribe** | Proxy and direct transcribe uploads keep Blob MIME types and filename extensions for audio/video containers                                                      |
+| **Live README overview**       | Overview fetches the README from GitHub, falls back locally, and keeps local/proxy/Render layouts aligned                                                        |
 
 ### Proxy mode (recommended)
 

@@ -31,8 +31,16 @@ describe("web-example proxy UI", () => {
   it("uses the requested header, history placement, and aligned control markup", () => {
     expect(indexHtml).toContain("<h1>AI-Powered</h1>");
     expect(indexHtml).toContain(
-      '<a class="header-attribution" href="https://mytech.today">by myTech.Today</a>',
+      '<a class="header-attribution" href="https://mytech.today" target="_blank" rel="noopener noreferrer">by myTech.Today</a>',
     );
+    expect(indexHtml).not.toContain('id="mode-select"');
+    expect(indexHtml).not.toContain('id="proxy-url"');
+    expect(indexHtml).not.toContain("Run <code>npm run serve</code> to start the proxy server.");
+
+    const infoHtml = readFileSync(path.join(webRoot, "info.html"), "utf8");
+    expect(infoHtml).toContain('id="mode-select"');
+    expect(infoHtml).toContain('id="proxy-url"');
+    expect(infoHtml).toContain('data-info-panel="settings-configuration"');
 
     const mainEnd = indexHtml.indexOf("</main>");
     const historyStart = indexHtml.indexOf('<section id="history-panel-wrap"');

@@ -73,6 +73,7 @@ const LUMAAI_CFG: ProviderConfig = {
       maxPixels: 921600,
       maxDurationSecs: 9,
       fpsOptions: [24],
+      qualityOptions: ["standard"],
     },
   ],
 };
@@ -98,11 +99,31 @@ const RUNWAY_CFG: ProviderConfig = {
   ],
 };
 
+const PIKA_CFG: ProviderConfig = {
+  provider: "pika",
+  updatedAt: "2026-01-01",
+  models: [
+    {
+      id: "pika/pikaframes/image-to-video",
+      modalities: ["video"],
+      resolutions: [
+        { label: "720p", width: 1280, height: 720 },
+        { label: "1080p", width: 1920, height: 1080 },
+      ],
+      options: [
+        { name: "resolution", type: "enum", values: ["720p", "1080p"] },
+        { name: "transitionDuration", type: "integer", min: 1, max: 10 },
+      ],
+    },
+  ],
+};
+
 const STUB_CFGS: ConfigMap = {
   openai: OPENAI_CFG,
   venice: VENICE_CFG,
   lumaai: LUMAAI_CFG,
   runway: RUNWAY_CFG,
+  pika: PIKA_CFG,
   anthropic: { provider: "anthropic", updatedAt: "2026-01-01", models: [] },
   xai: { provider: "xai", updatedAt: "2026-01-01", models: [] },
 };
@@ -219,6 +240,37 @@ describe("LimitsValidator.validateVideo", () => {
       expect(msg).toMatch(/999/);
       expect(msg).toMatch(/max/i);
     }
+  });
+
+  it("accepts a configured quality option", () => {
+    expect(() =>
+      LimitsValidator.validateVideo("lumaai", "ray-2-720p", { quality: "standard" }),
+    ).not.toThrow();
+  });
+
+  it("rejects an unsupported configured quality option", () => {
+    expect(() =>
+      LimitsValidator.validateVideo("lumaai", "ray-2-720p", { quality: "high" }),
+    ).toThrow(/quality.*not supported/i);
+  });
+
+  it("rejects controls that Pikaframes does not declare", () => {
+    expect(() =>
+      LimitsValidator.validateVideo("pika", "pika/pikaframes/image-to-video", {
+        aspectRatio: "16:9",
+      }),
+    ).toThrow(/aspectRatio.*not supported/i);
+    expect(() =>
+      LimitsValidator.validateVideo("pika", "pika/pikaframes/image-to-video", {
+        quality: "standard",
+      }),
+    ).toThrow(/quality.*not supported/i);
+    expect(() =>
+      LimitsValidator.validateVideo("pika", "pika/pikaframes/image-to-video", { fps: 24 }),
+    ).toThrow(/fps.*not supported/i);
+    expect(() =>
+      LimitsValidator.validateVideo("pika", "pika/pikaframes/image-to-video", { duration: 5 }),
+    ).toThrow(/duration is not supported/i);
   });
 });
 

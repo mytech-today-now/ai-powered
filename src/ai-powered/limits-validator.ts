@@ -116,6 +116,7 @@ export interface VideoValidateOpts {
   aspectRatio?: string;
   duration?: number;
   fps?: number;
+  quality?: string;
   resolution?: string;
   options?: Record<string, unknown>;
   inputMedia?: Array<{ modality: "image" | "video"; url?: string; mimeType?: string }>;
@@ -204,10 +205,22 @@ export const LimitsValidator = {
 
     if (opts.aspectRatio !== undefined && opts.aspectRatio !== "auto") {
       const supported = cfg.aspectRatios ?? [];
-      if (supported.length > 0 && !supported.includes(opts.aspectRatio)) {
+      if (!supported.includes(opts.aspectRatio)) {
         throw new ProviderError(
           provider as import("./core.js").ProviderName,
           `${model}: aspectRatio "${opts.aspectRatio}" not supported. Supported: ${supported.join(", ")}`,
+          422,
+          false,
+        );
+      }
+    }
+
+    if (opts.resolution !== undefined) {
+      const supported = (cfg.resolutions ?? []).map((entry) => entry.label);
+      if (!supported.includes(opts.resolution)) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: resolution "${opts.resolution}" not supported. Supported: ${supported.join(", ")}`,
           422,
           false,
         );
@@ -225,11 +238,63 @@ export const LimitsValidator = {
       }
     }
 
-    if (opts.fps !== undefined && cfg.fpsOptions && cfg.fpsOptions.length > 0) {
-      if (!cfg.fpsOptions.includes(opts.fps)) {
+    const durationOption = cfg.options?.find((option) => option.name === "duration");
+    if (opts.duration !== undefined && !durationOption && cfg.maxDurationSecs === undefined) {
+      throw new ProviderError(
+        provider as import("./core.js").ProviderName,
+        model + ": duration is not supported",
+        422,
+        false,
+      );
+    }
+    if (opts.duration !== undefined && durationOption) {
+      if (
+        durationOption.values &&
+        !durationOption.values.some((value) => value === opts.duration)
+      ) {
         throw new ProviderError(
           provider as import("./core.js").ProviderName,
-          `${model}: fps ${opts.fps} not supported. Supported: ${cfg.fpsOptions.join(", ")}`,
+          `${model}: duration ${opts.duration}s is not supported. Supported: ${durationOption.values.join(", ")}`,
+          422,
+          false,
+        );
+      }
+      if (durationOption.min !== undefined && opts.duration < durationOption.min) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: duration must be at least ${durationOption.min}s`,
+          422,
+          false,
+        );
+      }
+      if (durationOption.max !== undefined && opts.duration > durationOption.max) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: duration must be at most ${durationOption.max}s`,
+          422,
+          false,
+        );
+      }
+    }
+
+    if (opts.fps !== undefined) {
+      const supported = cfg.fpsOptions ?? [];
+      if (!supported.includes(opts.fps)) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: fps ${opts.fps} not supported. Supported: ${supported.join(", ")}`,
+          422,
+          false,
+        );
+      }
+    }
+
+    if (opts.quality !== undefined) {
+      const supported = cfg.qualityOptions ?? [];
+      if (!supported.includes(opts.quality)) {
+        throw new ProviderError(
+          provider as import("./core.js").ProviderName,
+          `${model}: quality "${opts.quality}" not supported. Supported: ${supported.join(", ")}`,
           422,
           false,
         );

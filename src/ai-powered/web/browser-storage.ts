@@ -11,6 +11,29 @@ import type { WebMessage } from "./fetch-client.js";
 export type BrowserModality = "text" | "image" | "audio" | "video" | "structured";
 export type BrowserRecordKind = "session" | "artifact";
 export type BrowserRecordStatus = "draft" | "complete" | "error";
+export type BrowserReferenceCollection = "image" | "video";
+export type BrowserReferenceKind = "image" | "video" | "invalid";
+export type BrowserReferenceUploadState = "pending" | "ready" | "error";
+
+export interface BrowserReferenceStorageItem {
+  id: string;
+  collection: BrowserReferenceCollection;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  lastModified: number;
+  fingerprint: string;
+  referenceKind: BrowserReferenceKind;
+  uploadState: BrowserReferenceUploadState;
+  fileRef: string | null;
+  error: string | null;
+  blob: Blob;
+}
+
+export interface BrowserReferenceStorage {
+  schemaVersion: number;
+  items: BrowserReferenceStorageItem[];
+}
 
 export interface BrowserRecordMetadata {
   prompt: string;
@@ -121,6 +144,8 @@ export interface ObjectUrlRegistry {
 export const DEFAULT_BROWSER_DB_NAME = "ai-powered-browser-workbench";
 export const DEFAULT_BROWSER_DB_VERSION = 1;
 export const BROWSER_RECORD_SCHEMA_VERSION = 2;
+export const BROWSER_REFERENCE_SCHEMA_VERSION = 1;
+export const DEFAULT_REFERENCE_CACHE_KEY = "ai-powered:references:v1";
 export const DEFAULT_STORAGE_PREFIXES = ["ai-powered:", "ai-demo-"];
 export const DEFAULT_REMOTE_CACHE_PREFIXES = ["ai-powered:remote:"];
 

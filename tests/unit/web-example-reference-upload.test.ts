@@ -53,7 +53,11 @@ function createElement(tagName: string) {
 }
 
 function createHarness(
-  options: { upload?: (file: any) => Promise<string>; getPolicy?: () => any } = {},
+  options: {
+    upload?: (file: any) => Promise<string>;
+    getPolicy?: () => any;
+    failPreview?: boolean;
+  } = {},
 ) {
   const items: any[] = [];
   const uploaded: string[] = [];
@@ -73,7 +77,10 @@ function createHarness(
   const context: any = {
     document: { createElement },
     URL: {
-      createObjectURL: () => `blob:${++objectUrlId}`,
+      createObjectURL: () => {
+        if (options.failPreview) throw new Error("preview unavailable");
+        return `blob:${++objectUrlId}`;
+      },
       revokeObjectURL: vi.fn(),
     },
     imageReferenceItems: items,
@@ -89,6 +96,7 @@ function createHarness(
     updateImageAttachmentState: vi.fn(),
     retriggerAttachmentDropdowns: vi.fn(async () => {}),
     compressImageForUpload: vi.fn(async (file: any) => file),
+    persistReferenceItems: vi.fn(async () => {}),
     uploadFileRaw: async (file: any) => {
       const ref = options.upload ? await options.upload(file) : `ref-${file.name}`;
       uploaded.push(ref);
@@ -97,8 +105,15 @@ function createHarness(
   };
   vm.createContext(context);
   vm.runInContext(block, context);
-  context.wireMultiFileUpload(input, status, thumbs, items, null, options.getPolicy);
-  return { input, status, thumbs, items, uploaded, url: context.URL };
+  const controller = context.wireMultiFileUpload(
+    input,
+    status,
+    thumbs,
+    items,
+    null,
+    options.getPolicy,
+  );
+  return { input, status, thumbs, items, uploaded, url: context.URL, controller };
 }
 
 function file(name: string, lastModified = 1, type = "image/png") {
@@ -147,6 +162,66 @@ describe("web-example incremental reference uploads", () => {
       "ref-c.png",
     ]);
     expect(harness.thumbs.children).toHaveLength(3);
+  });
+
+  it("moves files with accessible controls while preserving displayed order and filename", async () => {
+    const harness = createHarness();
+    await harness.input.emit([file("first.png"), file("second.png"), file("third.png")]);
+
+    const first = harness.thumbs.children[0];
+    await first.children
+      .find((child: any) => child.className.includes("file-thumb-move-down"))
+      .click();
+
+    expect(harness.items.map((item) => item.fileName)).toEqual([
+      "second.png",
+      "first.png",
+      "third.png",
+    ]);
+    expect(
+      harness.thumbs.children[0].children.find(
+        (child: any) => child.className === "file-thumb-name",
+      ).textContent,
+    ).toBe("second.png");
+    expect(
+      harness.thumbs.children[1].children.find(
+        (child: any) => child.className === "file-thumb-name",
+      ).textContent,
+    ).toBe("first.png");
+  });
+
+  it("retains an exact filename and upload state when object URL creation fails", async () => {
+    const harness = createHarness({ failPreview: true });
+    await harness.input.emit([file("café 画像.png")]);
+
+    expect(harness.items[0].fileName).toBe("café 画像.png");
+    expect(harness.items[0].previewUrl).toBeNull();
+    expect(harness.items[0].uploadState).toBe("ready");
+    expect(
+      harness.thumbs.children[0].children.find(
+        (child: any) => child.className === "file-thumb-name",
+      ).textContent,
+    ).toBe("café 画像.png");
+  });
+
+  it("offers an explicit retry after a failed upload", async () => {
+    let attempts = 0;
+    const harness = createHarness({
+      upload: async (selectedFile) => {
+        attempts++;
+        if (attempts === 1) throw new Error("temporary upload failure");
+        return `retry-${selectedFile.name}`;
+      },
+    });
+    await harness.input.emit([file("retry.png")]);
+    expect(harness.items[0].uploadState).toBe("error");
+
+    const retry = harness.thumbs.children[0].children.find(
+      (child: any) => child.className === "file-thumb-retry",
+    );
+    await retry.click();
+    expect(harness.items[0].uploadState).toBe("ready");
+    expect(harness.items[0].fileRef).toBe("retry-retry.png");
   });
 
   it("removes exactly the middle item and revokes its preview URL", async () => {
@@ -231,5 +306,6 @@ describe("web-example incremental reference uploads", () => {
 
     expect(() => buildReferenceRequest([first, second], "image")).toThrow(/excess/);
     expect(buildReferenceRequest([first], "image").fileRefs).toEqual(["ref-first"]);
+    expect(buildReferenceRequest([first], "image").usedReferenceIds).toEqual(["first"]);
   });
 });

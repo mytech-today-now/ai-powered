@@ -192,6 +192,21 @@ describe("PikaProvider", () => {
     ).toThrow(/at most 5 image/);
   });
 
+  it("preserves Pikaframes reference order in the provider payload", async () => {
+    const fetchMock = mockPikaFetch();
+    const ordered = ["one.png", "two.png", "three.png", "four.png"].map((name) => ({
+      url: `https://cdn.example.test/${name}`,
+      mimeType: "image/png",
+    }));
+
+    await new PikaProvider(config).generateVideo("Animate the ordered frames", {
+      model: "pika/pikaframes/image-to-video",
+      inputMedia: ordered,
+    });
+
+    expect(submittedBody(fetchMock).images).toEqual(ordered.map((entry) => entry.url));
+  });
+
   it("enforces the Pikaframes long-transition boundary", async () => {
     await expect(
       new PikaProvider(config).generateVideo("A smooth transition", {
