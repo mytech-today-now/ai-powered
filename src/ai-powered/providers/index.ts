@@ -11,6 +11,7 @@
  */
 
 import type { AiConfig, ProviderName } from "../core.js";
+import { resolveProviderConfig } from "../core.js";
 import { BaseProvider } from "./base.js";
 import { MockProvider } from "./mock.js";
 
@@ -31,6 +32,7 @@ import { LumaAIProvider } from "./lumaai.js";
 import { RunwayProvider } from "./runway.js";
 import { VibevoiceProvider } from "./vibevoice.js";
 import { PikaProvider } from "./pika.js";
+import { MusicProvider } from "./music.js";
 
 export { MockProvider } from "./mock.js";
 export { OpenAiProvider } from "./openai.js";
@@ -43,6 +45,7 @@ export { LumaAIProvider } from "./lumaai.js";
 export { RunwayProvider } from "./runway.js";
 export { VibevoiceProvider } from "./vibevoice.js";
 export { PikaProvider } from "./pika.js";
+export { MusicProvider, MUSIC_MODEL_CATALOGS } from "./music.js";
 
 // ---------------------------------------------------------------------------
 // Provider registry
@@ -62,6 +65,18 @@ const REGISTRY = new Map<ProviderName, ProviderConstructor>([
   ["runway", RunwayProvider],
   ["pika", PikaProvider],
   ["vibevoice", VibevoiceProvider],
+  ["google-lyria", MusicProvider],
+  ["elevenlabs-music", MusicProvider],
+  ["mureka", MusicProvider],
+  ["stability-audio", MusicProvider],
+  ["mubert", MusicProvider],
+  ["apiframe", MusicProvider],
+  ["kie-suno", MusicProvider],
+  ["ace-suno", MusicProvider],
+  ["musicapi", MusicProvider],
+  ["udioapi", MusicProvider],
+  ["apipass-suno", MusicProvider],
+  ["sunor", MusicProvider],
 ]);
 
 /**
@@ -85,9 +100,10 @@ export function registerProvider(name: ProviderName, ctor: ProviderConstructor):
  * @throws Error if the requested provider is not registered.
  */
 export function createProvider(config: AiConfig): BaseProvider {
+  const providerConfig = resolveProviderConfig(config, config.provider);
   // Trust config.mock — it already incorporates AI_MOCK via loadConfig layers.
   if (config.mock) {
-    return new MockProvider(config);
+    return new MockProvider(providerConfig);
   }
 
   const ProviderClass = REGISTRY.get(config.provider);
@@ -97,5 +113,5 @@ export function createProvider(config: AiConfig): BaseProvider {
         `Available providers: ${[...REGISTRY.keys()].join(", ")}`,
     );
   }
-  return new ProviderClass(config);
+  return new ProviderClass(providerConfig);
 }

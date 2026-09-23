@@ -50,7 +50,7 @@ export class ConfigError extends Error {
 // ---------------------------------------------------------------------------
 
 /** Supported AI modalities. */
-export const ModalitySchema = z.enum(["text", "image", "audio", "video", "structured"]);
+export const ModalitySchema = z.enum(["text", "image", "audio", "video", "music", "structured"]);
 export type Modality = z.infer<typeof ModalitySchema>;
 
 /** Supported provider names (plus "mock" for testing). */
@@ -65,9 +65,27 @@ export const ProviderNameSchema = z.enum([
   "pika",
   "custom",
   "vibevoice",
+  "google-lyria",
+  "elevenlabs-music",
+  "mureka",
+  "stability-audio",
+  "mubert",
+  "apiframe",
+  "kie-suno",
+  "ace-suno",
+  "musicapi",
+  "udioapi",
+  "apipass-suno",
+  "sunor",
   "mock",
 ]);
 export type ProviderName = z.infer<typeof ProviderNameSchema>;
+
+/** Credentials for one provider, including provider-specific fields. */
+export type ProviderCredentialFields = Record<string, string>;
+
+/** Flat credentials for the active provider or an explicit provider map. */
+export type ProviderCredentials = ProviderCredentialFields;
 
 /**
  * Per-modality default values that can be set inside an AiConfig.
@@ -110,6 +128,12 @@ const PerModalityDefaultsSchema = z
       })
       .strict()
       .optional(),
+    music: z
+      .object({
+        model: z.string().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -139,6 +163,18 @@ export const AiConfigSchema = z
      * Sourced from env vars (OPENAI_API_KEY, ANTHROPIC_API_KEY, …) when absent.
      */
     apiKey: z.string().optional(),
+
+    /** Additional provider credentials for integrations that require more than one field. */
+    /**
+     * Additional provider credentials. A flat object belongs only to the
+     * active provider; use a provider-name map for fallback credentials.
+     */
+    providerCredentials: z
+      .union([
+        z.record(z.string(), z.string()),
+        z.record(z.string(), z.record(z.string(), z.string())),
+      ])
+      .optional(),
 
     /** Sampling temperature. Range 0–2. Default: 0.7. */
     temperature: z.number().min(0).max(2).default(0.7),
@@ -401,6 +437,90 @@ function envVarsToPartial(): PlainObject {
   return partial;
 }
 
+const PROVIDER_API_KEY_ENV: Record<string, string> = {
+  openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  xai: "XAI_API_KEY",
+  venice: "VENICE_API_KEY",
+  lumaai: "LUMAAI_API_KEY",
+  runway: "RUNWAYML_API_SECRET",
+  pika: "PIKA_API_KEY",
+  "google-lyria": "GOOGLE_API_KEY",
+  "elevenlabs-music": "ELEVENLABS_API_KEY",
+  mureka: "MUREKA_API_KEY",
+  "stability-audio": "STABILITY_API_KEY",
+  mubert: "MUBERT_ACCESS_TOKEN",
+  apiframe: "APIFRAME_API_KEY",
+  "kie-suno": "KIE_API_KEY",
+  "ace-suno": "ACE_DATA_CLOUD_API_KEY",
+  musicapi: "MUSICAPI_API_KEY",
+  udioapi: "UDIOAPI_API_KEY",
+  "apipass-suno": "APIPASS_API_KEY",
+  sunor: "SUNOR_API_KEY",
+  custom: "AI_CUSTOM_API_KEY",
+};
+
+function providerApiKeyFromEnv(provider: string): string | undefined {
+  const envVar = PROVIDER_API_KEY_ENV[provider];
+  if (!envVar) return undefined;
+  const value = process.env[envVar];
+  return value !== undefined && value !== "" ? value : undefined;
+}
+
+function isCredentialFields(value: unknown): value is ProviderCredentialFields {
+  return isPlainObject(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+/**
+ * Return only the credential fields explicitly assigned to `provider`.
+ * Flat credential objects are intentionally valid only for the active
+ * provider, which keeps request-scoped credentials bounded to that provider.
+ */
+export function getProviderCredentialFields(
+  credentials: unknown,
+  provider: string,
+  activeProvider: string,
+): ProviderCredentialFields | undefined {
+  if (!credentials || !isPlainObject(credentials)) return undefined;
+
+  if (isCredentialFields(credentials)) {
+    return provider === activeProvider ? { ...credentials } : undefined;
+  }
+
+  const scoped = credentials[provider];
+  return isCredentialFields(scoped) ? { ...scoped } : undefined;
+}
+
+/**
+ * Resolve a config for one provider without carrying the active provider's
+ * raw secret or flat credential object into another provider.
+ *
+ * Precedence for the active provider is explicit `config.apiKey`, then its
+ * credential object's `apiKey`, then that provider's environment variable.
+ * For a fallback, only its nested credential object and its own environment
+ * variable participate; the active provider's `apiKey` is never reused.
+ */
+export function resolveProviderConfig(config: AiConfig, provider: ProviderName): AiConfig {
+  const credentials = getProviderCredentialFields(
+    config.providerCredentials,
+    provider,
+    config.provider,
+  );
+  const apiKey =
+    provider === config.provider
+      ? (config.apiKey ?? credentials?.["apiKey"] ?? providerApiKeyFromEnv(provider))
+      : (credentials?.["apiKey"] ?? providerApiKeyFromEnv(provider));
+  const { apiKey: _activeApiKey, providerCredentials: _allCredentials, ...base } = config;
+
+  return {
+    ...base,
+    provider,
+    ...(apiKey !== undefined ? { apiKey } : {}),
+    ...(credentials !== undefined ? { providerCredentials: credentials } : {}),
+  } as AiConfig;
+}
+
 /**
  * Resolve the API key for the active provider from the merged config or the
  * canonical per-provider environment variable.
@@ -410,24 +530,7 @@ function resolveApiKey(merged: PlainObject): string | undefined {
     return merged["apiKey"];
   }
   const provider = typeof merged["provider"] === "string" ? merged["provider"] : "openai";
-  const providerEnvMap: Record<string, string> = {
-    openai: "OPENAI_API_KEY",
-    openrouter: "OPENROUTER_API_KEY",
-    anthropic: "ANTHROPIC_API_KEY",
-    xai: "XAI_API_KEY",
-    venice: "VENICE_API_KEY",
-    lumaai: "LUMAAI_API_KEY",
-    runway: "RUNWAYML_API_SECRET",
-    pika: "PIKA_API_KEY",
-    custom: "AI_CUSTOM_API_KEY",
-    mock: "",
-  };
-  const envVar = providerEnvMap[provider] ?? "";
-  if (envVar) {
-    const value = process.env[envVar];
-    if (value !== undefined && value !== "") return value;
-  }
-  return undefined;
+  return providerApiKeyFromEnv(provider);
 }
 
 // ---------------------------------------------------------------------------

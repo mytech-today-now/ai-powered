@@ -100,6 +100,7 @@ function renderInfoDom(): void {
 
 async function mountInfoPage(): Promise<void> {
   vi.resetModules();
+  await import("../../integrations/web-example/settings.js");
   await import("../../integrations/web-example/info.js");
 }
 
@@ -160,6 +161,7 @@ afterEach(() => {
   delete (window as unknown as { AiPoweredInfoContent?: AiPoweredContentStub })
     .AiPoweredInfoContent;
   delete (window as unknown as { AiPowered?: unknown }).AiPowered;
+  delete (window as unknown as { AiPoweredSettings?: unknown }).AiPoweredSettings;
   delete (window as unknown as { __AI_PROXY_URL__?: string }).__AI_PROXY_URL__;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

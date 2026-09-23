@@ -450,13 +450,14 @@ describe("I1-14b: POST /image — attachment validation", () => {
 
     expect(res.status).toBe(400);
     const body = res.body as { error?: string };
-    expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toMatch(/attachment/i);
     expect(body.error).toMatch(/not found|expired/i);
     expect(spy).not.toHaveBeenCalled();
   });
 
   it("returns 422 when the attached MIME is unsupported by the provider", async () => {
     const fileRef = storeFileRef({
+      ownerId: "test-bypass",
       filename: "doc.pdf",
       mimeType: "application/pdf",
       sizeBytes: 12,

@@ -7,6 +7,12 @@
  */
 
 import { AiClient } from "../../src/ai-powered/client.js";
+import {
+  BaseProvider,
+  createProvider,
+  registerProvider,
+} from "../../src/ai-powered/providers/index.js";
+import { getLogger } from "../../src/ai-powered/utils.js";
 import { MockProvider } from "../../src/ai-powered/providers/mock.js";
 import { AiConfigSchema } from "../../src/ai-powered/core.js";
 import {
@@ -33,6 +39,36 @@ import type { AiConfig } from "../../src/ai-powered/core.js";
 // ---------------------------------------------------------------------------
 
 const baseConfig = AiConfigSchema.parse({ mock: true, provider: "mock" });
+
+class CredentialRecordingProvider extends BaseProvider {
+  static configs: AiConfig[] = [];
+  static calls: Array<{ provider: string; options?: ProviderCallOptions }> = [];
+  readonly name: AiConfig["provider"];
+  readonly supportedModalities: Modality[] = ["text"];
+  constructor(config: AiConfig) {
+    super(config);
+    this.name = config.provider;
+    CredentialRecordingProvider.configs.push(config);
+    if (this.name === "anthropic" && !config.apiKey)
+      throw new Error("Anthropic setup requires its own credential.");
+  }
+  override async generateText(prompt: string, options?: ProviderCallOptions): Promise<TextResult> {
+    CredentialRecordingProvider.calls.push({ provider: this.name, options });
+    if (this.name === "openai") throw new Error(`primary failed ${this.config.apiKey ?? ""}`);
+    return {
+      modality: "text",
+      provider: this.name,
+      model: "fixture",
+      content: prompt,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      cost: { totalUsd: 0, isEstimate: false },
+      latencyMs: 1,
+    };
+  }
+  override async listModels(): Promise<ModelDescriptor[]> {
+    return [];
+  }
+}
 
 class RecordingMockProvider extends MockProvider {
   lastGenerateTextCall: { prompt: string; options?: ProviderCallOptions } | null = null;
@@ -62,6 +98,18 @@ class RecordingMockProvider extends MockProvider {
   ): Promise<ModelDescriptor[]> {
     this.listModelsCalls.push({ modality, accepts });
     return super.listModels(modality, accepts);
+  }
+}
+
+class PostAcceptanceFailureProvider extends MockProvider {
+  calls = 0;
+
+  override async generateText(
+    _prompt: string,
+    _options?: ProviderCallOptions,
+  ): Promise<TextResult> {
+    this.calls += 1;
+    throw new ProviderError("mock", "upstream accepted the job", 503, true);
   }
 }
 
@@ -178,6 +226,31 @@ describe("AiClient.generateText", () => {
     expect(typeof result.content).toBe("string");
     expect(result.usage.totalTokens).toBeGreaterThan(0);
     expect(result.cost.totalUsd).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("AiClient generation retry classification", () => {
+  it("does not repeat a provider generation call after an ambiguous 503", async () => {
+    const config = AiConfigSchema.parse({
+      provider: "mock",
+      mock: true,
+      fallback: false,
+      circuitBreakerThreshold: 1,
+    });
+    const provider = new PostAcceptanceFailureProvider(config);
+    const client = new AiClient(config, provider);
+
+    await expect(client.generateText("paid generation")).rejects.toThrow(
+      "upstream accepted the job",
+    );
+
+    const breakers = (
+      client as unknown as {
+        _circuitBreakers: Map<string, { state: string; failures: number }>;
+      }
+    )._circuitBreakers;
+    expect(provider.calls).toBe(1);
+    expect(breakers.get("mock")).toMatchObject({ state: "OPEN", failures: 1 });
   });
 });
 
@@ -596,5 +669,80 @@ describe("AiClient.session", () => {
     const s1 = client.session("alice");
     const s2 = client.session("bob");
     expect(s1).not.toBe(s2);
+  });
+});
+
+describe("AiClient fallback credential binding", () => {
+  beforeEach(() => {
+    CredentialRecordingProvider.configs = [];
+    CredentialRecordingProvider.calls = [];
+    registerProvider("openai", CredentialRecordingProvider);
+    registerProvider("anthropic", CredentialRecordingProvider);
+  });
+
+  it("isolates configured and request-scoped credentials", async () => {
+    const primaryKey = "primary-client-sentinel";
+    const fallbackKey = "fallback-client-sentinel";
+    const requestKey = "request-client-sentinel";
+    const config = AiConfigSchema.parse({
+      provider: "openai",
+      apiKey: primaryKey,
+      mock: false,
+      fallbackProviders: ["anthropic"],
+      providerCredentials: {
+        openai: { apiKey: primaryKey, tenant: "primary" },
+        anthropic: { apiKey: fallbackKey, tenant: "fallback" },
+      },
+    });
+    const client = new AiClient(config, createProvider(config));
+    const logger = getLogger();
+    const warnSpy = vi.spyOn(logger, "warn");
+    const infoSpy = vi.spyOn(logger, "info");
+    const result = await client.generateText("hello", {
+      providerCredentials: { apiKey: requestKey },
+    });
+    const logs = JSON.stringify([...warnSpy.mock.calls, ...infoSpy.mock.calls]);
+    warnSpy.mockRestore();
+    infoSpy.mockRestore();
+
+    expect(result.provider).toBe("anthropic");
+    expect(CredentialRecordingProvider.configs[0]).toMatchObject({
+      apiKey: primaryKey,
+      providerCredentials: { apiKey: primaryKey, tenant: "primary" },
+    });
+    expect(CredentialRecordingProvider.configs[1]).toMatchObject({
+      apiKey: fallbackKey,
+      providerCredentials: { apiKey: fallbackKey, tenant: "fallback" },
+    });
+    expect(CredentialRecordingProvider.calls[0]?.options?.providerCredentials).toEqual({
+      apiKey: requestKey,
+    });
+    expect(CredentialRecordingProvider.calls[1]?.options?.providerCredentials).toBeUndefined();
+    expect(logs).not.toContain(primaryKey);
+    expect(logs).not.toContain(fallbackKey);
+    expect(logs).not.toContain(requestKey);
+  });
+
+  it("continues after a missing fallback setup credential", async () => {
+    const primaryKey = "primary-missing-fallback-sentinel";
+    const savedAnthropic = process.env["ANTHROPIC_API_KEY"];
+    delete process.env["ANTHROPIC_API_KEY"];
+    try {
+      const config = AiConfigSchema.parse({
+        provider: "openai",
+        apiKey: primaryKey,
+        mock: false,
+        fallbackProviders: ["anthropic", "mock"],
+      });
+      const result = await new AiClient(config, createProvider(config)).generateText("hello");
+      expect(result.provider).toBe("mock");
+      const fallbackConfig = CredentialRecordingProvider.configs.find(
+        (entry) => entry.provider === "anthropic",
+      );
+      expect(fallbackConfig?.apiKey).toBeUndefined();
+    } finally {
+      if (savedAnthropic === undefined) delete process.env["ANTHROPIC_API_KEY"];
+      else process.env["ANTHROPIC_API_KEY"] = savedAnthropic;
+    }
   });
 });

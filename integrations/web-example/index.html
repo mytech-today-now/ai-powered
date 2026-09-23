@@ -271,6 +271,7 @@
       <button class="tab-btn active" data-tab="text" role="tab" aria-selected="true">Text</button>
       <button class="tab-btn" data-tab="image" role="tab" aria-selected="false">Image</button>
       <button class="tab-btn" data-tab="audio" role="tab" aria-selected="false">Audio</button>
+      <button class="tab-btn" data-tab="music" role="tab" aria-selected="false">Music</button>
       <button class="tab-btn" data-tab="video" role="tab" aria-selected="false">Video</button>
       <button class="tab-btn" data-tab="structured" role="tab" aria-selected="false">
         Structured
@@ -574,6 +575,42 @@ Hello! This demonstrates text-to-speech synthesis.</textarea
           <div id="transcribe-output" class="output-box" aria-live="polite"></div>
         </div>
         <div id="audio-usage" class="usage-bar"></div>
+      </section>
+
+      <!-- ── MUSIC TAB ────────────────────────────────────────────── -->
+      <section class="tab-panel hidden" id="panel-music" role="tabpanel">
+        <div class="processing-settings-row">
+          <div class="setting-control-group">
+            <label class="tab-provider-label" for="music-provider-select">Provider</label>
+            <select id="music-provider-select" class="provider-select"></select>
+          </div>
+          <div class="setting-control-group">
+            <label for="music-model-select">Model:</label>
+            <select id="music-model-select">
+              <option value="">Default</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-group">
+          <label for="music-prompt">Describe the music</label>
+          <textarea id="music-prompt" rows="3" placeholder="Describe the song or instrumental track…">A warm cinematic synthwave track for a night drive</textarea>
+        </div>
+        <div class="processing-settings-row music-controls-row">
+          <label for="music-duration">Duration (seconds)</label>
+          <input id="music-duration" type="number" min="1" max="600" value="30" />
+          <label for="music-seed">Seed</label>
+          <input id="music-seed" type="number" min="0" placeholder="Optional" />
+          <label class="checkbox-label"><input id="music-instrumental" type="checkbox" /> Instrumental</label>
+        </div>
+        <div class="input-group">
+          <label for="music-lyrics">Lyrics (optional)</label>
+          <textarea id="music-lyrics" rows="4" placeholder="Optional lyrics or leave blank for an instrumental prompt"></textarea>
+        </div>
+        <div class="btn-row">
+          <button id="btn-music-generate" class="btn-primary">Generate Music</button>
+        </div>
+        <div id="music-output" class="output-box audio-output" aria-live="polite"></div>
+        <div id="music-usage" class="usage-bar"></div>
       </section>
 
       <!-- ── VIDEO TAB ─────────────────────────────────────────────── -->
@@ -1022,6 +1059,14 @@ List 3 programming languages. Return a JSON array where each object has: name (s
         ),
       ]);
 
+      const settingsScript = document.createElement("script");
+      settingsScript.src = "settings.js";
+      await new Promise((resolve, reject) => {
+        settingsScript.onload = resolve;
+        settingsScript.onerror = () => reject(new Error("Failed to load settings.js"));
+        document.body.appendChild(settingsScript);
+      });
+
       const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
         import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js"),
         import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js"),
@@ -1036,8 +1081,5 @@ List 3 programming languages. Return a JSON array where each object has: name (s
     </script>
   </body>
 </html>
-
-
-
 
 

@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebClient } from "../../src/ai-powered/web/fetch-client.js";
+import { BudgetExceededError } from "../../src/ai-powered/types.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -223,5 +224,373 @@ describe("WebAiClient audio", () => {
 
     expect(speech).toBeInstanceOf(Blob);
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("WebAiClient music", () => {
+  it("posts music options without placing the credential in JSON", async () => {
+    const audioBase64 = "SUQzBA==";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:3001/music");
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        prompt: "night drive",
+        provider: "musicapi",
+        model: "sonic-v5",
+        lyrics: "stay awake",
+        instrumental: false,
+        duration: 30,
+        seed: 7,
+      });
+      expect(JSON.stringify(body)).not.toContain("secret-music-key");
+      const encoded = new Headers(init?.headers).get("X-AI-Provider-Credentials");
+      expect(encoded).toBeTruthy();
+      expect(atob(encoded!)).toContain("secret-music-key");
+      return jsonResponse({
+        data: `data:audio/mpeg;base64,${audioBase64}`,
+        provider: "musicapi",
+        model: "sonic-v5",
+        title: "Night Drive",
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      providerCredential: { apiKey: "secret-music-key" },
+    });
+    const result = await client.generateMusic("night drive", {
+      provider: "musicapi",
+      model: "sonic-v5",
+      lyrics: "stay awake",
+      instrumental: false,
+      duration: 30,
+      seed: 7,
+    });
+
+    expect(result.audio).toBeInstanceOf(Blob);
+    expect(result.audio.type).toBe("audio/mpeg");
+    expect(result.title).toBe("Night Drive");
+  });
+});
+
+describe("WebAiClient proxy budget", () => {
+  const cost = { totalUsd: 0.1, isEstimate: false };
+
+  it("preflights proxy text and accumulates the returned cost once", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        content: "ok",
+        model: "mock-text-v1",
+        provider: "mock",
+        cost,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      budgetUsd: 1,
+    });
+    const result = await client.generateText("hello", { model: "mock-text-v1" });
+
+    expect(result.content).toBe("ok");
+    expect(client.spentUsd).toBe(0.1);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects the next call at the exact accumulated limit before fetching", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        content: "ok",
+        model: "mock-text-v1",
+        provider: "mock",
+        cost: { totalUsd: 0.1, isEstimate: false },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      budgetUsd: 0.1,
+    });
+    await client.generateText("hello", { model: "mock-text-v1" });
+
+    await expect(client.generateText("again", { model: "mock-text-v1" })).rejects.toBeInstanceOf(
+      BudgetExceededError,
+    );
+    expect(client.spentUsd).toBe(0.1);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an over-limit proxy call before any network request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      budgetUsd: 0,
+    });
+
+    await expect(
+      client.generateMusic("over limit", { model: "mock-music-v1" }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "image",
+      model: "mock-image-v1",
+      run: (client: ReturnType<typeof createWebClient>) =>
+        client.generateImage("image", { model: "mock-image-v1" }),
+      response: { data: "data:image/png;base64,iVBORw0KGgo=", cost },
+    },
+    {
+      name: "audio transcription",
+      model: "mock-whisper-v1",
+      run: (client: ReturnType<typeof createWebClient>) =>
+        client.transcribeAudio(new Blob(["audio"], { type: "audio/webm" }), {
+          model: "mock-whisper-v1",
+        }),
+      response: { text: "transcript", cost },
+    },
+    {
+      name: "audio speech",
+      model: "mock-tts-v1",
+      run: (client: ReturnType<typeof createWebClient>) =>
+        client.synthesizeSpeech("speak", { model: "mock-tts-v1" }),
+      response: { audio: "SUQzBA==", cost },
+    },
+    {
+      name: "video",
+      model: "mock-video-v1",
+      run: (client: ReturnType<typeof createWebClient>) =>
+        client.generateVideo("video", { model: "mock-video-v1" }),
+      response: { data: "data:video/mp4;base64,AAAA", cost },
+    },
+    {
+      name: "music",
+      model: "mock-music-v1",
+      run: (client: ReturnType<typeof createWebClient>) =>
+        client.generateMusic("music", { model: "mock-music-v1" }),
+      response: { data: "data:audio/mpeg;base64,SUQzBA==", cost },
+    },
+    {
+      name: "structured",
+      model: "mock-structured-v1",
+      run: (client: ReturnType<typeof createWebClient>) =>
+        client.generateStructured("structured", { model: "mock-structured-v1" }),
+      response: { data: { ok: true }, cost },
+    },
+  ])(
+    "accounts the returned cost for proxy $name exactly once",
+    async ({ run, response, model }) => {
+      const fetchMock = vi.fn(async () => jsonResponse(response));
+      vi.stubGlobal("fetch", fetchMock);
+      const client = createWebClient({
+        mode: "proxy",
+        proxyUrl: "http://localhost:3001",
+        budgetUsd: 1,
+      });
+
+      await run(client);
+
+      expect(client.spentUsd).toBe(0.1);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(model).toBeTruthy();
+    },
+  );
+
+  it("surfaces a server budget rejection code without retrying it", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ error: "Budget exceeded", code: "BUDGET_EXCEEDED" }, 402),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      budgetUsd: 1,
+      maxRetries: 3,
+      backoffBase: 0,
+      backoffCap: 0,
+    });
+
+    await expect(
+      client.generateText("server rejected", { model: "mock-text-v1" }),
+    ).rejects.toMatchObject({
+      name: "ProxyError",
+      code: "BUDGET_EXCEEDED",
+      statusCode: 402,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(client.spentUsd).toBe(0);
+  });
+
+  it("fails closed when a finite-budget proxy response omits cost metadata", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ content: "unknown cost", model: "mock-text-v1", provider: "mock" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      budgetUsd: 1,
+    });
+
+    await expect(
+      client.generateText("missing cost", { model: "mock-text-v1" }),
+    ).rejects.toMatchObject({
+      name: "ProxyError",
+      code: "PROXY_COST_UNKNOWN",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(client.spentUsd).toBe(0);
+  });
+
+  it("retains bounded retries for safe model-list reads", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "temporary" }, 503))
+      .mockResolvedValueOnce(jsonResponse([{ id: "mock-text-v1", name: "Mock Text" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      maxRetries: 1,
+      backoffBase: 0,
+      backoffCap: 0,
+    });
+
+    const models = await client.listModels();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(models[0]?.id).toBe("mock-text-v1");
+    expect(client.spentUsd).toBe(0);
+  });
+});
+
+describe("WebAiClient retry classification", () => {
+  it("does not repeat a generation POST after a post-acceptance 503", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ error: "accepted upstream, response unavailable" }, 503),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      maxRetries: 3,
+      backoffBase: 0,
+      backoffCap: 0,
+    });
+
+    await expect(
+      client.generateText("paid generation", { model: "mock-text-v1" }),
+    ).rejects.toMatchObject({
+      name: "ProxyError",
+      statusCode: 503,
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(client.spentUsd).toBe(0);
+  });
+
+  it("does not repeat a generation POST when 429 includes Retry-After", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ error: "rate limited" }, 429, { "Retry-After": "30" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      maxRetries: 3,
+      backoffBase: 0,
+      backoffCap: 0,
+    });
+
+    await expect(
+      client.generateMusic("paid music", { model: "mock-music-v1" }),
+    ).rejects.toMatchObject({
+      name: "ProxyError",
+      statusCode: 429,
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not repeat a generation POST after a network failure", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("gateway disconnected");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      maxRetries: 3,
+      backoffBase: 0,
+      backoffCap: 0,
+    });
+
+    await expect(client.generateText("network failure", { model: "mock-text-v1" })).rejects.toThrow(
+      "gateway disconnected",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("opens the browser circuit on final 503 responses", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "service unavailable" }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      maxRetries: 2,
+      backoffBase: 0,
+      backoffCap: 0,
+    });
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(client.generateText("circuit", { model: "mock-text-v1" })).rejects.toMatchObject(
+        {
+          statusCode: 503,
+        },
+      );
+    }
+
+    const breaker = (client as unknown as { _breaker: { state: string; failures: number } })
+      ._breaker;
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(breaker.state).toBe("OPEN");
+    expect(breaker.failures).toBe(5);
+  });
+
+  it("does not count cancellation during safe-read backoff as circuit failure", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "temporary" }, 503))
+      .mockResolvedValueOnce(jsonResponse([{ id: "recovered", name: "Recovered" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      maxRetries: 1,
+      backoffBase: 1_000,
+      backoffCap: 1_000,
+    });
+
+    const pending = client.listModels(undefined, { signal: controller.signal });
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort(new Error("cancelled"));
+
+    await expect(pending).rejects.toThrow("cancelled");
+    const breaker = (client as unknown as { _breaker: { state: string; failures: number } })
+      ._breaker;
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(breaker.state).toBe("CLOSED");
+    expect(breaker.failures).toBe(0);
   });
 });

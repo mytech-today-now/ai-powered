@@ -1,8 +1,7 @@
-import express from "express";
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createRouter } from "../../src/ai-powered/server/routes.js";
+import { createServer } from "../../src/ai-powered/server/index.js";
 import { deleteFileRef } from "../../src/ai-powered/server/file-handler.js";
 
 const FILE_BYTES = Buffer.from("private-cache-fixture", "utf8");
@@ -14,14 +13,7 @@ let server: Server;
 let baseUrl = "";
 
 async function startServer(): Promise<{ server: Server; baseUrl: string }> {
-  const app = express();
-  app.use(express.json());
-  app.use(
-    createRouter({
-      mock: true,
-      configOverrides: {},
-    } as never),
-  );
+  const app = createServer({ mock: true });
 
   const listener = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve, reject) => {

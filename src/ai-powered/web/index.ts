@@ -142,11 +142,21 @@ export type {
  * const client = createWebClient({ mode: "direct", provider: "openai", apiKey: "sk-..." });
  * ```
  */
-export { createWebClient, WebAiClient, BrowserConversationSession } from "./fetch-client.js";
+export {
+  createWebClient,
+  WebAiClient,
+  BrowserConversationSession,
+  WebProxyError,
+} from "./fetch-client.js";
 
 export type {
   WebCallOptions,
+  WebImageOptions,
+  WebMusicOptions,
   WebVideoOptions,
+  WebCostBreakdown,
+  WebBudgetOptions,
+  WebMusicResult,
   WebTextResult,
   WebTokenUsage,
   WebStructuredResult,

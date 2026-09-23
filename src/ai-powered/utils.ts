@@ -175,6 +175,8 @@ export interface ModelPricing {
   perMinuteUsd?: number;
   /** Fixed USD per generated video clip (used for video models). */
   perVideoUsd?: number;
+  /** Fixed USD per generated music track. */
+  perMusicUsd?: number;
 }
 
 /**
@@ -248,6 +250,7 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   "mock-tts-v1": { promptPer1kUsd: 0.015 },
   "mock-video-v1": { perVideoUsd: 0.05 },
   "mock-structured-v1": { promptPer1kUsd: 0.001, completionPer1kUsd: 0.002 },
+  "mock-music-v1": { perMusicUsd: 0.05 },
 };
 
 /** Fallback when no exact or prefix match exists in MODEL_PRICING. */
@@ -276,7 +279,7 @@ export interface PricingEntry extends ModelPricing {
    * Human-readable modality label derived from the pricing shape.
    * One of: "text" | "image" | "audio" | "video"
    */
-  modality: "text" | "image" | "audio" | "video";
+  modality: "text" | "image" | "audio" | "video" | "music";
 }
 
 /**
@@ -297,7 +300,7 @@ export interface PricingEntry extends ModelPricing {
  *                modality or a partial model-id substring.
  */
 export function listPricing(filter?: {
-  modality?: "text" | "image" | "audio" | "video";
+  modality?: "text" | "image" | "audio" | "video" | "music";
   model?: string;
 }): PricingEntry[] {
   const entries: PricingEntry[] = Object.entries(MODEL_PRICING)
@@ -305,7 +308,10 @@ export function listPricing(filter?: {
       let modality: PricingEntry["modality"];
       let primaryUsd: number;
 
-      if (pricing.perVideoUsd !== undefined) {
+      if (pricing.perMusicUsd !== undefined) {
+        modality = "music";
+        primaryUsd = pricing.perMusicUsd;
+      } else if (pricing.perVideoUsd !== undefined) {
         modality = "video";
         primaryUsd = pricing.perVideoUsd;
       } else if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
@@ -385,7 +391,9 @@ export function calculateCost(
   const pricing = lookupModelPricing(model);
 
   let raw: number;
-  if (pricing.perVideoUsd !== undefined) {
+  if (pricing.perMusicUsd !== undefined) {
+    raw = pricing.perMusicUsd;
+  } else if (pricing.perVideoUsd !== undefined) {
     // Video models: fixed cost per generated clip.
     raw = pricing.perVideoUsd;
   } else if (pricing.perImage === true && pricing.perImageUsd !== undefined) {
@@ -420,6 +428,10 @@ export function calculateCost(
  */
 export function estimateCost(model: string, promptText: string): CostBreakdown {
   const pricing = lookupModelPricing(model);
+
+  if (pricing.perMusicUsd !== undefined) {
+    return { totalUsd: Math.round(pricing.perMusicUsd * 1e6) / 1e6, isEstimate: true };
+  }
 
   if (pricing.perVideoUsd !== undefined) {
     // Video models: fixed cost regardless of prompt length.

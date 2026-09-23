@@ -475,13 +475,13 @@ describe("V2-08: POST /video — Venice image-keyframe requests reach generateVi
 
   it("sends Venice keyframes through the public URL bridge and into generateVideoFromImage", async () => {
     const fileRef = storeFileRef({
+      ownerId: "test-bypass",
       filename: "frame.png",
       mimeType: "image/png",
       sizeBytes: 12,
       base64Content: Buffer.from("venice-frame").toString("base64"),
       provider: "venice",
     });
-    const expectedImageUrl = `https://public.example.test/files/${fileRef}`;
     const spy = vi.spyOn(VeniceProvider.prototype, "generateVideoFromImage").mockResolvedValue({
       modality: "video",
       provider: "venice",
@@ -501,13 +501,34 @@ describe("V2-08: POST /video — Venice image-keyframe requests reach generateVi
 
     expect(status).toBe(200);
     expect(spy).toHaveBeenCalledOnce();
+    const providerUrl = new URL(spy.mock.calls[0]![0] as string);
+    expect(providerUrl.pathname).toBe("/files/provider");
+    expect(providerUrl.searchParams.get("provider")).toBe("venice");
+    expect(providerUrl.searchParams.get("capability")).toBeTruthy();
+    expect(providerUrl.toString()).not.toContain(fileRef);
     expect(spy).toHaveBeenCalledWith(
-      expectedImageUrl,
+      providerUrl.toString(),
       "a slow cinematic reveal",
       expect.objectContaining({
-        images: [expectedImageUrl],
+        images: [providerUrl.toString()],
       }),
     );
+
+    const localProviderUrl = new URL(providerUrl.toString());
+    localProviderUrl.protocol = "http:";
+    localProviderUrl.hostname = "127.0.0.1";
+    localProviderUrl.port = String(venicePort);
+    const providerResponse = await fetch(localProviderUrl);
+    expect(providerResponse.status).toBe(200);
+    expect(providerResponse.headers.get("cache-control")).toBe("no-store");
+    expect(Buffer.from(await providerResponse.arrayBuffer()).toString()).toBe("venice-frame");
+
+    const ordinaryDownload = await fetch(`http://127.0.0.1:${venicePort}/files/${fileRef}`);
+    expect(ordinaryDownload.status).toBe(200);
+    const reusedAsDownload = await fetch(
+      `http://127.0.0.1:${venicePort}/files/${providerUrl.searchParams.get("capability")!}`,
+    );
+    expect(reusedAsDownload.status).toBe(404);
 
     const body = JSON.parse(text) as { provider?: string; modality?: string };
     expect(body.provider).toBe("venice");
@@ -524,7 +545,7 @@ describe("V2-08: POST /video — Venice image-keyframe requests reach generateVi
 
     expect(status).toBe(400);
     const body = JSON.parse(text) as { error?: string };
-    expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toMatch(/attachment/i);
     expect(body.error).toContain("Re-upload the file and try again.");
     expect(body.error).toMatch(/not found|expired/i);
     expect(spy).not.toHaveBeenCalled();
@@ -532,6 +553,7 @@ describe("V2-08: POST /video — Venice image-keyframe requests reach generateVi
 
   it("returns 422 when the attached MIME type is unsupported", async () => {
     const fileRef = storeFileRef({
+      ownerId: "test-bypass",
       filename: "doc.pdf",
       mimeType: "application/pdf",
       sizeBytes: 12,

@@ -12,10 +12,14 @@
 
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deliverWebhook } from "../../src/ai-powered/webhook.js";
+import {
+  _setWebhookDnsLookupForTests,
+  deliverWebhook,
+  validateWebhookDestination,
+} from "../../src/ai-powered/webhook.js";
 import type { WebhookCompletePayload } from "../../src/ai-powered/webhook.js";
 
-const CALLBACK_URL = "https://callbacks.example.test/webhooks/ai-powered";
+const CALLBACK_URL = "https://93.184.216.34/webhooks/ai-powered";
 const SIGNING_KEY = "fb_sk_webhook_test_key";
 
 const COMPLETE_PAYLOAD: WebhookCompletePayload = {
@@ -42,6 +46,8 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  _setWebhookDnsLookupForTests();
+  delete process.env["AIPOWERED_WEBHOOK_TEST_MODE"];
 });
 
 describe("deliverWebhook", () => {
@@ -167,9 +173,101 @@ describe("deliverWebhook", () => {
     const parsed = JSON.parse(stderrText);
     expect(parsed).toMatchObject({
       delivery_failed: true,
-      ...COMPLETE_PAYLOAD,
-      callbackUrl: CALLBACK_URL,
+      event: COMPLETE_PAYLOAD.event,
+      jobId: COMPLETE_PAYLOAD.jobId,
+      shotId: COMPLETE_PAYLOAD.shotId,
+      status: COMPLETE_PAYLOAD.status,
       attempts: 4,
     });
+    expect(parsed.destinationHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(stderrText).not.toContain(CALLBACK_URL);
+    expect(stderrText).not.toContain(COMPLETE_PAYLOAD.clipPath);
+    expect(stderrText).not.toContain(SIGNING_KEY);
+  });
+  it("accepts public HTTPS and rejects malformed, HTTP, and loopback destinations", () => {
+    expect(validateWebhookDestination(CALLBACK_URL)).toMatchObject({
+      url: CALLBACK_URL,
+      hostname: "93.184.216.34",
+      addresses: ["93.184.216.34"],
+    });
+    expect(() => validateWebhookDestination("not-a-url")).toThrow();
+    expect(() => validateWebhookDestination("http://93.184.216.34/webhook")).toThrow();
+    expect(() => validateWebhookDestination("https://127.0.0.1/webhook")).toThrow();
+    expect(() => validateWebhookDestination("https://10.0.0.4/webhook")).toThrow();
+  });
+
+  it("allows localhost only when explicit test mode is enabled", () => {
+    expect(() => validateWebhookDestination("http://127.0.0.1:31337/webhook")).toThrow();
+    expect(
+      validateWebhookDestination("http://127.0.0.1:31337/webhook", { allowLocalhost: true }),
+    ).toMatchObject({
+      allowLocalhost: true,
+      addresses: ["127.0.0.1"],
+    });
+  });
+
+  it("rejects DNS names resolving to private addresses before fetch", async () => {
+    _setWebhookDnsLookupForTests(async () => ["10.0.0.4"]);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    deliverWebhook("https://callbacks.example.test/webhook", COMPLETE_PAYLOAD, SIGNING_KEY);
+    await vi.runAllTimersAsync();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(stderrSpy.mock.calls[0]?.[0])).toContain('"delivery_rejected":true');
+    expect(String(stderrSpy.mock.calls[0]?.[0])).not.toContain("callbacks.example.test");
+    expect(String(stderrSpy.mock.calls[0]?.[0])).not.toContain(COMPLETE_PAYLOAD.clipPath);
+  });
+
+  it("stops before retry when DNS resolution changes to a private address", async () => {
+    const lookup = vi
+      .fn()
+      .mockResolvedValueOnce(["93.184.216.34"])
+      .mockResolvedValueOnce(["10.0.0.4"]);
+    _setWebhookDnsLookupForTests(lookup);
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchSpy);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    deliverWebhook("https://callbacks.example.test/webhook", COMPLETE_PAYLOAD, SIGNING_KEY);
+    await vi.runAllTimersAsync();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(stderrSpy.mock.calls.at(-1)?.[0])).toContain('"reason":"private_address"');
+  });
+
+  it("does not follow a redirect to another destination", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://127.0.0.1/blocked" }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    deliverWebhook(CALLBACK_URL, COMPLETE_PAYLOAD, SIGNING_KEY);
+    await vi.runAllTimersAsync();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    for (const [, init] of fetchSpy.mock.calls) {
+      expect((init as RequestInit).redirect).toBe("manual");
+    }
+  });
+
+  it("permits an HTTP localhost callback only in environment test mode", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    deliverWebhook("http://127.0.0.1:31337/webhook", COMPLETE_PAYLOAD, SIGNING_KEY);
+    await vi.runAllTimersAsync();
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    process.env["AIPOWERED_WEBHOOK_TEST_MODE"] = "true";
+    deliverWebhook("http://127.0.0.1:31337/webhook", COMPLETE_PAYLOAD, SIGNING_KEY);
+    await vi.runAllTimersAsync();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,24 +8,28 @@
  *   2. Helmet — X-Content-Type-Options: nosniff, X-Frame-Options: DENY,
  *               Strict-Transport-Security on every response
  *   3. CORS — configurable origin (default http://localhost:5173)
- *   4. express-rate-limit — default 60 req/min, returns 429 on exceed
- *   5. express.json body parser — 200 MB limit (REQ-SS-05 / design.md D5)
- *   6. API routes from server/routes.ts (Zod-validated per route)
- *   7. Centralised error handler:
+ *   4. Caller authentication — before rate limiting, body parsing, or routes
+ *   5. express-rate-limit — default 60 req/min, principal-aware when authed
+ *   6. express.json body parser — 200 MB limit (REQ-SS-05 / design.md D5)
+ *   7. API routes from server/routes.ts (Zod-validated per route)
+ *   8. Centralised error handler:
  *        BudgetExceededError          → 402
  *        AllProvidersExhaustedError   → 503
  *        everything else              → 500
  *
- * Start-up log: "ai-powered proxy server listening on :<PORT>"
+ * Health, preflight, and static browser assets remain public by decision in
+ * server/auth.ts. Provider, upload, file, and operational routes require an
+ * authenticated caller in normal (including mock) server runs.
  */
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger, initLogger } from "../utils.js";
 import { createRouter, shouldServeAppShell } from "./routes.js";
+import { authenticateProxyRequest, proxyAuthDecision, TEST_BYPASS_PRINCIPAL_ID } from "./auth.js";
 import type { AiConfig } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +59,8 @@ export interface ServeOptions {
   debug?: boolean;
   /** Deep-merged on top of the resolved config for every request. */
   configOverrides?: Partial<AiConfig>;
+  /** Authentication controls. Authentication is required by default. */
+  auth?: { required?: boolean };
 }
 
 export interface ResolvedServeBinding {
@@ -91,6 +97,23 @@ export function resolveServeBinding(
   return { port, host };
 }
 
+function isExplicitTestBypass(opts: ServeOptions): boolean {
+  return (
+    opts.auth?.required !== true &&
+    (process.env["VITEST"] === "true" ||
+      (opts.mock === true &&
+        process.env["NODE_ENV"] === "test" &&
+        process.env["AIPOWERED_PROXY_TEST_BYPASS"] === "true"))
+  );
+}
+
+/** Keep file UUIDs and provider capabilities out of ordinary request logs. */
+function safeRequestLogPath(req: Request): string {
+  return req.path === "/files/provider" || req.path.startsWith("/files/")
+    ? "/files/[redacted]"
+    : req.path;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -101,9 +124,8 @@ export function resolveServeBinding(
  */
 export function createServer(opts: ServeOptions = {}): express.Express {
   // Re-initialise the logger only when the server has its own log-file path or
-  // is explicitly enabling debug mode.  If the CLI preAction hook already
-  // configured the logger, this is a no-op for the common case (no logFile,
-  // debug === false/undefined).
+  // is explicitly enabling debug mode. If the CLI preAction hook already
+  // configured the logger, this is a no-op for the common case.
   if (opts.logFile !== undefined || opts.debug === true) {
     initLogger({
       debug: opts.debug ?? false,
@@ -116,12 +138,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   const configuredOrigin = opts.corsOrigin ?? "http://localhost:5173";
   const rpm = opts.rateLimit ?? 60;
 
-  /**
-   * Test whether a request origin matches a configured pattern.
-   * Supports exact matches and glob-style wildcards where `*` matches any
-   * single hostname segment (e.g. `https://*.ngrok-free.dev` matches
-   * `https://contorted-jarrod-supersecure.ngrok-free.dev`).
-   */
+  /** Test whether a request origin matches a configured pattern. */
   function originMatchesPattern(origin: string, pattern: string): boolean {
     if (pattern === origin) return true;
     if (!pattern.includes("*")) return false;
@@ -131,15 +148,32 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     return new RegExp(`^${regexStr}$`).test(origin);
   }
 
-  // Build a cors origin handler that also accepts `null` (file:// URLs) and
-  // normalised arrays of allowed origins.  Each entry in the list may be an
-  // exact origin string or a glob pattern containing `*`.
+  // Build a CORS origin handler for configured trusted origins. `false` is
+  // deliberate for missing, null, malformed, and untrusted origins: the
+  // request may still be handled by the server, but the browser receives no
+  // readable cross-origin response. CORS never replaces caller auth.
   const corsOriginOption: cors.CorsOptions["origin"] = (requestOrigin, callback) => {
-    // requestOrigin is undefined for same-origin or non-browser requests;
-    // it is the string "null" when the page is opened as a file:// URL.
+    // An absent Origin is normal for non-browser clients and must not be
+    // treated as proof of same-origin access. A file:// page or sandboxed
+    // document sends the literal string "null" and is never allowlisted.
     if (!requestOrigin || requestOrigin === "null") {
-      return callback(null, true);
+      return callback(null, false);
     }
+
+    // Browser origins are serialized HTTP(S) origins. Reject malformed
+    // values before consulting an explicit wildcard configuration.
+    try {
+      const origin = new URL(requestOrigin);
+      if (
+        (origin.protocol !== "http:" && origin.protocol !== "https:") ||
+        origin.origin !== requestOrigin
+      ) {
+        return callback(null, false);
+      }
+    } catch {
+      return callback(null, false);
+    }
+
     if (configuredOrigin === "*") {
       return callback(null, true);
     }
@@ -147,12 +181,29 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     if (allowed.some((pattern) => originMatchesPattern(requestOrigin, pattern))) {
       return callback(null, true);
     }
-    callback(new Error(`CORS: origin '${requestOrigin}' is not allowed`));
+    // Do not reflect the rejected origin in an error response. Passing false
+    // leaves the route and its independent authentication policy in control,
+    // while the browser cannot read the response without ACAO.
+    callback(null, false);
   };
 
+  function isSameOriginRequest(req: Request): boolean {
+    const requestOrigin = req.get("Origin");
+    const requestHost = req.get("Host");
+    if (!requestOrigin || !requestHost) return false;
+
+    try {
+      const origin = new URL(requestOrigin);
+      const forwardedProtocol = req.get("X-Forwarded-Proto")?.split(",")[0]?.trim();
+      const requestProtocol = forwardedProtocol || req.protocol;
+      return origin.host === requestHost && origin.protocol === `${requestProtocol}:`;
+    } catch {
+      return false;
+    }
+  }
+
   // 1. Helmet — security headers on every response.
-  //    The app shell sets its own page-scoped CSP in server/routes.ts so the
-  //    demo can load local CSS, inline styles, and inline scripts.
+  // The app shell sets its own page-scoped CSP in server/routes.ts.
   const strictHelmetMiddleware = helmet({
     contentSecurityPolicy: {
       directives: {
@@ -178,54 +229,73 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     middleware(req, res, next);
   });
 
-  // 1a. COOP / COEP — required for SharedArrayBuffer to be available in the
-  //     browser.  These must be set on every response from this server so that
-  //     the web demo page runs in a cross-origin isolated context, which is a
-  //     prerequisite for ffmpeg.wasm's multi-threaded mode (batch combined video).
-  //
-  //     Cross-Origin-Opener-Policy: same-origin
-  //       Prevents the page from sharing a browsing context group with
-  //       cross-origin popups, isolating it from side-channel attacks.
-  //
-  //     Cross-Origin-Embedder-Policy: require-corp
-  //       Ensures every cross-origin sub-resource the page embeds declares
-  //       CORP / CORS permission, which completes the isolation requirement.
+  // COOP / COEP — required for SharedArrayBuffer and ffmpeg.wasm.
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
     res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
     next();
   });
 
-  // 2. CORS
-  app.use(cors({ origin: corsOriginOption }));
+  // CORS is transport policy only. It never satisfies caller authentication.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (isSameOriginRequest(req)) {
+      next();
+      return;
+    }
+    cors({ origin: corsOriginOption })(req, res, next);
+  });
 
-  // 3. Rate limiter — 429 on exceed
+  // Authenticate before rate limiting, body parsing, provider work, uploads,
+  // or file reads. OPTIONS remains public for browser preflight requests.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const decision = proxyAuthDecision(req);
+    if (decision.public) {
+      next();
+      return;
+    }
+    if (isExplicitTestBypass(opts)) {
+      req.aiPrincipal = {
+        id: TEST_BYPASS_PRINCIPAL_ID,
+        credentialType: "global",
+        scopes: [],
+      };
+      next();
+      return;
+    }
+    void authenticateProxyRequest(req, res, next, decision);
+  });
+
+  // Rate limits are keyed by authenticated principal when available.
   app.use(
     rateLimit({
       windowMs: 60_000,
       limit: rpm,
       standardHeaders: true,
       legacyHeaders: false,
+      keyGenerator: (req) => req.aiPrincipal?.id ?? ipKeyGenerator(req.ip ?? "unknown"),
       message: { error: "Too many requests — rate limit exceeded.", code: "RATE_LIMITED" },
     }),
   );
 
-  // 4. Body parser
-  // 200 MB ceiling: a 24-clip Luma AI batch (~5-6 MB each) encodes to ~86 MB
-  // base64 JSON.  The server binds to 127.0.0.1 by default so DoS risk is
-  // minimal.  (REQ-SS-05 / design.md D5)
+  // 200 MB ceiling: a 24-clip Luma AI batch encodes to roughly 86 MB base64.
   app.use(express.json({ limit: "200mb" }));
 
-  // 5. Pino HTTP request/response logger
+  // Pino HTTP request/response logger. Raw credentials are never logged.
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     res.on("finish", () => {
       logger.info(
         {
           method: req.method,
-          url: req.url,
+          url: safeRequestLogPath(req),
           status: res.statusCode,
           ms: Date.now() - start,
+          ...(req.aiPrincipal
+            ? {
+                principalId: req.aiPrincipal.id,
+                credentialType: req.aiPrincipal.credentialType,
+              }
+            : {}),
         },
         "request",
       );
@@ -233,12 +303,10 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     next();
   });
 
-  // 6. API routes (Zod-validated, all errors propagate to handler below)
+  // API routes (Zod-validated, all errors propagate to handler below).
   app.use("/", createRouter(opts));
 
-  // 7. Centralised error handler — maps domain errors to HTTP status codes.
-  //    Express requires exactly 4 parameters for error-handling middleware.
-
+  // Centralised error handler — Express requires exactly 4 parameters.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof BudgetExceededError) {
       logger.warn({ code: "BUDGET_EXCEEDED" }, err.message);
@@ -258,10 +326,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   return app;
 }
 
-/**
- * Start the server, bind to the configured host/port, and log the listening
- * address.  The returned Promise resolves once the server is listening.
- */
+/** Start the server, bind to the configured host/port, and log the address. */
 export function startServer(opts: ServeOptions = {}): Promise<void> {
   const { port, host } = resolveServeBinding(opts);
   const app = createServer(opts);

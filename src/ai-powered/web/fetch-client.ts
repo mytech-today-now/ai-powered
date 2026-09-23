@@ -15,6 +15,17 @@ import { withRetryFetch, CircuitBreaker } from "../shared/resilience.js";
 import { estimateCost } from "../shared/cost.js";
 import { BudgetExceededError } from "../types.js";
 
+type WebRequestClass = "safe-read" | "generation";
+
+/** Internal signal used to let the breaker observe a final 429/503 while the
+ * public caller still receives the original Response for normal error mapping. */
+class RetryableResponseError extends Error {
+  constructor(readonly response: Response) {
+    super(`HTTP ${response.status}`);
+    this.name = "RetryableResponseError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Call options
 // ---------------------------------------------------------------------------
@@ -35,6 +46,16 @@ export interface WebCallOptions {
   model?: string;
   /** Single upload reference returned by POST /upload. */
   fileRef?: string;
+  /** Request-scoped provider credential sent in a dedicated header in proxy mode. */
+  providerCredential?: string | Record<string, string>;
+}
+
+/** Music-generation controls accepted by WebAiClient.generateMusic(). */
+export interface WebMusicOptions extends WebCallOptions {
+  lyrics?: string;
+  instrumental?: boolean;
+  duration?: number;
+  seed?: number;
 }
 
 /** Image-generation controls accepted by WebAiClient.generateImage(). */
@@ -112,6 +133,17 @@ export interface WebStructuredResult<T = unknown> {
   cost?: WebCostBreakdown;
 }
 
+/** Result of a browser music call. */
+export interface WebMusicResult {
+  audio: Blob;
+  model: string;
+  provider: string;
+  title?: string;
+  lyrics?: string;
+  durationSeconds?: number;
+  cost?: WebCostBreakdown;
+}
+
 /** Minimal model descriptor returned from listModels(). */
 export interface WebModelInfo {
   id: string;
@@ -140,6 +172,8 @@ export interface WebProxyOptions {
   proxyUrl: string;
   /** Named config profile to activate on the server. */
   profile?: string;
+  /** Optional request credential supplied by a trusted browser settings surface. */
+  providerCredential?: string | Record<string, string>;
 }
 
 /**
@@ -168,10 +202,11 @@ export interface WebResilienceOptions {
 /** Budget options applicable to all WebAiClient modes. */
 export interface WebBudgetOptions {
   /**
-   * Maximum cumulative spend in USD for this client instance.
+   * Maximum cumulative estimated/returned spend in USD for this client instance.
    * Default: Infinity (no cap). When the running total meets or exceeds this
    * value, the next applicable call throws BudgetExceededError before any
-   * fetch is issued.
+   * fetch is issued. In proxy mode this is a browser-local UX guard; the
+   * proxy must enforce any authoritative multi-user billing or quota policy.
    */
   budgetUsd?: number;
   /**
@@ -348,8 +383,7 @@ function getMinimalDocument(): MinimalDocument | undefined {
 function getSessionStorage(): MinimalStorage | undefined {
   try {
     const storage = (globalThis as Record<string, unknown>)["sessionStorage"] as
-      | MinimalStorage
-      | undefined;
+      MinimalStorage | undefined;
     if (!storage) return undefined;
     if (typeof storage.getItem !== "function") return undefined;
     return storage;
@@ -619,6 +653,51 @@ export class WebAiClient {
     }
   }
 
+  /** Check a projected call cost and return the same estimate for post-call accounting. */
+  private _checkProjectedBudget(model: string, promptText: string): number {
+    const projected = this._estimateProjectedCost(model, promptText);
+    this._checkBudget(projected);
+    return projected;
+  }
+
+  /** Account for a successful call when the provider has no cost envelope. */
+  private _accumulateEstimatedCost(estimatedUsd: number): void {
+    this._accumulateCost({ cost: { totalUsd: estimatedUsd } });
+  }
+
+  /** Read a finite, non-negative cost from a proxy result without treating absence as free. */
+  private _readProxyCost(payload: unknown): WebCostBreakdown | undefined {
+    if (!payload || typeof payload !== "object") return undefined;
+    const cost = (payload as { cost?: unknown }).cost;
+    if (!cost || typeof cost !== "object") return undefined;
+    const totalUsd = (cost as { totalUsd?: unknown }).totalUsd;
+    if (typeof totalUsd !== "number" || !Number.isFinite(totalUsd) || totalUsd < 0) {
+      return undefined;
+    }
+    const isEstimate = (cost as { isEstimate?: unknown }).isEstimate;
+    return { totalUsd, isEstimate: isEstimate === true };
+  }
+
+  /** Account for one successful proxy provider response exactly once. */
+  private _accumulateProxyCost(payload: unknown, operation: string): void {
+    const cost = this._readProxyCost(payload);
+    if (!cost) {
+      const message =
+        `Proxy ${operation} response did not include a finite cost. ` +
+        "The provider charge is unknown; configure the proxy to return cost metadata.";
+      console.warn(`[WebAiClient] ${message}`);
+      if (this._budgetUsd < Infinity) {
+        throw new WebProxyError(message, "PROXY_COST_UNKNOWN");
+      }
+      return;
+    }
+
+    this._accumulateCost({ cost });
+    if (this._budgetUsd < Infinity && this._spentUsd > this._budgetUsd) {
+      throw new BudgetExceededError(this._spentUsd, this._budgetUsd);
+    }
+  }
+
   /** Browser-safe estimate helper shared with the server-side cost model. */
   private _estimateProjectedCost(model: string, promptText: string): number {
     try {
@@ -679,6 +758,30 @@ export class WebAiClient {
     this.setBodyField(body, "fileRef", options?.fileRef);
   }
 
+  private proxyHeaders(options?: WebCallOptions): Record<string, string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.opts.mode !== "proxy") return headers;
+    let trusted = false;
+    try {
+      const target = new URL(this.proxyBase);
+      const current = typeof location === "undefined" ? "" : location.origin;
+      trusted =
+        target.hostname === "localhost" ||
+        target.hostname === "127.0.0.1" ||
+        target.origin === current;
+    } catch {
+      // Invalid proxy URLs remain untrusted.
+    }
+    if (!trusted) return headers;
+    const credential = options?.providerCredential ?? this.opts.providerCredential;
+    if (credential === undefined) return headers;
+    const payload = typeof credential === "string" ? { apiKey: credential } : credential;
+    headers["X-AI-Provider-Credentials"] = btoa(
+      unescape(encodeURIComponent(JSON.stringify(payload))),
+    );
+    return headers;
+  }
+
   private addProxyImageFields(body: Record<string, unknown>, options?: WebImageOptions): void {
     this.addProxyRoutingFields(body, options);
     this.setBodyField(body, "fileRefs", options?.fileRefs);
@@ -713,6 +816,7 @@ export class WebAiClient {
     if (res.ok) return;
     const body = await res.text().catch(() => "");
     let message = body.trim();
+    let code = "PROXY_ERROR";
     if (message) {
       try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
@@ -721,33 +825,48 @@ export class WebAiClient {
         } else if (typeof parsed["message"] === "string") {
           message = parsed["message"];
         }
+        if (typeof parsed["code"] === "string") code = parsed["code"];
       } catch {
         // Keep the raw text body when the error payload is not JSON.
       }
     }
-    const err = new Error(message || `HTTP ${res.status}`) as Error & { statusCode?: number };
-    err.name = "ProxyError";
-    err.statusCode = res.status;
-    throw err;
+    throw new WebProxyError(message || `HTTP ${res.status}`, code, res.status);
   }
 
   /**
-   * Executes a fetch thunk wrapped in Full Jitter retry and the per-instance
-   * circuit breaker.  Forwards `signal` so callers can cancel mid-flight or
-   * during a backoff delay.
+   * Executes a fetch thunk through the per-instance circuit breaker. Safe reads
+   * use bounded Full Jitter retries; generation requests are single-attempt by
+   * default because they have no idempotency contract. Forwards `signal` so
+   * callers can cancel mid-flight or during a read backoff delay.
    */
   private fetchWithResilience(
     fn: () => Promise<Response>,
     signal?: AbortSignal,
+    requestClass: WebRequestClass = "generation",
   ): Promise<Response> {
     // Build RetryOptions conditionally to satisfy exactOptionalPropertyTypes:
     // passing `undefined` for an optional field is a type error with that flag.
     const retryOpts: import("../shared/resilience.js").RetryOptions = {
+      allowRetries: requestClass === "safe-read",
       ...(this.opts.maxRetries !== undefined && { maxRetries: this.opts.maxRetries }),
       ...(this.opts.backoffBase !== undefined && { backoffBase: this.opts.backoffBase }),
       ...(this.opts.backoffCap !== undefined && { backoffCap: this.opts.backoffCap }),
     };
-    return this._breaker.call(() => withRetryFetch(fn, retryOpts, signal));
+    return this._breaker
+      .call(
+        async () => {
+          const response = await withRetryFetch(fn, retryOpts, signal);
+          if (response.status === 429 || response.status === 503) {
+            throw new RetryableResponseError(response);
+          }
+          return response;
+        },
+        signal !== undefined ? { signal } : {},
+      )
+      .catch((error: unknown) => {
+        if (error instanceof RetryableResponseError) return error.response;
+        throw error;
+      });
   }
 
   /**
@@ -848,6 +967,7 @@ export class WebAiClient {
   /** Generate text from a prompt. */
   async generateText(prompt: string, options?: WebCallOptions): Promise<WebTextResult> {
     if (this.opts.mode === "proxy") {
+      this._checkProjectedBudget(options?.model ?? "", prompt);
       const body: Record<string, unknown> = { prompt };
       this.addProxyRoutingFields(body, options);
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
@@ -859,7 +979,7 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/text`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
@@ -875,7 +995,7 @@ export class WebAiClient {
         usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
         cost?: { totalUsd: number; isEstimate: boolean };
       };
-      return {
+      const result: WebTextResult = {
         content: data.content ?? data.text ?? "",
         model: data.model ?? "",
         provider: data.provider ?? "",
@@ -883,6 +1003,8 @@ export class WebAiClient {
         ...(data.usage !== undefined && { usage: data.usage }),
         ...(data.cost !== undefined && { cost: data.cost }),
       };
+      this._accumulateProxyCost(data, "text");
+      return result;
     }
 
     // Direct mode — OpenAI-compatible chat completions (all four providers use this format)
@@ -901,6 +1023,7 @@ export class WebAiClient {
    */
   async *streamText(prompt: string, options?: WebCallOptions): AsyncIterable<string> {
     if (this.opts.mode === "proxy") {
+      const projectedCost = this._checkProjectedBudget(options?.model ?? "", prompt);
       const body: Record<string, unknown> = { prompt, stream: true };
       this.addProxyRoutingFields(body, options);
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
@@ -912,7 +1035,7 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/text`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
@@ -921,13 +1044,17 @@ export class WebAiClient {
       await this.assertOk(res);
 
       const reader = res.body?.getReader();
-      if (!reader) return;
+      if (!reader) {
+        this._accumulateEstimatedCost(projectedCost);
+        return;
+      }
       const decoder = new TextDecoder();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         yield decoder.decode(value, { stream: true });
       }
+      this._accumulateEstimatedCost(projectedCost);
       return;
     }
 
@@ -1007,6 +1134,7 @@ export class WebAiClient {
    */
   async generateImage(prompt: string, options?: WebImageOptions): Promise<Blob> {
     if (this.opts.mode === "proxy") {
+      this._checkProjectedBudget(options?.model ?? "", prompt);
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       this.addProxyImageFields(body, options);
@@ -1014,7 +1142,7 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/image`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
@@ -1027,12 +1155,14 @@ export class WebAiClient {
         data?: string;
         mimeType?: string;
       };
+      this._accumulateProxyCost(data, "image");
       if (data.url) {
         // Capture into const so TypeScript preserves the string narrowing inside the closure.
         const imgUrl = data.url;
         const imgRes = await this.fetchWithResilience(
           () => fetch(imgUrl, { signal: options?.signal ?? null }),
           options?.signal,
+          "safe-read",
         );
         return imgRes.blob();
       }
@@ -1074,8 +1204,7 @@ export class WebAiClient {
       await this.assertOk(res);
       const imageResult = (await res.json()) as {
         data?:
-          | Array<{ b64_json?: string; url?: string; data?: string; mimeType?: string }>
-          | string;
+          Array<{ b64_json?: string; url?: string; data?: string; mimeType?: string }> | string;
         b64_json?: string;
         url?: string;
         mimeType?: string;
@@ -1092,6 +1221,7 @@ export class WebAiClient {
         const imgRes = await this.fetchWithResilience(
           () => fetch(directImgUrl, { signal: options?.signal ?? null }),
           options?.signal,
+          "safe-read",
         );
         return imgRes.blob();
       }
@@ -1134,6 +1264,7 @@ export class WebAiClient {
       const imgRes = await this.fetchWithResilience(
         () => fetch(directImgUrl, { signal: options?.signal ?? null }),
         options?.signal,
+        "safe-read",
       );
       return imgRes.blob();
     }
@@ -1150,6 +1281,7 @@ export class WebAiClient {
    */
   async transcribeAudio(audio: Blob, options?: WebCallOptions): Promise<string> {
     if (this.opts.mode === "proxy") {
+      this._checkProjectedBudget(options?.model ?? "", String(audio.size));
       // Convert Blob to base64 for the JSON body the proxy server expects.
       const buffer = await audio.arrayBuffer();
       const bytes = new Uint8Array(buffer);
@@ -1168,14 +1300,19 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/audio/transcribe`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
         options?.signal,
       );
       await this.assertOk(res);
-      const data = (await res.json()) as { text?: string; transcript?: string };
+      const data = (await res.json()) as {
+        text?: string;
+        transcript?: string;
+        cost?: WebCostBreakdown;
+      };
+      this._accumulateProxyCost(data, "audio transcription");
       return data.text ?? data.transcript ?? "";
     }
 
@@ -1245,6 +1382,7 @@ export class WebAiClient {
   /** Synthesize speech and return the audio as a `Blob` (audio/mpeg or audio/wav). */
   async synthesizeSpeech(text: string, options?: WebCallOptions): Promise<Blob> {
     if (this.opts.mode === "proxy") {
+      this._checkProjectedBudget(options?.model ?? "", text);
       const body: Record<string, unknown> = { text };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       this.addProxyRoutingFields(body, options);
@@ -1252,7 +1390,7 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/audio/speak`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
@@ -1260,7 +1398,8 @@ export class WebAiClient {
       );
       await this.assertOk(res);
       // Proxy returns { audio: "<base64>" }
-      const data = (await res.json()) as { audio?: string };
+      const data = (await res.json()) as { audio?: string; cost?: WebCostBreakdown };
+      this._accumulateProxyCost(data, "speech synthesis");
       if (data.audio) {
         const bytes = Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0));
         return new Blob([bytes], { type: "audio/mpeg" });
@@ -1293,6 +1432,7 @@ export class WebAiClient {
   /** Generate video and return it as a `Blob`. Only supported via proxy. */
   async generateVideo(prompt: string, options?: WebVideoOptions): Promise<Blob> {
     if (this.opts.mode === "proxy") {
+      this._checkProjectedBudget(options?.model ?? "", prompt);
       const body: Record<string, unknown> = { prompt };
       if (this.opts.profile) body["profile"] = this.opts.profile;
       this.addProxyVideoFields(body, options);
@@ -1300,7 +1440,7 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/video`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
@@ -1313,12 +1453,14 @@ export class WebAiClient {
         data?: string;
         mimeType?: string;
       };
+      this._accumulateProxyCost(data, "video");
       if (data.url) {
         // Capture into const so TypeScript preserves the string narrowing inside the closure.
         const vidUrl = data.url;
         const vidRes = await this.fetchWithResilience(
           () => fetch(vidUrl, { signal: options?.signal ?? null }),
           options?.signal,
+          "safe-read",
         );
         return vidRes.blob();
       }
@@ -1343,6 +1485,76 @@ export class WebAiClient {
   }
 
   // -------------------------------------------------------------------------
+  // generateMusic
+  // -------------------------------------------------------------------------
+
+  /** Generate music through the proxy and return a playable audio Blob. */
+  async generateMusic(prompt: string, options?: WebMusicOptions): Promise<WebMusicResult> {
+    if (this.opts.mode !== "proxy") {
+      throw new Error("generateMusic is not supported in direct mode. Use proxy mode instead.");
+    }
+    this._checkProjectedBudget(options?.model ?? "", prompt);
+    const body: Record<string, unknown> = { prompt };
+    this.addProxyRoutingFields(body, options);
+    if (this.opts.profile) body["profile"] = this.opts.profile;
+    if (options?.lyrics !== undefined) body["lyrics"] = options.lyrics;
+    if (options?.instrumental !== undefined) body["instrumental"] = options.instrumental;
+    if (options?.duration !== undefined) body["duration"] = options.duration;
+    if (options?.seed !== undefined) body["seed"] = options.seed;
+
+    const res = await this.fetchWithResilience(
+      () =>
+        fetch(`${this.proxyBase}/music`, {
+          method: "POST",
+          headers: this.proxyHeaders(options),
+          body: JSON.stringify(body),
+          signal: options?.signal ?? null,
+        }),
+      options?.signal,
+    );
+    await this.assertOk(res);
+    const data = (await res.json()) as {
+      data?: string;
+      url?: string;
+      b64_json?: string;
+      mimeType?: string;
+      model?: string;
+      provider?: string;
+      title?: string;
+      lyrics?: string;
+      durationSeconds?: number;
+      cost?: WebCostBreakdown;
+    };
+    this._accumulateProxyCost(data, "music");
+    let audio: Blob;
+    const mime = data.mimeType ?? "audio/mpeg";
+    if (data.url) {
+      const audioResponse = await this.fetchWithResilience(
+        () => fetch(data.url!, { signal: options?.signal ?? null }),
+        options?.signal,
+        "safe-read",
+      );
+      audio = await audioResponse.blob();
+    } else {
+      const encoded = data.b64_json ?? data.data;
+      if (!encoded) throw new Error("generateMusic: no audio data in proxy response");
+      const comma = encoded.indexOf(",");
+      const base64 = comma >= 0 ? encoded.slice(comma + 1) : encoded;
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      audio = new Blob([bytes], { type: mime });
+    }
+    return {
+      audio,
+      model: data.model ?? "",
+      provider: data.provider ?? "",
+      ...(data.title !== undefined ? { title: data.title } : {}),
+      ...(data.lyrics !== undefined ? { lyrics: data.lyrics } : {}),
+      ...(data.durationSeconds !== undefined ? { durationSeconds: data.durationSeconds } : {}),
+      ...(data.cost !== undefined ? { cost: data.cost } : {}),
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // generateStructured
   // -------------------------------------------------------------------------
 
@@ -1352,6 +1564,7 @@ export class WebAiClient {
     options?: WebCallOptions,
   ): Promise<WebStructuredResult<T>> {
     if (this.opts.mode === "proxy") {
+      this._checkProjectedBudget(options?.model ?? "", prompt);
       const body: Record<string, unknown> = { prompt };
       this.addProxyRoutingFields(body, options);
       if (options?.temperature !== undefined) body["temperature"] = options.temperature;
@@ -1363,7 +1576,7 @@ export class WebAiClient {
         () =>
           fetch(`${this.proxyBase}/structured`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: this.proxyHeaders(options),
             body: JSON.stringify(body),
             signal: options?.signal ?? null,
           }),
@@ -1376,6 +1589,7 @@ export class WebAiClient {
         provider?: string;
         cost?: { totalUsd: number; isEstimate: boolean };
       };
+      this._accumulateProxyCost(data, "structured");
       return {
         data: data.data ?? (data as unknown as T),
         model: data.model ?? "",
@@ -1431,9 +1645,15 @@ export class WebAiClient {
       const url = new URL(`${this.proxyBase}/models`);
       if (modality) url.searchParams.set("modality", modality);
       if (accepts) url.searchParams.set("accepts", accepts);
+      if (callOptions?.provider) url.searchParams.set("provider", callOptions.provider);
       const res = await this.fetchWithResilience(
-        () => fetch(url.toString(), { signal: callOptions?.signal ?? null }),
+        () =>
+          fetch(url.toString(), {
+            headers: this.proxyHeaders(callOptions),
+            signal: callOptions?.signal ?? null,
+          }),
         callOptions?.signal,
+        "safe-read",
       );
       await this.assertOk(res);
       return res.json() as Promise<WebModelInfo[]>;
@@ -1452,6 +1672,7 @@ export class WebAiClient {
           signal: callOptions?.signal ?? null,
         }),
       callOptions?.signal,
+      "safe-read",
     );
     await this.assertOk(res);
 
@@ -1545,4 +1766,16 @@ export class WebAiClient {
  */
 export function createWebClient(opts: WebClientOptions): WebAiClient {
   return new WebAiClient(opts);
+}
+/** Stable error envelope for proxy transport and billing-contract failures. */
+export class WebProxyError extends Error {
+  readonly code: string;
+  readonly statusCode?: number;
+
+  constructor(message: string, code = "PROXY_ERROR", statusCode?: number) {
+    super(message);
+    this.name = "ProxyError";
+    this.code = code;
+    if (statusCode !== undefined) this.statusCode = statusCode;
+  }
 }

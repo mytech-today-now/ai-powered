@@ -112,6 +112,33 @@ function postJson(path: string, body: unknown): Promise<http.IncomingMessage> {
   });
 }
 
+function postJsonWithHeaders(
+  path: string,
+  body: unknown,
+  extraHeaders: Record<string, string>,
+): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+          ...extraHeaders,
+        },
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 function postJsonTo(
   targetPort: number,
   path: string,
@@ -506,6 +533,7 @@ describe("R19 – POST /video requires PROXY_PUBLIC_BASE_URL for public keyframe
 
   it("returns a Render-friendly guidance error when the public media URL is missing", async () => {
     const fileRef = storeFileRef({
+      ownerId: "test-bypass",
       filename: "frame.png",
       mimeType: "image/png",
       sizeBytes: 12,
@@ -584,6 +612,7 @@ describe("R18 – POST /video modality routing regression", () => {
 
   it("returns the existing capability error when video inputMedia is sent to an image-only provider", async () => {
     const fileRef = storeFileRef({
+      ownerId: "test-bypass",
       filename: "frame.png",
       mimeType: "image/png",
       sizeBytes: 12,
@@ -612,5 +641,51 @@ describe("R18 – POST /video modality routing regression", () => {
     expect(res.statusCode).toBe(422);
     expect(body.error).toBe('Provider "venice" does not support modality "video".');
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R19 - native music route and credential header boundary
+// ---------------------------------------------------------------------------
+describe("R19 - POST /music", () => {
+  it("returns a playable mock music result with provider options", async () => {
+    const res = await postJson("/music", {
+      provider: "mock",
+      model: "mock-music-v1",
+      prompt: "a calm piano loop",
+      lyrics: "softly now",
+      duration: 12,
+      instrumental: false,
+      seed: 4,
+    });
+    const body = (await readJson(res)) as Record<string, unknown>;
+    expect(res.statusCode).toBe(200);
+    expect(body.modality).toBe("music");
+    expect(body.mimeType).toBe("audio/wav");
+    expect(String(body.data)).toMatch(/^data:audio\/wav;base64,/);
+    expect(body.lyrics).toBe("softly now");
+  });
+
+  it("accepts same-origin browser requests when the app is served by the proxy", async () => {
+    const res = await postJsonWithHeaders(
+      "/music",
+      { provider: "mock", prompt: "same-origin fixture" },
+      { Origin: `http://127.0.0.1:${port}` },
+    );
+    const body = (await readJson(res)) as Record<string, unknown>;
+    expect(res.statusCode).toBe(200);
+    expect(body.modality).toBe("music");
+  });
+
+  it("rejects malformed request-scoped credentials without echoing them", async () => {
+    const res = await postJsonWithHeaders(
+      "/music",
+      { provider: "mock", prompt: "safe fixture" },
+      { "X-AI-Provider-Credentials": "not-base64-json" },
+    );
+    const body = (await readJson(res)) as Record<string, unknown>;
+    expect(res.statusCode).toBe(400);
+    expect(body.code).toBe("INVALID_CREDENTIALS");
+    expect(JSON.stringify(body)).not.toContain("not-base64-json");
   });
 });

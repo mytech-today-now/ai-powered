@@ -24,6 +24,8 @@ export interface RetryOptions {
    * Default: `(s) => s === 429 || s === 503`.
    */
   retryOn?: (status: number) => boolean;
+  /** Disable retries for non-idempotent operations such as paid generation POSTs. */
+  allowRetries?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,22 +87,24 @@ export async function withRetryFetch(
     backoffBase = 500,
     backoffCap = 8000,
     retryOn = (s) => s === 429 || s === 503,
+    allowRetries = true,
   } = opts;
+  const effectiveMaxRetries = allowRetries ? maxRetries : 0;
 
   let lastErr: unknown;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= effectiveMaxRetries; attempt++) {
     // Bail immediately if caller already aborted.
     if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
 
     try {
       const res = await fn();
       // If the status is not retryable, or this is the last attempt, return as-is.
-      if (!retryOn(res.status) || attempt === maxRetries) return res;
+      if (!retryOn(res.status) || attempt === effectiveMaxRetries) return res;
       lastErr = new Error(`HTTP ${res.status}`);
     } catch (err) {
       lastErr = err;
-      if (attempt === maxRetries) throw err;
+      if (attempt === effectiveMaxRetries) throw err;
       // Re-throw abort errors immediately without retry.
       if (signal?.aborted) throw signal.reason ?? err;
     }
@@ -167,16 +171,17 @@ export class CircuitBreaker {
    *
    * @throws Error  When the circuit is OPEN and the reset timeout has not elapsed.
    */
-  async call<T>(fn: () => Promise<T>): Promise<T> {
+  async call<T>(
+    fn: () => Promise<T>,
+    options?: { signal?: AbortSignal; countFailure?: (error: unknown) => boolean },
+  ): Promise<T> {
     if (this._state === "OPEN") {
       const elapsed = Date.now() - (this._openedAt ?? 0);
       if (elapsed >= this._resetMs) {
         this._state = "HALF_OPEN";
       } else {
         const remaining = Math.ceil((this._resetMs - elapsed) / 1000);
-        throw new Error(
-          `CircuitBreaker: circuit is OPEN — resets in ~${remaining}s`,
-        );
+        throw new Error(`CircuitBreaker: circuit is OPEN — resets in ~${remaining}s`);
       }
     }
 
@@ -192,6 +197,9 @@ export class CircuitBreaker {
       }
       return result;
     } catch (err) {
+      if (options?.signal?.aborted || options?.countFailure?.(err) === false) {
+        throw err;
+      }
       this._failures++;
       if (this._state === "HALF_OPEN" || this._failures >= this._threshold) {
         this._state = "OPEN";
@@ -201,4 +209,3 @@ export class CircuitBreaker {
     }
   }
 }
-

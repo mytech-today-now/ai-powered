@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { AiConfigSchema } from "./core.js";
+import { AiConfigSchema, getProviderCredentialFields, resolveProviderConfig } from "./core.js";
 import type { AiConfig, Modality } from "./core.js";
 import type { ProviderName } from "./core.js";
 import type { BaseProvider, ProviderCallOptions, StreamTextIterable } from "./providers/index.js";
@@ -20,6 +20,7 @@ import type {
   TranscriptionResult,
   AudioResult,
   VideoResult,
+  MusicResult,
   StructuredResult,
   ModelDescriptor,
   AiPlugin,
@@ -40,6 +41,40 @@ import { estimateCost, getLogger } from "./utils.js";
 import { withRetry, CircuitBreaker } from "./resilience.js";
 import type { RetryOptions } from "./resilience.js";
 
+function scopeProviderCallOptions(
+  options: ProviderCallOptions | undefined,
+  providerName: string,
+  activeProvider: string,
+): ProviderCallOptions | undefined {
+  if (!options) return undefined;
+  const { providerCredentials: _providerCredentials, ...rest } = options;
+  const credentials = getProviderCredentialFields(
+    options.providerCredentials,
+    providerName,
+    activeProvider,
+  );
+  return credentials === undefined ? rest : { ...rest, providerCredentials: credentials };
+}
+function credentialValues(value: unknown): string[] {
+  return typeof value !== "object" || value === null
+    ? []
+    : Object.values(value as Record<string, unknown>).flatMap((entry) =>
+        typeof entry === "string" ? [entry] : credentialValues(entry),
+      );
+}
+function redactFailureReason(
+  error: unknown,
+  config: AiConfig,
+  options?: ProviderCallOptions,
+): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  const secrets = [
+    config.apiKey,
+    ...credentialValues(config.providerCredentials),
+    ...credentialValues(options?.providerCredentials),
+  ].filter((secret): secret is string => Boolean(secret));
+  return secrets.reduce((redacted, secret) => redacted.split(secret).join("[REDACTED]"), reason);
+}
 // ---------------------------------------------------------------------------
 // ConversationSession
 // ---------------------------------------------------------------------------
@@ -93,7 +128,14 @@ export class ConversationSession {
 /** Options accepted by per-call overrides on AiClient methods. */
 export type CallOptions = ProviderCallOptions;
 
-const VALID_MODALITIES = new Set<Modality>(["text", "image", "audio", "video", "structured"]);
+const VALID_MODALITIES = new Set<Modality>([
+  "text",
+  "image",
+  "audio",
+  "video",
+  "music",
+  "structured",
+]);
 const VALID_MESSAGE_ROLES = new Set(["system", "user", "assistant"] as const);
 
 type VeniceVideoProvider = BaseProvider & {
@@ -293,7 +335,7 @@ export class AiClient {
   private _getFallbackProvider(name: ProviderName): BaseProvider {
     if (!this._fallbackProviders.has(name)) {
       // Build a derived config pointing at the fallback provider.
-      const fallbackConfig: AiConfig = { ...this._config, provider: name };
+      const fallbackConfig: AiConfig = resolveProviderConfig(this._config, name);
       this._fallbackProviders.set(name, createProvider(fallbackConfig));
     }
     return this._fallbackProviders.get(name)!;
@@ -322,9 +364,11 @@ export class AiClient {
    * @param signal  Optional AbortSignal forwarded to the retry layer.
    */
   private async _executeWithFallback<T>(
-    fn: (provider: BaseProvider) => Promise<T>,
+    fn: (provider: BaseProvider, providerOptions: ProviderCallOptions | undefined) => Promise<T>,
     signal?: AbortSignal,
     model?: string,
+    options?: ProviderCallOptions,
+    retryPolicy: "safe" | "none" = "safe",
   ): Promise<T> {
     const log = getLogger();
     const fallbackEnabled = this._config.fallback !== false;
@@ -332,27 +376,34 @@ export class AiClient {
     // When fallback is disabled, run primary only; propagate errors as-is.
     if (!fallbackEnabled) {
       const cb = this._getCircuitBreaker(this._config.provider);
-      return cb.call(() => this._callWithRetry(() => fn(this._provider), signal));
+      return cb.call(
+        () =>
+          retryPolicy === "none"
+            ? fn(
+                this._provider,
+                scopeProviderCallOptions(options, this._config.provider, this._config.provider),
+              )
+            : this._callWithRetry(
+                () =>
+                  fn(
+                    this._provider,
+                    scopeProviderCallOptions(options, this._config.provider, this._config.provider),
+                  ),
+                signal,
+              ),
+        signal,
+      );
     }
 
     // Build ordered provider chain: [primary, ...fallbacks].
-    const chain: Array<{ name: string; provider: BaseProvider }> = [
-      { name: this._config.provider, provider: this._provider },
-      ...this._config.fallbackProviders.map((name) => ({
-        name,
-        provider: this._getFallbackProvider(name),
-      })),
-    ];
+    const chain: string[] = [this._config.provider, ...this._config.fallbackProviders];
 
     const failures: ProviderFailure[] = [];
 
     for (let i = 0; i < chain.length; i++) {
-      const { name, provider } = chain[i]!;
+      const name = chain[i]!;
       if (i > 0) {
-        log.info(
-          { from: chain[i - 1]!.name, to: name },
-          "Failover: switching to fallback provider",
-        );
+        log.info({ from: chain[i - 1]!, to: name }, "Failover: switching to fallback provider");
       }
       log.debug(
         {
@@ -364,10 +415,22 @@ export class AiClient {
         "Attempting provider call",
       );
       try {
+        const provider = i === 0 ? this._provider : this._getFallbackProvider(name as ProviderName);
         const cb = this._getCircuitBreaker(name);
-        return await cb.call(() => this._callWithRetry(() => fn(provider), signal));
+        return await cb.call(
+          () =>
+            retryPolicy === "none"
+              ? fn(provider, scopeProviderCallOptions(options, name, this._config.provider))
+              : this._callWithRetry(
+                  () =>
+                    fn(provider, scopeProviderCallOptions(options, name, this._config.provider)),
+                  signal,
+                ),
+          signal,
+        );
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
+        if (signal?.aborted) throw err;
+        const reason = redactFailureReason(err, this._config, options);
         failures.push({ provider: name, reason });
         log.warn(
           { provider: name, reason, remaining: chain.length - i - 1 },
@@ -677,6 +740,13 @@ export class AiClient {
           );
         }
         break;
+      case "music":
+        if (typeof result["data"] !== "string" || typeof result["mimeType"] !== "string") {
+          throw new Error(
+            `Plugin "${pluginName}" returned a ResponseContext with an invalid result.`,
+          );
+        }
+        break;
       case "audio":
         if (
           typeof result["text"] !== "string" &&
@@ -760,9 +830,11 @@ export class AiClient {
     let result: TextResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateText(effectivePrompt, callOptions),
+        (provider, providerOptions) => provider.generateText(effectivePrompt, providerOptions),
         callOptions.signal,
         callOptions.model,
+        callOptions,
+        "none",
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
@@ -793,9 +865,11 @@ export class AiClient {
     let result: ImageResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateImage(effectivePrompt, callOptions),
+        (provider, providerOptions) => provider.generateImage(effectivePrompt, providerOptions),
         callOptions.signal,
         callOptions.model,
+        callOptions,
+        "none",
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
@@ -827,9 +901,11 @@ export class AiClient {
     let result: TranscriptionResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.transcribeAudio(buffer, callOptions),
+        (provider, providerOptions) => provider.transcribeAudio(buffer, providerOptions),
         callOptions.signal,
         callOptions.model,
+        callOptions,
+        "none",
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
@@ -860,9 +936,11 @@ export class AiClient {
     let result: AudioResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.synthesizeSpeech(effectiveText, callOptions),
+        (provider, providerOptions) => provider.synthesizeSpeech(effectiveText, providerOptions),
         callOptions.signal,
         callOptions.model,
+        callOptions,
+        "none",
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
@@ -891,9 +969,12 @@ export class AiClient {
     let result: VideoResult;
     try {
       result = await this._executeWithFallback(
-        (provider) => this._generateVideoForProvider(provider, effectivePrompt, callOptions),
+        (provider, providerOptions) =>
+          this._generateVideoForProvider(provider, effectivePrompt, providerOptions!),
         callOptions.signal,
         callOptions.model,
+        callOptions,
+        "none",
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });
@@ -904,6 +985,39 @@ export class AiClient {
     this.accumulateCost(result);
     const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
     return responseCtx.result as VideoResult;
+  }
+
+  /** Generate music. */
+  async generateMusic(prompt: string, options?: CallOptions): Promise<MusicResult> {
+    const modality: Modality = "music";
+    const initialCtx: RequestContext = {
+      config: this._config,
+      modality,
+      messages: [{ role: "user", content: prompt }],
+      options: (options ?? {}) as Record<string, unknown>,
+    };
+    const requestCtx = await this.runOnRequest(initialCtx);
+    const effectivePrompt = this._extractUserMessage(requestCtx) ?? prompt;
+    const callOptions = this._buildCallOptions(options, requestCtx, initialCtx.messages);
+    this.preCheckBudget(callOptions.model ?? this._config.model ?? "", effectivePrompt);
+    let result: MusicResult;
+    try {
+      result = await this._executeWithFallback(
+        (provider, providerOptions) => provider.generateMusic(effectivePrompt, providerOptions),
+        callOptions.signal,
+        callOptions.model,
+        callOptions,
+        "none",
+      );
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err), { cause: err });
+      await this.runOnError(this._normalizeErrorForPlugins(err));
+      throw error;
+    }
+    this.checkBudget(result.cost.totalUsd);
+    this.accumulateCost(result);
+    const responseCtx = await this.runOnResponse({ config: requestCtx.config, modality, result });
+    return responseCtx.result as MusicResult;
   }
 
   /** Stream text deltas as an AsyncIterable<string> plus optional finish reason metadata. */
@@ -988,9 +1102,12 @@ export class AiClient {
     let result: StructuredResult<T>;
     try {
       result = await this._executeWithFallback(
-        (provider) => provider.generateStructured(effectivePrompt, schema, callOptions),
+        (provider, providerOptions) =>
+          provider.generateStructured(effectivePrompt, schema, providerOptions),
         callOptions.signal,
         callOptions.model,
+        callOptions,
+        "none",
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err), { cause: err });

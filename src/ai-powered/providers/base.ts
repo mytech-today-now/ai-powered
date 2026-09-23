@@ -15,13 +15,14 @@
  */
 
 import { z } from "zod";
-import type { AiConfig, Modality, ProviderName } from "../core.js";
+import type { AiConfig, Modality, ProviderName, ProviderCredentials } from "../core.js";
 import type {
   TextResult,
   ImageResult,
   TranscriptionResult,
   AudioResult,
   VideoResult,
+  MusicResult,
   StructuredResult,
   ModelDescriptor,
   InputModality,
@@ -124,6 +125,16 @@ export interface ProviderCallOptions {
   modifyRegionMask?: string;
   /** Original MIME type of the media buffer (e.g. "video/mp4", "audio/mpeg"). */
   mimeType?: string;
+  /** Optional lyrics supplied to a music provider. */
+  lyrics?: string;
+  /** Request an instrumental result when the provider supports it. */
+  instrumental?: boolean;
+  /** Fixed or maximum music duration in seconds. */
+  musicDurationSeconds?: number;
+  /** Provider-specific music controls. */
+  musicOptions?: Record<string, string | number | boolean>;
+  /** Explicit multi-field credentials for providers such as Mubert. */
+  providerCredentials?: ProviderCredentials;
 }
 
 /**
@@ -214,6 +225,10 @@ export abstract class BaseProvider {
 
   generateVideo(_prompt: string, _options?: ProviderCallOptions): Promise<VideoResult> {
     throw new ProviderCapabilityError(this.name, "video");
+  }
+
+  generateMusic(_prompt: string, _options?: ProviderCallOptions): Promise<MusicResult> {
+    throw new ProviderCapabilityError(this.name, "music");
   }
 
   streamText(_prompt: string, _options?: ProviderCallOptions): StreamTextIterable {

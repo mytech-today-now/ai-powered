@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.12] - 2026-09-23
+
+### Added
+
+- Music generation is available through the native client, the HTTP proxy, and the browser demo with a catalog of synchronous and asynchronous providers.
+- Provider-scoped credential configuration and browser budget-guard behavior are documented for local and proxy usage.
+
+### Changed
+
+- Browser documentation now describes the shared music endpoint, provider credential boundaries, and the non-authoritative nature of the client-side budget guard.
+
 ## [0.5.11] - 2026-09-21
 
 ### Added

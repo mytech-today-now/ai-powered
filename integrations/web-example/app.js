@@ -22,6 +22,12 @@
     return;
   }
 
+  const SETTINGS = window.AiPoweredSettings;
+  if (!SETTINGS) {
+    document.body.textContent = "Settings module failed to load.";
+    return;
+  }
+
   const {
     createWebClient,
     createBrowserRecordStore,
@@ -65,10 +71,7 @@
   const verifyButton = $("btn-verify-settings");
   const saveButton = $("btn-save-settings");
   const credentialStatus = $("credential-status");
-  const connectionStorageKeys = {
-    mode: "ai-powered:connection:mode",
-    proxyUrl: "ai-powered:connection:proxy-url",
-  };
+  const connectionStorageKeys = SETTINGS.STORAGE_KEYS;
   const DEFAULT_PROXY_URL = "http://localhost:3001";
   let savedConnectionMode = "proxy";
   let savedProxyUrl = DEFAULT_PROXY_URL;
@@ -114,11 +117,7 @@
     }
   }
 
-  const directConfigStorageKeys = {
-    provider: "ai-powered:direct:provider",
-    apiKeyPrefix: "ai-powered:direct:api-key:",
-    budget: "ai-powered:direct:budget-usd",
-  };
+  const directConfigStorageKeys = SETTINGS.STORAGE_KEYS;
   const DIRECT_PROVIDER_BASE_URLS = {
     openai: "https://api.openai.com/v1",
     anthropic: "https://api.anthropic.com/v1",
@@ -531,6 +530,15 @@
   const videoOutput = $("video-output");
   const videoUsage = $("video-usage");
 
+  const musicPromptEl = $("music-prompt");
+  const musicLyricsEl = $("music-lyrics");
+  const musicDurationEl = $("music-duration");
+  const musicSeedEl = $("music-seed");
+  const musicInstrumentalEl = $("music-instrumental");
+  const btnMusicGenerate = $("btn-music-generate");
+  const musicOutput = $("music-output");
+  const musicUsage = $("music-usage");
+
   // Global error toast
   const globalErrorToast = $("global-error-toast");
   const globalErrorMsg = $("global-error-msg");
@@ -636,6 +644,7 @@
   const ttsModelSelect = $("tts-model-select");
   const transcribeModelSelect = $("transcribe-model-select");
   const videoModelSelect = $("video-model-select");
+  const musicModelSelect = $("music-model-select");
   const videoProviderSelect = $("video-provider-select"); // video-tab-specific provider picker
   const structuredModelSelect = $("structured-model-select");
 
@@ -644,6 +653,7 @@
   const imageProviderSelect = $("image-provider-select");
   const audioProviderSelect = $("audio-provider-select");
   const structuredProviderSelect = $("structured-provider-select");
+  const musicProviderSelect = $("music-provider-select");
 
   /**
    * Unified lookup: modality → provider <select> element.
@@ -655,6 +665,7 @@
     image: imageProviderSelect,
     audio: audioProviderSelect,
     video: videoProviderSelect,
+    music: musicProviderSelect,
     structured: structuredProviderSelect,
   };
 
@@ -670,6 +681,7 @@
     image: imageModelSelect,
     audio: transcribeModelSelect,
     video: videoModelSelect,
+    music: musicModelSelect,
     structured: structuredModelSelect,
   };
 
@@ -991,6 +1003,7 @@
     image: "image",
     audio: "audio",
     video: "video",
+    music: "music",
     structured: "structured",
   };
 
@@ -1322,23 +1335,15 @@
 
   async function fetchModelList(modality, provider, acceptsImage = false) {
     const providerMeta = provider ? getConfiguredProvider(provider) : null;
-    if (providerMeta && providerMeta.active === false) {
-      return {
-        ok: false,
-        error: {
-          code: "PROVIDER_INACTIVE",
-          message: `Provider "${providerMeta.name}" is not configured on this proxy.`,
-        },
-      };
-    }
-
     const base = currentProxyUrl();
     let url = `${base}/models?modality=${modality}`;
     if (provider) url += `&provider=${encodeURIComponent(provider)}`;
     if (acceptsImage) url += "&accepts=image";
 
     try {
-      const data = await fetch(url).then((r) => r.json());
+      const data = await fetch(url, {
+        headers: SETTINGS.proxyHeaders(provider || SETTINGS.readState().provider, base),
+      }).then((r) => r.json());
       return normalizeModelsResponse(data);
     } catch (error) {
       return { ok: false, error };
@@ -1788,38 +1793,30 @@
 
   /* ── Client factory ─────────────────────────────────────── */
   function getClient() {
+    const settings = SETTINGS.readState();
     if (currentMode() === "proxy") {
       return createWebClient({
         mode: "proxy",
         proxyUrl: currentProxyUrl(),
+        providerCredential: SETTINGS.credentialForRequest(settings.provider),
       });
     }
 
-    const storedProvider =
-      localStorage.getItem(directConfigStorageKeys.provider) ||
-      sessionStorage.getItem(directConfigStorageKeys.provider);
-    const provider = storedProvider && DIRECT_PROVIDER_LABELS[storedProvider] ? storedProvider : "";
+    const provider = DIRECT_PROVIDER_LABELS[settings.provider] ? settings.provider : "";
     if (!provider) {
       throw new Error(
         "Direct mode is not configured. Open Settings / Configuration and save the provider API key there.",
       );
     }
 
-    const apiKey = (
-      localStorage.getItem(`${directConfigStorageKeys.apiKeyPrefix}${provider}`) ||
-      sessionStorage.getItem(`${directConfigStorageKeys.apiKeyPrefix}${provider}`) ||
-      ""
-    ).trim();
+    const apiKey = SETTINGS.readCredential(provider);
     if (!apiKey) {
       throw new Error(
         `Direct mode is not configured for ${DIRECT_PROVIDER_LABELS[provider]}. Open Settings / Configuration and save the API key there.`,
       );
     }
 
-    const budgetValue =
-      localStorage.getItem(directConfigStorageKeys.budget) ||
-      sessionStorage.getItem(directConfigStorageKeys.budget) ||
-      "";
+    const budgetValue = settings.budget;
     const parsedBudget = Number.parseFloat(budgetValue);
     const budgetUsd = Number.isFinite(parsedBudget) ? parsedBudget : Infinity;
 
@@ -2212,12 +2209,13 @@
   async function proxyPost(endpoint, body) {
     const base = currentProxyUrl();
     const payload = { ...body };
+    const provider = payload.provider || SETTINGS.readState().provider;
 
     let resp;
     try {
       resp = await fetch(base + endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: SETTINGS.proxyHeaders(provider, base),
         body: JSON.stringify(payload),
       });
     } catch (_networkErr) {
@@ -2241,11 +2239,12 @@
 
   async function proxyStream(endpoint, body) {
     const base = currentProxyUrl();
+    const provider = body.provider || SETTINGS.readState().provider;
     let resp;
     try {
       resp = await fetch(`${base}${endpoint}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: SETTINGS.proxyHeaders(provider, base),
         body: JSON.stringify(body),
       });
     } catch (err) {
@@ -2787,7 +2786,9 @@
     if (acceptsImage) url += "&accepts=image";
 
     try {
-      let resp = await fetch(url);
+      let resp = await fetch(url, {
+        headers: SETTINGS.proxyHeaders(provider || SETTINGS.readState().provider, base),
+      });
       let models;
       try {
         models = await resp.json();
@@ -2824,7 +2825,9 @@
       if (retryWithoutAcceptsImage && Array.isArray(models) && models.length === 0) {
         const fallbackUrl =
           base + "/models?modality=" + modality + (provider ? "&provider=" + provider : "");
-        resp = await fetch(fallbackUrl);
+        resp = await fetch(fallbackUrl, {
+          headers: SETTINGS.proxyHeaders(provider || SETTINGS.readState().provider, base),
+        });
         try {
           models = await resp.json();
         } catch (_jsonErr) {
@@ -5060,6 +5063,53 @@
     }
   }
   btnTranscribe.addEventListener("click", handleTranscribe);
+
+  /* ── MUSIC TAB ───────────────────────────────────────────── */
+  let musicObjectUrl = null;
+  async function handleMusicGenerate() {
+    const prompt = musicPromptEl?.value.trim() ?? "";
+    if (!prompt) return;
+    if (currentMode() !== "proxy") {
+      showError(musicOutput, new Error("Music generation requires proxy mode."));
+      return;
+    }
+    const selection = tabState.get("music") ?? {};
+    const provider = selection.provider || SETTINGS.readState().provider;
+    const model = selection.model || undefined;
+    const duration = Number.parseFloat(musicDurationEl?.value || "");
+    const seed = Number.parseInt(musicSeedEl?.value || "", 10);
+    setLoading([btnMusicGenerate], true);
+    showSpinner(musicOutput, "Generating music…");
+    if (musicUsage) musicUsage.textContent = "";
+    try {
+      const result = await getClient().generateMusic(prompt, {
+        provider,
+        model,
+        lyrics: musicLyricsEl?.value.trim() || undefined,
+        instrumental: Boolean(musicInstrumentalEl?.checked),
+        duration: Number.isFinite(duration) ? duration : undefined,
+        seed: Number.isFinite(seed) ? seed : undefined,
+      });
+      if (musicObjectUrl) URL.revokeObjectURL(musicObjectUrl);
+      musicObjectUrl = URL.createObjectURL(result.audio);
+      musicOutput.innerHTML = "";
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = musicObjectUrl;
+      audio.className = "generated-audio";
+      musicOutput.appendChild(audio);
+      const meta = document.createElement("p");
+      meta.className = "output-meta";
+      meta.textContent = [result.title, result.provider, result.model].filter(Boolean).join(" · ");
+      musicOutput.appendChild(meta);
+      addUsage(null, result.cost);
+    } catch (err) {
+      showError(musicOutput, err);
+    } finally {
+      setLoading([btnMusicGenerate], false);
+    }
+  }
+  btnMusicGenerate?.addEventListener("click", handleMusicGenerate);
 
   /* ── BATCH STATE ─────────────────────────────────────────── */
   /** Array of parsed shot items: { name, prompt, modality? } */

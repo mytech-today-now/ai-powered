@@ -16,6 +16,8 @@ import {
   GLOBAL_CONFIG_PATH,
   LOCAL_CONFIG_PATH,
   loadConfig,
+  getProviderCredentialFields,
+  resolveProviderConfig,
 } from "../../src/ai-powered/core.js";
 import {
   maskApiKey,
@@ -189,6 +191,22 @@ describe("loadConfig with flags", () => {
 // ---------------------------------------------------------------------------
 
 describe("loadConfig profile resolution", () => {
+  it("uses selected profile credentials for its fallback providers", () => {
+    writeConfigFile(LOCAL_CONFIG_PATH, {
+      profiles: {
+        production: {
+          provider: "openai",
+          apiKey: "profile-primary-sentinel",
+          providerCredentials: { anthropic: { apiKey: "profile-fallback-sentinel" } },
+          fallbackProviders: ["anthropic"],
+        },
+      },
+    });
+    const cfg = loadConfig({ profileOverride: "production", flags: { mock: false } });
+    expect(cfg.provider).toBe("openai");
+    expect(cfg.apiKey).toBe("profile-primary-sentinel");
+    expect(resolveProviderConfig(cfg, "anthropic").apiKey).toBe("profile-fallback-sentinel");
+  });
   it("uses a profile from local config when it is defined there", () => {
     writeConfigFile(GLOBAL_CONFIG_PATH, { temperature: 0.1 });
     writeConfigFile(LOCAL_CONFIG_PATH, {
@@ -247,6 +265,27 @@ describe("loadConfig profile resolution", () => {
     expect(cfg.maxTokens).toBe(4096);
   });
 
+  it("resolves nested fallback credentials without inheriting primary secrets", () => {
+    const primaryKey = "primary-config-sentinel";
+    const fallbackKey = "fallback-config-sentinel";
+    const flat = { apiKey: primaryKey, tenant: "primary" };
+    expect(getProviderCredentialFields(flat, "anthropic", "openai")).toBeUndefined();
+
+    const config = AiConfigSchema.parse({
+      provider: "openai",
+      apiKey: primaryKey,
+      providerCredentials: {
+        openai: { apiKey: primaryKey, tenant: "primary" },
+        anthropic: { apiKey: fallbackKey, tenant: "fallback" },
+      },
+    });
+    const fallback = resolveProviderConfig(config, "anthropic");
+
+    expect(fallback.apiKey).toBe(fallbackKey);
+    expect(fallback.apiKey).not.toBe(primaryKey);
+    expect(fallback.providerCredentials).toEqual({ apiKey: fallbackKey, tenant: "fallback" });
+    expect(resolveProviderConfig(config, "openai").apiKey).toBe(primaryKey);
+  });
   it("still throws the current missing-profile ConfigError path", () => {
     writeConfigFile(LOCAL_CONFIG_PATH, {
       profiles: {
@@ -431,7 +470,7 @@ describe("listPricing", () => {
   it("every entry has a model, modality, and primaryUsd", () => {
     for (const e of listPricing()) {
       expect(typeof e.model).toBe("string");
-      expect(["text", "image", "audio", "video"]).toContain(e.modality);
+      expect(["text", "image", "audio", "video", "music"]).toContain(e.modality);
       expect(typeof e.primaryUsd).toBe("number");
       expect(e.primaryUsd).toBeGreaterThanOrEqual(0);
     }

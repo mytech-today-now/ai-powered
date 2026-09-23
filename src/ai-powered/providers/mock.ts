@@ -20,6 +20,7 @@ import type {
   TranscriptionResult,
   AudioResult,
   VideoResult,
+  MusicResult,
   StructuredResult,
   ModelDescriptor,
   TokenUsage,
@@ -134,7 +135,14 @@ function generateMockValue<T>(schema: z.ZodType<T>): T {
 
 export class MockProvider extends BaseProvider {
   readonly name = "mock" as const;
-  readonly supportedModalities: Modality[] = ["text", "image", "audio", "video", "structured"];
+  readonly supportedModalities: Modality[] = [
+    "text",
+    "image",
+    "audio",
+    "video",
+    "music",
+    "structured",
+  ];
 
   constructor(config: AiConfig) {
     super(config);
@@ -250,6 +258,29 @@ export class MockProvider extends BaseProvider {
     };
   }
 
+  override async generateMusic(
+    prompt: string,
+    options?: ProviderCallOptions,
+  ): Promise<MusicResult> {
+    this.assertCapability("music");
+    void prompt;
+    const model = options?.model ?? "mock-music-v1";
+    return {
+      modality: "music",
+      provider: "mock",
+      model,
+      data: "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==",
+      mimeType: "audio/wav",
+      durationSeconds: options?.musicDurationSeconds ?? 12,
+      title: "Mock track",
+      ...(options?.lyrics !== undefined ? { lyrics: options.lyrics } : {}),
+      status: "completed",
+      usage: MOCK_ZERO_USAGE,
+      cost: calculateCost(model, MOCK_ZERO_USAGE),
+      latencyMs: 1,
+    };
+  }
+
   override async *streamText(prompt: string, options?: ProviderCallOptions): AsyncIterable<string> {
     this.assertCapability("text");
     void options;
@@ -311,6 +342,12 @@ export class MockProvider extends BaseProvider {
         inputCapabilities: ["image"],
       },
       { id: "mock-structured-v1", name: "Mock Structured v1", capabilities: ["structured"] },
+      {
+        id: "mock-music-v1",
+        name: "Mock Music v1",
+        capabilities: ["music"],
+        durationRange: { min: 1, max: 300, default: 12 },
+      },
     ];
     let models = ALL_MOCK_MODELS;
     if (modality) models = models.filter((m) => m.capabilities.includes(modality));

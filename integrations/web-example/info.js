@@ -7,26 +7,16 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEYS = {
-    mode: "ai-powered:connection:mode",
-    proxyUrl: "ai-powered:connection:proxy-url",
-    provider: "ai-powered:direct:provider",
-    apiKey: "ai-powered:direct:api-key",
-    apiKeyPrefix: "ai-powered:direct:api-key:",
-    pikaApiKey: "ai-powered:direct:pika-api-key",
-    budget: "ai-powered:direct:budget-usd",
-  };
+  const SETTINGS = window.AiPoweredSettings;
+  if (!SETTINGS) {
+    document.body.textContent = "Settings module failed to load.";
+    return;
+  }
+  const STORAGE_KEYS = SETTINGS.STORAGE_KEYS;
 
   const DEFAULT_PROVIDER = "openai";
   const DEFAULT_PROXY_URL = "http://localhost:3001";
-  const PROVIDER_LABELS = {
-    openai: "OpenAI",
-    anthropic: "Anthropic",
-    venice: "Venice",
-    xai: "xAI",
-    openrouter: "OpenRouter",
-    pika: "Pika",
-  };
+  const PROVIDER_LABELS = SETTINGS.PROVIDER_LABELS;
 
   const KNOWN_PROVIDERS = new Set(Object.keys(PROVIDER_LABELS));
   const DIRECT_PROVIDER_BASE_URLS = {
@@ -84,9 +74,7 @@
   }
 
   function credentialStorageKey(provider) {
-    return provider === "pika"
-      ? STORAGE_KEYS.pikaApiKey
-      : `${STORAGE_KEYS.apiKeyPrefix}${provider}`;
+    return SETTINGS.credentialStorageKey(provider);
   }
 
   function setCredentialStatus(state, message) {
@@ -167,20 +155,11 @@
   }
 
   function loadCredential(provider) {
-    const key = credentialStorageKey(provider);
-    const stored = safeGetItem(localStorage, key);
-    if (stored !== null) {
+    const stored = SETTINGS.readCredential(provider);
+    if (stored) {
       directCredentialCache.set(provider, stored);
       verifiedDraftCache.set(provider, stored);
       return stored;
-    }
-
-    const sessionValue = safeGetItem(sessionStorage, key);
-    if (sessionValue !== null) {
-      directCredentialCache.set(provider, sessionValue);
-      verifiedDraftCache.set(provider, sessionValue);
-      if (credentialStorageState === "available") credentialStorageState = "session";
-      return sessionValue;
     }
 
     return resolveCredential(provider);
@@ -461,7 +440,10 @@
     setCredentialInvalid(false);
     if (!DIRECT_PROVIDER_NAMES.has(provider)) {
       verifiedDraftCache.set(provider, result.value);
-      syncCredentialStatus(provider);
+      setCredentialStatus(
+        "warning",
+        `${providerLabel(provider)} credentials are syntactically valid but cannot be live-verified here. Save to use them through the proxy.`,
+      );
       return;
     }
 
@@ -503,7 +485,14 @@
 
       storeCredential(provider, value);
       credentialInput.value = value;
-      syncCredentialStatus(provider);
+      if (DIRECT_PROVIDER_NAMES.has(provider)) {
+        syncCredentialStatus(provider);
+      } else {
+        setCredentialStatus(
+          "warning",
+          `${providerLabel(provider)} credential saved. This provider is not live-verified in the browser.`,
+        );
+      }
     } catch (err) {
       const message =
         err instanceof Error
@@ -518,8 +507,6 @@
     localStorage.removeItem(STORAGE_KEYS.mode);
     localStorage.removeItem(STORAGE_KEYS.proxyUrl);
     localStorage.removeItem(STORAGE_KEYS.provider);
-    localStorage.removeItem(STORAGE_KEYS.apiKey);
-    localStorage.removeItem(STORAGE_KEYS.pikaApiKey);
     localStorage.removeItem(STORAGE_KEYS.budget);
     for (const provider of DIRECT_PROVIDER_NAMES) {
       localStorage.removeItem(credentialStorageKey(provider));
@@ -540,8 +527,6 @@
       event.key === STORAGE_KEYS.mode ||
       event.key === STORAGE_KEYS.proxyUrl ||
       event.key === STORAGE_KEYS.provider ||
-      event.key === STORAGE_KEYS.apiKey ||
-      event.key === STORAGE_KEYS.pikaApiKey ||
       event.key === STORAGE_KEYS.budget ||
       event.key.startsWith(STORAGE_KEYS.apiKeyPrefix)
     ) {

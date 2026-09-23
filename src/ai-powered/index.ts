@@ -32,6 +32,8 @@ export type {
   LoadConfigOptions,
   Modality,
   ProviderName,
+  ProviderCredentialFields,
+  ProviderCredentials,
 } from "./core.js";
 export { AiConfigSchema, ModalitySchema, ProviderNameSchema, ConfigError } from "./core.js";
 
@@ -65,6 +67,7 @@ export {
   CustomProvider,
   VibevoiceProvider,
   PikaProvider,
+  MusicProvider,
   createProvider,
   registerProvider,
 } from "./providers/index.js";
@@ -79,6 +82,7 @@ export type {
   TranscriptionResult,
   AudioResult,
   VideoResult,
+  MusicResult,
   StructuredResult,
   ModelDescriptor,
   ModelOptionDescriptor,

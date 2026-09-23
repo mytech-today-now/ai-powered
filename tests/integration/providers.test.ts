@@ -1321,7 +1321,7 @@ describe("POST /upload — server route", () => {
     });
     expect(textRes.statusCode).toBe(400);
     const body = (await readBody(textRes)) as Record<string, unknown>;
-    expect(body.error).toMatch(/fileRef/i);
+    expect(body.error).toMatch(/attachment/i);
     expect(body.error).toMatch(/not found|expired/i);
     expect(body.error).toContain("Re-upload the file and try again.");
     expect(spy).not.toHaveBeenCalled();

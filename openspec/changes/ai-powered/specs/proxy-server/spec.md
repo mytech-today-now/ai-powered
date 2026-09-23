@@ -61,11 +61,21 @@ an empty array.
 
 ### Requirement: CORS, rate limiting, and security headers
 The server SHALL enforce CORS with a configurable `--cors-origin` (default localhost; accepts
-comma-separated list or `*`). Per-IP rate limiting SHALL be applied via `express-rate-limit`
+comma-separated list or `*`). Same-origin requests SHALL be identified by matching the request
+`Host` and effective protocol, using the first `X-Forwarded-Proto` value when present. Valid
+cross-origin HTTP(S) requests SHALL receive CORS permission only when the origin exactly matches
+the configured allowlist or its one-label wildcard pattern. Missing, `null`, malformed, or
+untrusted origins SHALL not receive `Access-Control-Allow-Origin`; missing-origin requests may
+continue for non-browser clients, and CORS SHALL never satisfy caller authentication. Per-IP rate limiting SHALL be applied via `express-rate-limit`
 (default 60 req/min, configurable via `--rate-limit`). HTTP security headers SHALL be set via
 `helmet`: `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`,
 `Strict-Transport-Security`. Request body size limits SHALL be enforced. Rate-limit exceeded
 SHALL return HTTP 429; all providers exhausted SHALL return HTTP 503.
+
+#### Scenario: Null and missing origins do not gain browser read access
+- **WHEN** a request has `Origin: null`, a malformed `Origin`, or no `Origin`
+- **THEN** the server does not emit `Access-Control-Allow-Origin`, and the route's independent
+  authentication policy remains in force
 
 #### Scenario: Rate limit returns 429
 - **WHEN** more than the configured requests per minute are sent from one IP
@@ -97,6 +107,33 @@ message SHALL stay generic and SHALL not hard-code a tunnel-specific hostname.
 - **WHEN** `POST /video` needs public media URLs and `PROXY_PUBLIC_BASE_URL` is absent
 - **THEN** the server returns HTTP 422 with a message that instructs the caller to set
   `PROXY_PUBLIC_BASE_URL` to a public HTTPS address, such as a Render service URL
+
+### Requirement: Owner-bound uploaded file references
+The server SHALL bind every uploaded file reference to the authenticated caller principal and
+check that binding before generation, ordinary download, or deletion. Missing, expired, deleted,
+malformed, and cross-principal refs SHALL use safe generic responses. Provider-facing media SHALL
+use a separate short-lived, provider-purpose signed capability endpoint; possession of that
+capability SHALL NOT authorize the ordinary browser/API download route. File refs, capabilities,
+and private filenames SHALL be absent from normal request logs.
+
+#### Scenario: Owner-only file retrieval
+- **WHEN** an authenticated owner uploads a file and requests `GET /files/:uuid`
+- **THEN** the server returns the original bytes with MIME, content-length, and `private, no-store`
+  headers
+
+#### Scenario: Cross-principal retrieval is denied
+- **WHEN** a different authenticated principal requests the same `GET /files/:uuid`
+- **THEN** the server returns the same generic not-found response used for an expired or deleted ref
+
+#### Scenario: Provider capability is purpose-bound
+- **WHEN** a provider receives a capability URL generated for its provider and before the five-minute
+  capability lifetime expires
+- **THEN** `GET /files/provider` may return the media, but the capability cannot be reused as a
+  browser/API download token and fails after deletion or expiry
+
+#### Scenario: CORS does not replace file authorization
+- **WHEN** a request has an allowlisted browser origin but no authenticated caller credential
+- **THEN** the server denies ordinary file access even when CORS response headers are present
 
 ---
 

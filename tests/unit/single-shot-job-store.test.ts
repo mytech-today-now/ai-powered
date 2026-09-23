@@ -80,6 +80,7 @@ describe("single-shot job ledger durability", () => {
       "AIPOWERED_AUTH_ENDPOINT",
       "AIPOWERED_JWT_PUBLIC_KEY",
       "AIPOWERED_SINGLE_SHOT_JOB_STORE",
+      "AIPOWERED_WEBHOOK_SECRET",
     ]);
     delete process.env["AIPOWERED_API_KEY"];
     delete process.env["AIPOWERED_AUTH_ENDPOINT"];
@@ -93,6 +94,7 @@ describe("single-shot job ledger durability", () => {
     if (tempDir.length > 0) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
+    vi.unstubAllGlobals();
   });
 
   it("returns the current jobId and pending status shape", async () => {
@@ -268,5 +270,59 @@ describe("single-shot job ledger durability", () => {
     expect((caught as { name?: string }).name).toBe("AiPoweredError");
     expect((caught as { code?: string }).code).toBe("PROVIDER_ERROR");
     expect((caught as Error).message).toContain("Async polling is disabled");
+  });
+  it("does not schedule a callback without an authenticated owner", async () => {
+    ({ dir: tempDir } = await makeTempJobStorePath());
+    mockGetAiClient.mockResolvedValue({ generateVideo: mockGenerateVideo });
+    mockGenerateVideo.mockResolvedValue({
+      data: "data:video/mp4;base64,ZmFrZQ==",
+      cost: { totalUsd: 0.01 },
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { generateSingleShot } = await loadSingleShotModule();
+
+    const result = await generateSingleShot({
+      shot: { id: "unauth-callback", prompt: "test", durationSeconds: 2 },
+      provider: "mock",
+      outputPath: path.join(tempDir, "unauth.mp4"),
+      callbackUrl: "https://93.184.216.34/webhook",
+    });
+
+    expect(result.status).toBe("complete");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    await fs.rm(tempDir, { recursive: true, force: true });
+    tempDir = "";
+  });
+
+  it("allows the trusted service credential to own callback delivery", async () => {
+    ({ dir: tempDir } = await makeTempJobStorePath());
+    process.env["AIPOWERED_API_KEY"] = "service-key";
+    process.env["AIPOWERED_WEBHOOK_SECRET"] = "webhook-secret";
+    mockGetAiClient.mockResolvedValue({ generateVideo: mockGenerateVideo });
+    mockGenerateVideo.mockResolvedValue({
+      data: "data:video/mp4;base64,ZmFrZQ==",
+      cost: { totalUsd: 0.01 },
+    });
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetchSpy);
+    const { generateSingleShot } = await loadSingleShotModule();
+
+    await generateSingleShot({
+      shot: { id: "auth-callback", prompt: "test", durationSeconds: 2 },
+      provider: "mock",
+      outputPath: path.join(tempDir, "auth.mp4"),
+      callbackUrl: "https://93.184.216.34/webhook",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const webhookBody = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(webhookBody).toMatchObject({
+      event: "shot:complete",
+      shotId: "auth-callback",
+      clipPath: "auth.mp4",
+    });
+    expect(String(webhookBody.clipPath)).not.toContain(tempDir);
   });
 });

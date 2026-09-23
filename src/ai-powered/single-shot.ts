@@ -22,7 +22,7 @@ import type { AgentErrorCode } from "./errors.js";
 import { ProviderError } from "./types.js";
 import type { ProviderName } from "./core.js";
 import { getAiClient } from "./index.js";
-import { resolveCredential } from "./auth.js";
+import { resolveCredential, type ResolvedCredential } from "./auth.js";
 import { checkIdempotency, storeIdempotency } from "./idempotency.js";
 import { deliverWebhook } from "./webhook.js";
 import { fundAgentAccount } from "./payments.js";
@@ -457,6 +457,20 @@ function resolveProviderName(provider: string): string {
   return resolved;
 }
 
+function publicWebhookClipPath(clipPath: string): string {
+  const normalized = clipPath.replaceAll("\\", "/");
+  const basename = path.posix.basename(normalized);
+  return basename.length > 0 && basename !== "." ? basename : "clip";
+}
+async function isCallbackOwnerActive(opts: SingleShotOptions, ownerId: string): Promise<boolean> {
+  try {
+    const currentCredential = await resolveCredential(opts);
+    return currentCredential.agentId === ownerId;
+  } catch {
+    // Revoked or unavailable credentials cannot authorize a failed callback.
+    return false;
+  }
+}
 // ---------------------------------------------------------------------------
 // generateSingleShot  (bd-86bb, REQ-SE-01)
 // ---------------------------------------------------------------------------
@@ -500,9 +514,10 @@ export async function generateSingleShot(opts: SingleShotOptions): Promise<Singl
     opts.agentToken !== undefined ||
     opts.agentApiKey !== undefined ||
     (process.env["AIPOWERED_API_KEY"] !== undefined && process.env["AIPOWERED_API_KEY"].length > 0);
+  let callbackCredential: ResolvedCredential | undefined;
   if (hasCredential) {
     // ZodError propagates unchanged (REQ-EV-01/02); AiPoweredError propagates unchanged.
-    await resolveCredential(opts);
+    callbackCredential = await resolveCredential(opts);
   }
 
   // ── Fast-fail for unknown providers (keeps backward-compat error for bad names) ──
@@ -589,7 +604,11 @@ export async function generateSingleShot(opts: SingleShotOptions): Promise<Singl
   }
 
   // ── (4) deliverWebhook — fire-and-forget shot:complete notification ────────
-  if (opts.callbackUrl !== undefined) {
+  if (
+    opts.callbackUrl !== undefined &&
+    callbackCredential?.agentId !== undefined &&
+    (await isCallbackOwnerActive(opts, callbackCredential.agentId))
+  ) {
     deliverWebhook(
       opts.callbackUrl,
       {
@@ -597,7 +616,7 @@ export async function generateSingleShot(opts: SingleShotOptions): Promise<Singl
         jobId: result.jobId,
         shotId: opts.shot.id,
         status: "complete",
-        clipPath: result.clipPath ?? opts.outputPath,
+        clipPath: publicWebhookClipPath(result.clipPath ?? opts.outputPath),
         durationSeconds: opts.shot.durationSeconds,
         resolution: "1920x1080", // default; providers don't return resolution metadata yet
         creditsCharged: result.creditsCharged ?? 0,
@@ -631,9 +650,18 @@ export async function submitSingleShot(opts: SingleShotOptions): Promise<{ jobId
     opts.agentToken !== undefined ||
     opts.agentApiKey !== undefined ||
     (process.env["AIPOWERED_API_KEY"] !== undefined && process.env["AIPOWERED_API_KEY"].length > 0);
+  let callbackCredential: ResolvedCredential | undefined;
   if (hasCredential) {
-    await resolveCredential(opts);
+    callbackCredential = await resolveCredential(opts);
   }
+
+  const executionOptions: SingleShotOptions =
+    callbackCredential?.agentId !== undefined || opts.callbackUrl === undefined
+      ? opts
+      : (() => {
+          const { callbackUrl: _callbackUrl, ...withoutCallback } = opts;
+          return withoutCallback;
+        })();
 
   // Validate provider before returning jobId so callers get an immediate error
   // for unknown providers rather than a phantom jobId that always fails.
@@ -647,7 +675,7 @@ export async function submitSingleShot(opts: SingleShotOptions): Promise<{ jobId
   // Here we add shot:failed webhook delivery for async submission failures.
   void (async () => {
     try {
-      const result = await generateSingleShot(opts);
+      const result = await generateSingleShot(executionOptions);
       try {
         await appendJobRecord(jobId, {
           status: "complete",
@@ -666,7 +694,11 @@ export async function submitSingleShot(opts: SingleShotOptions): Promise<{ jobId
       }
 
       // (4) shot:failed webhook delivery (REQ-WH-07, REQ-WH-08).
-      if (opts.callbackUrl !== undefined) {
+      if (
+        opts.callbackUrl !== undefined &&
+        callbackCredential?.agentId !== undefined &&
+        (await isCallbackOwnerActive(opts, callbackCredential.agentId))
+      ) {
         deliverWebhook(
           opts.callbackUrl,
           {

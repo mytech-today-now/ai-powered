@@ -360,6 +360,7 @@ describe("storeFileRef / lookupFileRef", () => {
       mimeType: "image/png",
       sizeBytes: 1024,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "openai",
     };
     const token = storeFileRef(entry);
@@ -374,6 +375,7 @@ describe("storeFileRef / lookupFileRef", () => {
       mimeType: "application/pdf",
       sizeBytes: 2048,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "anthropic",
     };
     const token = storeFileRef(entry);
@@ -414,6 +416,7 @@ describe("storeFileRef / lookupFileRef TTL behaviour", () => {
       mimeType: "image/png",
       sizeBytes: 4096,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "openai",
     };
     const token = storeFileRef(entry);
@@ -437,6 +440,7 @@ describe("storeFileRef / lookupFileRef TTL behaviour", () => {
       mimeType: "application/pdf",
       sizeBytes: 8192,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "anthropic",
     };
     const token = storeFileRef(entry);
@@ -458,6 +462,7 @@ describe("storeFileRef / lookupFileRef TTL behaviour", () => {
       mimeType: "image/png",
       sizeBytes: 1024,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "openai",
     };
     const freshEntry = {
@@ -465,6 +470,7 @@ describe("storeFileRef / lookupFileRef TTL behaviour", () => {
       mimeType: "image/png",
       sizeBytes: 1024,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "openai",
     };
 
@@ -500,6 +506,7 @@ describe("file ref cache + path safety", () => {
       mimeType: PDF_MIME,
       sizeBytes: 1024,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "openai",
     };
 
@@ -521,6 +528,7 @@ describe("file ref cache + path safety", () => {
       mimeType: PNG_MIME,
       sizeBytes: 1024,
       base64Content: B64,
+      ownerId: "test-owner",
       provider: "openai",
     };
 

@@ -2584,3 +2584,81 @@ body:has(.info-header) .info-shell {
     margin-top: 0.5rem;
   }
 }
+/* Settings / Configuration layout */
+.info-page .settings-configuration,
+.info-page .connection-config {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.info-page .settings-credential-row,
+.info-page .settings-budget-row,
+.info-page .settings-actions-row,
+.info-page .direct-row:not(.settings-credential-row) {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.35fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem 0.9rem;
+  min-width: 0;
+}
+
+.info-page .settings-credential-row input,
+.info-page .settings-credential-row select,
+.info-page .settings-budget-row input,
+.info-page .settings-actions-row button {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.info-page .settings-credential-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.info-page .settings-credential-actions button {
+  flex: 1 1 9rem;
+}
+
+.info-page :is(input, select, textarea, button):focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.42);
+  outline-offset: 2px;
+}
+
+.music-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.music-controls-row input {
+  width: 7rem;
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .info-page .settings-credential-row,
+  .info-page .settings-budget-row,
+  .info-page .settings-actions-row,
+  .info-page .direct-row:not(.settings-credential-row) {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .info-page .settings-credential-actions button {
+    flex-basis: 100%;
+  }
+
+  .music-controls-row > label:not(.checkbox-label) {
+    flex-basis: 100%;
+  }
+
+  .music-controls-row input {
+    width: 100%;
+  }
+}

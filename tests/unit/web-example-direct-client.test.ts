@@ -8,6 +8,8 @@ import * as vm from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
 const appJsPath = path.resolve(process.cwd(), "integrations/web-example/app.js");
+const settingsJsPath = path.resolve(process.cwd(), "integrations/web-example/settings.js");
+const settingsSource = readFileSync(settingsJsPath, "utf8");
 const source = readFileSync(appJsPath, "utf8");
 const start = source.indexOf("function getClient()");
 const end = source.indexOf("/* ── UI helpers ─────────────────────────────────────────── */");
@@ -70,7 +72,12 @@ function buildContext(options: {
     sessionStorage,
   };
 
+  (context as Record<string, unknown>).window = context;
   vm.createContext(context);
+  vm.runInContext(settingsSource, context);
+  (context as Record<string, unknown>).SETTINGS = (
+    context as Record<string, unknown>
+  ).AiPoweredSettings;
   vm.runInContext(block, context);
 
   return {
@@ -86,6 +93,7 @@ describe("web-example direct client storage", () => {
     const { createWebClient, getClient } = buildContext({
       mode: "direct",
       localValues: {
+        "ai-powered:connection:mode": "direct",
         "ai-powered:direct:provider": "openai",
         "ai-powered:direct:api-key:openai": "sk-test-123",
         "ai-powered:direct:budget-usd": "12.5",
@@ -113,6 +121,7 @@ describe("web-example direct client storage", () => {
       mode: null,
       savedMode: "direct",
       localValues: {
+        "ai-powered:connection:mode": "direct",
         "ai-powered:direct:provider": "openai",
         "ai-powered:direct:api-key:openai": "sk-saved-123",
       },
@@ -132,10 +141,14 @@ describe("web-example direct client storage", () => {
     const { getClient } = buildContext({
       mode: null,
       savedMode: "proxy",
-      savedProxyUrl: "https://proxy.example.test",
+      savedProxyUrl: "http://localhost:3010",
+      localValues: {
+        "ai-powered:connection:mode": "proxy",
+        "ai-powered:connection:proxy-url": "http://localhost:3010",
+      },
     });
     expect(getClient()).toEqual({
-      config: { mode: "proxy", proxyUrl: "https://proxy.example.test" },
+      config: { mode: "proxy", proxyUrl: "http://localhost:3010" },
     });
   });
   it("fails closed when direct mode is selected without a stored API key", () => {

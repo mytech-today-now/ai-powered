@@ -14,6 +14,7 @@
  *   POST /audio/transcribe     – transcribe audio from base64 payload
  *   POST /audio/speak          – synthesise speech → base64 audio
  *   POST /video                – generate video
+ *   POST /music                – generate music
  *   POST /structured           – generate structured JSON
  *   POST /batch                – sequential batch (NDJSON stream)
  *
@@ -64,7 +65,10 @@ import { selectI2VProvider } from "./smart-default.js";
 import { mountCompatRoutes } from "./compat/index.js";
 import { inferProviderFromModel } from "./compat/model-router.js";
 import {
-  lookupFileRef,
+  createProviderFileCapability,
+  deleteAuthorizedFileRef,
+  lookupAuthorizedFileRef,
+  lookupProviderFileCapability,
   buildFileContentBlock,
   readFileRefBuffer,
   storeFileRef,
@@ -107,6 +111,7 @@ const SPA_FALLBACK_PREFIXES = [
   "/image",
   "/info",
   "/models",
+  "/music",
   "/pricing",
   "/providers",
   "/stitch",
@@ -228,8 +233,92 @@ const PROVIDER_META = [
     id: "mock",
     name: "Mock (testing)",
     envKey: "",
-    modalities: ["text", "image", "audio", "video", "structured"],
+    modalities: ["text", "image", "audio", "video", "music", "structured"],
     inputModalities: ["image", "audio", "video"],
+  },
+  {
+    id: "google-lyria",
+    name: "Google Lyria",
+    envKey: "GOOGLE_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "elevenlabs-music",
+    name: "ElevenLabs Music",
+    envKey: "ELEVENLABS_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "mureka",
+    name: "Mureka",
+    envKey: "MUREKA_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "stability-audio",
+    name: "Stability Stable Audio",
+    envKey: "STABILITY_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "mubert",
+    name: "Mubert",
+    envKey: "MUBERT_ACCESS_TOKEN",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "apiframe",
+    name: "Apiframe",
+    envKey: "APIFRAME_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "kie-suno",
+    name: "Kie Suno",
+    envKey: "KIE_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "ace-suno",
+    name: "Ace Data Cloud Suno",
+    envKey: "ACE_DATA_CLOUD_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "musicapi",
+    name: "MusicAPI.ai",
+    envKey: "MUSICAPI_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "udioapi",
+    name: "udioapi.pro",
+    envKey: "UDIOAPI_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "apipass-suno",
+    name: "ApiPass Suno",
+    envKey: "APIPASS_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
+  },
+  {
+    id: "sunor",
+    name: "Sunor Suno and Udio",
+    envKey: "SUNOR_API_KEY",
+    modalities: ["music"],
+    inputModalities: [],
   },
 ] as const;
 
@@ -339,6 +428,15 @@ const StructuredBodySchema = ClientOverrideSchema.merge(TemplateSchema).extend({
   prompt: z.string().min(1, "prompt must not be empty"),
 });
 
+const MusicBodySchema = ClientOverrideSchema.extend({
+  prompt: z.string().min(1, "prompt must not be empty"),
+  lyrics: z.string().max(12000).optional(),
+  duration: z.number().positive().max(600).optional(),
+  instrumental: z.boolean().optional(),
+  seed: z.number().int().optional(),
+  providerOptions: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+});
+
 /** A single item inside a batch request. */
 const BatchItemSchema = ClientOverrideSchema.merge(TemplateSchema)
   .merge(VideoSizeSchema)
@@ -404,8 +502,46 @@ function resolvePrompt(prompt: string, template?: string, vars?: Record<string, 
   }
 }
 
+type RequestProviderCredentials = Record<string, string>;
+
+/**
+ * Decode the request-scoped credential header. The header is base64 encoded so
+ * multi-field credentials can be carried without putting secrets in JSON or URLs.
+ */
+function readRequestProviderCredentials(
+  req: Request,
+  res: Response,
+): RequestProviderCredentials | undefined | null {
+  const encoded = req.get("X-AI-Provider-Credentials");
+  if (!encoded) return undefined;
+  try {
+    if (encoded.length > 16_384) throw new Error("credential header is too large");
+    const parsed: unknown = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("invalid credential object");
+    const credentials: RequestProviderCredentials = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(key) || typeof value !== "string" || value.length > 8192) {
+        throw new Error("invalid credential field");
+      }
+      credentials[key] = value;
+    }
+    if (Object.keys(credentials).length === 0) throw new Error("empty credential object");
+    return credentials;
+  } catch {
+    res
+      .status(400)
+      .json({ error: "Invalid provider credential header.", code: "INVALID_CREDENTIALS" });
+    return null;
+  }
+}
+
 /** Build config overrides from the validated body + serve-level options. */
-function buildOverrides(body: z.infer<typeof ClientOverrideSchema>, opts: ServeOptions) {
+function buildOverrides(
+  body: z.infer<typeof ClientOverrideSchema>,
+  opts: ServeOptions,
+  requestCredentials?: RequestProviderCredentials,
+) {
   // Auto-infer the provider from the model string when no explicit provider
   // is given — mirrors the same logic used by the /v1/ compat routes so that
   // native endpoints (POST /video, POST /batch, …) route to the correct
@@ -426,6 +562,12 @@ function buildOverrides(body: z.infer<typeof ClientOverrideSchema>, opts: ServeO
     ...(body.maxTokens !== undefined ? { maxTokens: body.maxTokens } : {}),
     ...(body.systemPrompt ? { systemPrompt: body.systemPrompt } : {}),
     ...((body.profile ?? opts.profile) ? { profile: body.profile ?? opts.profile } : {}),
+    ...(requestCredentials
+      ? {
+          ...(requestCredentials["apiKey"] ? { apiKey: requestCredentials["apiKey"] } : {}),
+          providerCredentials: requestCredentials,
+        }
+      : {}),
   };
 }
 
@@ -534,13 +676,14 @@ function resolveFileRef(
   fileRef: string | undefined,
   provider: string,
   model: string,
+  ownerId: string | undefined,
 ): ResolvedFileRef | AttachmentValidationError | undefined {
   if (!fileRef) return undefined;
-  const entry = lookupFileRef(fileRef);
+  const entry = lookupAuthorizedFileRef(fileRef, ownerId);
   if (!entry) {
     return {
       status: 400,
-      error: `Attachment fileRef "${fileRef}" was not found or expired. Re-upload the file and try again.`,
+      error: "Attachment was not found or expired. Re-upload the file and try again.",
     };
   }
   try {
@@ -573,12 +716,13 @@ function resolveFileRefs(
   fileRefs: string[] | undefined,
   provider: string,
   model: string,
+  ownerId: string | undefined,
 ): ResolvedFileRef[] | AttachmentValidationError {
   if (!fileRefs?.length) return [];
 
   const resolved: ResolvedFileRef[] = [];
   for (const ref of fileRefs) {
-    const result = resolveFileRef(ref, provider, model);
+    const result = resolveFileRef(ref, provider, model, ownerId);
     if (!result) continue;
     if (isAttachmentValidationError(result)) return result;
     resolved.push(result);
@@ -591,13 +735,20 @@ function resolveFileBlocks(fileRefs: ResolvedFileRef[]): Array<Record<string, un
 }
 
 /**
- * Convert stored fileRef tokens into publicly reachable /files/:uuid URLs.
+ * Convert stored refs into short-lived provider capability URLs.
  *
  * The caller is responsible for ensuring the resulting URLs are used only for
  * providers that require server-fetched image keyframes.
  */
-function resolvePublicFileUrls(fileRefs: ResolvedFileRef[], baseUrl: string): string[] {
-  return fileRefs.map((ref) => `${baseUrl}/files/${ref.fileRef}`);
+function resolvePublicFileUrls(
+  fileRefs: ResolvedFileRef[],
+  baseUrl: string,
+  provider: string,
+): string[] {
+  return fileRefs.map((ref) => {
+    const capability = createProviderFileCapability(ref.fileRef, provider);
+    return `${baseUrl}/files/provider?capability=${encodeURIComponent(capability)}&provider=${encodeURIComponent(provider)}`;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -761,7 +912,7 @@ export function createRouter(opts: ServeOptions): Router {
     const modality = req.query["modality"] as string | undefined;
     const model = req.query["model"] as string | undefined;
 
-    const validModalities = ["text", "image", "audio", "video"] as const;
+    const validModalities = ["text", "image", "audio", "video", "music"] as const;
     type ModalityFilter = (typeof validModalities)[number];
 
     if (modality && !validModalities.includes(modality as ModalityFilter)) {
@@ -801,6 +952,8 @@ export function createRouter(opts: ServeOptions): Router {
       const modality = req.query["modality"] as string | undefined;
       const providerOverride = req.query["provider"] as string | undefined;
       const accepts = req.query["accepts"] as string | undefined;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
 
       // Honour an explicit ?provider= override even in mock mode so that the
       // UI can display models from all configured real providers. listModels
@@ -809,8 +962,19 @@ export function createRouter(opts: ServeOptions): Router {
       // Otherwise propagate the server-level mock flag explicitly so a stale
       // AI_MOCK=true env var cannot force mock models when the server is live.
       const overrides = providerOverride
-        ? { ...opts.configOverrides, provider: providerOverride as never, mock: false as const }
-        : { ...opts.configOverrides, mock: opts.mock === true };
+        ? {
+            ...opts.configOverrides,
+            provider: providerOverride as never,
+            mock: false as const,
+            ...(requestCredentials
+              ? { apiKey: requestCredentials["apiKey"], providerCredentials: requestCredentials }
+              : {}),
+          }
+        : {
+            ...opts.configOverrides,
+            mock: opts.mock === true,
+            ...(requestCredentials ? { providerCredentials: requestCredentials } : {}),
+          };
 
       try {
         const client = await getAiClient("serve-models", overrides as never);
@@ -894,6 +1058,11 @@ export function createRouter(opts: ServeOptions): Router {
   // On success returns { fileRef: "<uuid>" } that callers pass as `fileRef`
   // in subsequent generation requests to attach the file as a content block.
   router.post("/upload", upload.single("file"), (req: Request, res: Response) => {
+    const ownerId = req.aiPrincipal?.id;
+    if (!ownerId) {
+      res.status(401).json({ error: "Authentication required." });
+      return;
+    }
     const file = req.file;
     if (!file) {
       res.status(400).json({ error: "No file uploaded. Include a 'file' field in the form data." });
@@ -934,6 +1103,7 @@ export function createRouter(opts: ServeOptions): Router {
     }
 
     const fileRef = storeFileRef({
+      ownerId,
       filename: file.originalname,
       mimeType,
       sizeBytes: file.size,
@@ -943,22 +1113,40 @@ export function createRouter(opts: ServeOptions): Router {
     });
 
     getLogger().info(
-      { fileRef, filename: file.originalname, mimeType, sizeBytes: file.size, provider },
+      { principalId: ownerId, mimeType, sizeBytes: file.size, provider },
       "POST /upload: file stored",
     );
 
     res.status(201).json({ fileRef });
   });
 
+  // --- GET /files/provider ---
+  // Provider-facing fetches use a short-lived, purpose-bound capability. This
+  // route is public at the transport layer so an upstream provider can reach
+  // it, but a missing, expired, revoked, or wrong-provider capability is 404.
+  router.get("/files/provider", (req, res) => {
+    const capability = typeof req.query["capability"] === "string" ? req.query["capability"] : "";
+    const provider = typeof req.query["provider"] === "string" ? req.query["provider"] : "";
+    const resolved =
+      capability && provider ? lookupProviderFileCapability(capability, provider) : undefined;
+    if (!resolved) {
+      res.status(404).json({ error: "File not found or expired" });
+      return;
+    }
+    const buffer =
+      readFileRefBuffer(resolved.fileRef) ?? Buffer.from(resolved.entry.base64Content, "base64");
+    res.setHeader("Content-Type", resolved.entry.mimeType);
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store");
+    res.end(buffer);
+  });
+
   // --- GET /files/:uuid ---
-  // Serves the raw binary of a stored uploaded file by its UUID token.
-  // This endpoint is required by providers such as Luma AI that validate
-  // keyframe URLs server-side and reject base64 data: URIs.
-  // Expose this server publicly and set the PROXY_PUBLIC_BASE_URL environment
-  // variable so generated URLs are reachable.
+  // Browser/API downloads are owner-authenticated. Provider reachability does
+  // not make this ordinary download route public.
   router.get("/files/:uuid", (req, res) => {
     const fileRef = req.params["uuid"] ?? "";
-    const entry = lookupFileRef(fileRef);
+    const entry = lookupAuthorizedFileRef(fileRef, req.aiPrincipal?.id);
     if (!entry) {
       res.status(404).json({ error: "File not found or expired" });
       return;
@@ -972,6 +1160,17 @@ export function createRouter(opts: ServeOptions): Router {
     res.end(buffer);
   });
 
+  // Revoke an uploaded ref. Existing provider capabilities fail closed because
+  // capability resolution always re-checks the live ref store.
+  router.delete("/files/:uuid", (req, res) => {
+    const fileRef = req.params["uuid"] ?? "";
+    if (!deleteAuthorizedFileRef(fileRef, req.aiPrincipal?.id)) {
+      res.status(404).json({ error: "File not found or expired" });
+      return;
+    }
+    res.status(204).end();
+  });
+
   // --- POST /text ---
   // Non-streaming returns JSON; streaming (`stream: true`) returns plain text chunks
   // compatible with the WebAiClient.streamText() proxy implementation.
@@ -980,11 +1179,18 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(TextBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       const effectiveProvider =
         (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
-      const fileResolution = resolveFileRef(body.fileRef, effectiveProvider, body.model ?? "");
+      const fileResolution = resolveFileRef(
+        body.fileRef,
+        effectiveProvider,
+        body.model ?? "",
+        req.aiPrincipal?.id,
+      );
       if (isAttachmentValidationError(fileResolution)) {
         res.status(fileResolution.status).json({ error: fileResolution.error });
         return;
@@ -1023,8 +1229,10 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(TextBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
@@ -1052,8 +1260,10 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(ImageBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       const effectiveProvider =
         (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
       // Prefer the fileRefs array (multi-image); fall back to the singular fileRef for
@@ -1067,6 +1277,7 @@ export function createRouter(opts: ServeOptions): Router {
         activeFileRefs.length ? activeFileRefs : undefined,
         effectiveProvider,
         body.model ?? "",
+        req.aiPrincipal?.id,
       );
       if (isAttachmentValidationError(fileRefsResolution)) {
         res.status(fileRefsResolution.status).json({ error: fileRefsResolution.error });
@@ -1105,6 +1316,8 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(TranscribeBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
 
       // Explicit guard: return the flat error shape the spec requires.
       if (!body.audioBase64) {
@@ -1113,7 +1326,7 @@ export function createRouter(opts: ServeOptions): Router {
       }
 
       const buffer = Buffer.from(body.audioBase64, "base64");
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       try {
         const client = await getAiClient("serve-transcribe", overrides as never);
         const result = await client.transcribeAudio(buffer, {
@@ -1134,6 +1347,8 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(SpeakBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
 
       // Explicit guard: return the flat error shape the spec requires.
       if (!body.text) {
@@ -1141,7 +1356,7 @@ export function createRouter(opts: ServeOptions): Router {
         return;
       }
 
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       try {
         const client = await getAiClient("serve-speak", overrides as never);
         const result = await client.synthesizeSpeech(body.text);
@@ -1158,8 +1373,10 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(VideoBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       const effectiveProvider =
         (overrides as { provider?: string }).provider ?? opts.configOverrides?.provider ?? "openai";
 
@@ -1171,9 +1388,9 @@ export function createRouter(opts: ServeOptions): Router {
           : [];
 
       // Luma AI rejects base64 data: URIs for keyframe images; it requires
-      // Venice and Luma AI reject base64 data: URIs for keyframe images; they
-      // require publicly accessible HTTPS URLs.  Build one public URL per
-      // fileRef from PROXY_PUBLIC_BASE_URL pointing to GET /files/:uuid.
+      // Venice, Luma AI, and Pika reject base64 data: URIs for keyframe images;
+      // they require publicly accessible HTTPS URLs. Build one short-lived,
+      // provider-bound capability URL per ref from PROXY_PUBLIC_BASE_URL.
       // Other providers receive standard resolved content blocks (base64 data URIs).
       const hasInputMedia = (body.inputMedia?.length ?? 0) > 0;
       const hasVideoInputMedia =
@@ -1224,6 +1441,7 @@ export function createRouter(opts: ServeOptions): Router {
         refsToValidate.length ? refsToValidate : undefined,
         routedProvider,
         body.model ?? "",
+        req.aiPrincipal?.id,
       );
       if (isAttachmentValidationError(resolvedFileRefs)) {
         res.status(resolvedFileRefs.status).json({ error: resolvedFileRefs.error });
@@ -1241,16 +1459,16 @@ export function createRouter(opts: ServeOptions): Router {
           });
           return;
         }
-        publicImageUrls = resolvePublicFileUrls(
-          resolvedFileRefs.filter((ref) => !ref.entry.mimeType.startsWith("video/")),
-          baseUrl,
+        const publicMediaUrls = resolvePublicFileUrls(resolvedFileRefs, baseUrl, routedProvider);
+        publicImageUrls = publicMediaUrls.filter(
+          (_url, index) => !resolvedFileRefs[index]!.entry.mimeType.startsWith("video/"),
         );
-        publicMediaInputs = resolvedFileRefs.map((ref) => ({
-          url: `${baseUrl}/files/${ref.fileRef}`,
+        publicMediaInputs = resolvedFileRefs.map((ref, index) => ({
+          url: publicMediaUrls[index]!,
           mimeType: ref.entry.mimeType,
         }));
         getLogger().info(
-          { fileRefs: activeFileRefs, publicImageUrls, provider: routedProvider },
+          { publicUrlCount: publicMediaUrls.length, provider: routedProvider },
           "POST /video: using public URLs for image keyframes",
         );
       } else if (activeFileRefs.length) {
@@ -1331,12 +1549,41 @@ export function createRouter(opts: ServeOptions): Router {
 
   // --- POST /structured ---
   router.post(
+    "/music",
+    wrap(async (req, res, next) => {
+      const body = parseBody(MusicBodySchema, req, res);
+      if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
+      const overrides = buildOverrides(body, opts, requestCredentials);
+      const callOptions: ProviderCallOptions = {
+        ...(body.lyrics !== undefined ? { lyrics: body.lyrics } : {}),
+        ...(body.instrumental !== undefined ? { instrumental: body.instrumental } : {}),
+        ...(body.duration !== undefined ? { musicDurationSeconds: body.duration } : {}),
+        ...(body.seed !== undefined ? { seed: body.seed } : {}),
+        ...(body.providerOptions !== undefined ? { musicOptions: body.providerOptions } : {}),
+        ...(requestCredentials ? { providerCredentials: requestCredentials } : {}),
+      };
+      try {
+        const client = await getAiClient("serve-music", overrides as never);
+        const result = await client.generateMusic(body.prompt, callOptions);
+        res.json(result);
+      } catch (err) {
+        if (!mapError(err, res)) next(err);
+      }
+    }),
+  );
+
+  // --- POST /structured ---
+  router.post(
     "/structured",
     wrap(async (req, res, next) => {
       const body = parseBody(StructuredBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
       const prompt = resolvePrompt(body.prompt, body.template, body.vars);
-      const overrides = buildOverrides(body, opts);
+      const overrides = buildOverrides(body, opts, requestCredentials);
       try {
         const { z: zod } = await import("zod");
         const schema = zod.record(zod.unknown());
@@ -1358,12 +1605,14 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(BatchBodySchema, req, res);
       if (!body) return;
+      const requestCredentials = readRequestProviderCredentials(req, res);
+      if (requestCredentials === null) return;
 
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("X-Accel-Buffering", "no"); // disable Nginx buffering
 
-      const baseOverrides = buildOverrides(body, opts);
+      const baseOverrides = buildOverrides(body, opts, requestCredentials);
 
       for (let i = 0; i < body.items.length; i++) {
         const item = body.items[i]!;
@@ -1391,7 +1640,7 @@ export function createRouter(opts: ServeOptions): Router {
         const itemHasImages = Boolean(item.images && item.images.length > 0);
         const itemFileResolution = itemHasImages
           ? undefined
-          : resolveFileRef(itemFileRef, itemProvider, item.model ?? "");
+          : resolveFileRef(itemFileRef, itemProvider, item.model ?? "", req.aiPrincipal?.id);
         if (isAttachmentValidationError(itemFileResolution)) {
           res.write(
             JSON.stringify({

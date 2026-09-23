@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const repoRoot = process.cwd();
 const appJsPath = path.join(repoRoot, "integrations", "web-example", "app.js");
 const indexHtmlPath = path.join(repoRoot, "integrations", "web-example", "index.html");
+const settingsJsPath = path.join(repoRoot, "integrations", "web-example", "settings.js");
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -17,6 +18,7 @@ function createNoopStore() {
     clear: vi.fn(),
     delete: vi.fn(),
     get: vi.fn(() => undefined),
+    getCache: vi.fn(() => undefined),
     listRecords: vi.fn(async () => []),
     load: vi.fn(async () => undefined),
     save: vi.fn(async () => undefined),
@@ -28,6 +30,7 @@ function createNoopStore() {
 function createNoopWebClient() {
   return {
     generateImage: vi.fn(async () => ({})),
+    generateMusic: vi.fn(async () => ({})),
     generateStructured: vi.fn(async () => ({ data: {} })),
     generateText: vi.fn(async () => ({})),
     generateVideo: vi.fn(async () => ({})),
@@ -40,6 +43,7 @@ function createNoopWebClient() {
 function loadWebExample() {
   const html = fs.readFileSync(indexHtmlPath, "utf8");
   const appJs = fs.readFileSync(appJsPath, "utf8");
+  const settingsJs = fs.readFileSync(settingsJsPath, "utf8");
   const dom = new JSDOM(html, {
     pretendToBeVisual: true,
     runScripts: "outside-only",
@@ -82,6 +86,8 @@ function loadWebExample() {
     readJsonPreference: vi.fn((_storage: unknown, _key: string, fallback: unknown) => fallback),
     writeJsonPreference: vi.fn(),
   };
+
+  window.eval(settingsJs);
 
   Object.defineProperty(window, "fetch", {
     configurable: true,

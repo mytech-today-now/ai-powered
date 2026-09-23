@@ -74,7 +74,7 @@ export interface RetryOptions {
 /** Full-jitter exponential back-off delay (ms). */
 function jitteredDelay(attempt: number, baseMs: number, capMs: number): number {
   const exponential = baseMs * Math.pow(2, attempt);
-  const capped      = Math.min(capMs, exponential);
+  const capped = Math.min(capMs, exponential);
   return Math.floor(Math.random() * capped);
 }
 
@@ -86,10 +86,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       return;
     }
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
-      clearTimeout(timer);
-      reject(signal.reason ?? new Error("Aborted"));
-    }, { once: true });
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason ?? new Error("Aborted"));
+      },
+      { once: true },
+    );
   });
 }
 
@@ -129,10 +133,14 @@ export class CircuitBreaker {
   ) {}
 
   /** Current circuit state. */
-  get state(): CircuitState { return this._state; }
+  get state(): CircuitState {
+    return this._state;
+  }
 
   /** Consecutive failure count (resets on success or circuit close). */
-  get failures(): number { return this._failures; }
+  get failures(): number {
+    return this._failures;
+  }
 
   /**
    * Executes `fn` through the circuit breaker.
@@ -145,14 +153,17 @@ export class CircuitBreaker {
    *
    * @throws CircuitOpenError  when the circuit is open and the reset interval has not elapsed.
    */
-  async call<T>(fn: () => Promise<T>): Promise<T> {
+  async call<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const log = getLogger();
 
     if (this._state === "OPEN") {
       const elapsed = Date.now() - (this._openedAt ?? 0);
       if (elapsed >= this._resetMs) {
         this._state = "HALF_OPEN";
-        log.info({ provider: this._providerName }, "CircuitBreaker: transitioning to HALF_OPEN for probe");
+        log.info(
+          { provider: this._providerName },
+          "CircuitBreaker: transitioning to HALF_OPEN for probe",
+        );
       } else {
         const recoveryMs = this._resetMs - elapsed;
         throw new CircuitOpenError(this._providerName, new Date(Date.now() + recoveryMs));
@@ -173,6 +184,9 @@ export class CircuitBreaker {
       }
       return result;
     } catch (err) {
+      // Caller cancellation is not provider failure and must not contribute to
+      // circuit state or trigger fallback behavior.
+      if (signal?.aborted) throw err;
       this._failures++;
       if (this._state === "HALF_OPEN" || this._failures >= this._threshold) {
         this._state = "OPEN";
@@ -205,18 +219,15 @@ export async function withRetry<T>(
   fn: (attempt: number) => Promise<T>,
   options: RetryOptions = {},
 ): Promise<T> {
-  const {
-    maxAttempts  = 3,
-    baseDelayMs  = 500,
-    capDelayMs   = 16_000,
-    signal,
-    isRetryable,
-  } = options;
+  const { maxAttempts = 3, baseDelayMs = 500, capDelayMs = 16_000, signal, isRetryable } = options;
 
   const logger = getLogger();
   let lastErr: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      throw signal.reason ?? new Error("Aborted");
+    }
     try {
       return await fn(attempt);
     } catch (err) {
@@ -253,4 +264,3 @@ export async function withRetry<T>(
 export { jitterDelay, sleep, withRetryFetch } from "./shared/resilience.js";
 export type { RetryOptions as WebRetryOptions } from "./shared/resilience.js";
 export { CircuitBreaker as SharedCircuitBreaker } from "./shared/resilience.js";
-

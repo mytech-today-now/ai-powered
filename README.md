@@ -34,7 +34,7 @@ console.log(result.content);
 | **Resilience**    | Per-provider circuit breakers · automatic provider fallback · configurable retry                                                                   |
 | **Security**      | API key masking in all logs · SHA-256 prompt hashing in audit log · git-tracked credential warnings                                                |
 | **Plugin system** | `onRequest` / `onResponse` / `onError` hooks · frozen config sandboxing                                                                            |
-| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · budget enforcement · typed error banners · attachment-aware filtering · combined-video export |
+| **Browser**       | Vite ESM+UMD bundle · proxy mode · circuit breaker · local budget guard · typed error banners · attachment-aware filtering · combined-video export |
 | **MCP server**    | Built-in Model Context Protocol server — expose all modalities as MCP tools for AI agents                                                          |
 | **ESM only**      | `"type": "module"` throughout — CommonJS is not supported (Design Decision D1)                                                                     |
 
@@ -152,6 +152,36 @@ Config is loaded from multiple layers and merged in priority order (lowest → h
 }
 ```
 
+### Provider-scoped credential precedence
+
+The active provider resolves its API key in this order: the explicit `apiKey`
+from the highest-priority resolved configuration layer, that provider's flat
+`providerCredentials` object, then the provider-specific environment variable.
+Named profiles participate in the same layer merge, so a profile can define
+both its active provider and its fallback credentials.
+
+Fallback providers resolve only their own nested entry in
+`providerCredentials`, then their own environment variable. They never inherit
+the active provider's `apiKey` or flat credential object. For example:
+
+```json
+{
+  "provider": "openai",
+  "apiKey": "openai-key",
+  "providerCredentials": {
+    "openai": { "apiKey": "openai-key" },
+    "anthropic": { "apiKey": "anthropic-key" }
+  },
+  "fallbackProviders": ["anthropic", "mock"]
+}
+```
+
+Request-scoped credentials follow the same provider boundary: a flat request
+credential is used only for the selected primary provider, while a nested
+provider map may provide credentials for a named provider. If a fallback
+provider cannot be configured, it is treated as a setup failure and the next
+fallback is attempted.
+
 ### Custom / self-hosted providers
 
 ```json
@@ -204,6 +234,29 @@ proxy file uploads, set `PROXY_PUBLIC_BASE_URL` to the proxy's public HTTPS URL
 so the provider can fetch the stored media. On Render, use the service URL for
 that variable. Pika's Soundtrack endpoint is not exposed because it returns
 audio rather than a video result.
+
+### Music providers
+
+The `music` modality is available through the native client and `POST /music`.
+The proxy normalizes synchronous audio and asynchronous submit/poll providers
+to a playable `MusicResult`. Set the provider-specific key in the environment
+or pass explicit `providerCredentials` for multi-field providers such as
+Mubert. The built-in catalog includes Google Lyria, ElevenLabs Music, Mureka,
+Stability Stable Audio, Mubert, Apiframe, Kie Suno, Ace Data Cloud Suno,
+MusicAPI.ai, udioapi.pro, ApiPass Suno, and Sunor Suno/Udio.
+
+```json
+{
+  "provider": "google-lyria",
+  "model": "lyria-3-clip-preview",
+  "modality": "music"
+}
+```
+
+The browser demo exposes the same capability on the Music tab. Credentials
+saved at `info.html#settings-configuration` are provider-scoped and are sent
+only in the request credential header when the page and proxy share a trusted
+origin.
 
 ### VibeVoice (self-hosted ASR / TTS)
 
@@ -919,7 +972,7 @@ Agents that use raw JSON schemas (e.g. Anthropic tool_use) can use this schema b
 
 ### HTTP proxy tool-calling (serve mode)
 
-When running `ai-powered serve`, all five modalities are available as HTTP endpoints. Agents can call them directly:
+When running `ai-powered serve`, all six modalities are available as HTTP endpoints. Agents can call them directly:
 
 ```
 POST http://localhost:3001/text         { "prompt": "…", "provider": "openai" }
@@ -928,6 +981,7 @@ POST http://localhost:3001/structured   { "prompt": "…" }
 POST http://localhost:3001/audio/transcribe  { "audioBase64": "…" }
 POST http://localhost:3001/audio/speak  { "text": "…" }
 POST http://localhost:3001/video        { "prompt": "…" }
+POST http://localhost:3001/music        { "prompt": "…", "provider": "google-lyria" }
 GET  http://localhost:3001/health       → { "status": "ok" }
 GET  http://localhost:3001/models       → [{ "id": "…", "name": "…" }]
 ```
@@ -1030,7 +1084,7 @@ Reference uploads in the Image and Video tabs keep one ordered collection per ta
 
 Image and video controls are model-aware. Aspect ratio, resolution, quality, FPS, duration, and model options are populated from metadata. Duration values are finite whole-second choices, and unsupported or manipulated values are rejected by both the browser and server.
 
-### Browser client features (v0.5.11)
+### Browser client features (v0.5.12)
 
 The `WebAiClient` (used by the built-in web demo at `integrations/web-example/`) includes:
 
@@ -1393,6 +1447,22 @@ Raw prompts are stored as **SHA-256 hashes** — they can be verified but not re
 - Always use **proxy mode** in production. The API key never leaves your server.
 - **Direct mode** renders a non-suppressible DOM banner warning users the key is in DevTools.
 - The Vite build post-process step scans `dist-web/` for leaked key prefixes and aborts if found.
+
+### Browser budget contract
+
+`createWebClient()` accepts `budgetUsd` and applies it to every supported browser
+operation in direct and proxy mode, including text streaming, image, audio,
+video, music, and structured output. It is a per-client, in-memory UX guard:
+the browser does not send this cap to the proxy and it is not an authoritative
+multi-user billing or quota ledger. Configure authoritative enforcement in the
+proxy with a principal-scoped server policy when billing protection is required.
+
+Proxy generation responses must include finite `cost.totalUsd` metadata. A
+finite-budget client fails closed with `PROXY_COST_UNKNOWN` when that metadata
+is absent, and server budget rejections preserve their response code such as
+`BUDGET_EXCEEDED`. Retries account only the final successful response. The
+browser total is an estimate/response-cost tracker and does not prove provider
+invoices or deployed quota enforcement.
 
 ### Prompt injection defense
 

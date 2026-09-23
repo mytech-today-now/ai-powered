@@ -187,7 +187,7 @@ describe("B-ATT-01: batch item with missing fileRef returns error line", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]!["status"]).toBe("error");
     expect(lines[0]!["prompt"]).toBe("Missing attachment");
-    expect(String(lines[0]!["error"])).toMatch(/fileRef/i);
+    expect(String(lines[0]!["error"])).toMatch(/attachment/i);
     expect(String(lines[0]!["error"])).toMatch(/not found|expired/i);
     expect(String(lines[0]!["error"])).toContain("Re-upload the file and try again.");
     expect(spy).not.toHaveBeenCalled();
@@ -223,6 +223,7 @@ describe("B-REF-04: fileRef + images coexist — images win", () => {
 describe("B-ATT-02: batch item with unsupported MIME returns error line", () => {
   it("returns a clear MIME error and does not call the provider", async () => {
     const fileRef = storeFileRef({
+      ownerId: "test-bypass",
       filename: "doc.pdf",
       mimeType: "application/pdf",
       sizeBytes: 12,

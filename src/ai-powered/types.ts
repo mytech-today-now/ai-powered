@@ -93,6 +93,27 @@ export interface VideoResult extends BaseResult {
   aspectRatio?: string;
 }
 
+/** Result of a music generation call. */
+export interface MusicResult extends BaseResult {
+  modality: "music";
+  /** URL or base64-encoded audio data. */
+  data: string;
+  /** MIME type of the audio output. */
+  mimeType: string;
+  durationSeconds?: number;
+  title?: string;
+  lyrics?: string;
+  trackId?: string;
+  jobId?: string;
+  status?: "completed" | "queued" | "running";
+  alternatives?: Array<{
+    data: string;
+    mimeType: string;
+    title?: string;
+    trackId?: string;
+  }>;
+}
+
 /** Result of a structured-output generation call. */
 export interface StructuredResult<T = unknown> extends BaseResult {
   modality: "structured";

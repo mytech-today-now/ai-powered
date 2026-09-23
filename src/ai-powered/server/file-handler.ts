@@ -16,7 +16,7 @@
  *   buildFileContentBlock()   – Build a provider-native content block for a given file
  */
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import * as path from "node:path";
 import { ProviderCapabilityError } from "../types.js";
 
@@ -55,7 +55,15 @@ const MAX_FILE_BYTES = 52_428_800;
 /** File refs are retained for 1 hour, then pruned on lookup or the next write. */
 export const FILE_REF_TTL_MS = 60 * 60 * 1000;
 
+/** Provider fetch capabilities are intentionally shorter-lived than file refs. */
+export const FILE_PROVIDER_CAPABILITY_TTL_MS = 5 * 60 * 1000;
+
+const FILE_PROVIDER_CAPABILITY_PURPOSE = "provider-media";
+const generatedCapabilitySecret = randomBytes(32).toString("hex");
+
 export interface FileRefEntry {
+  /** Stable authenticated caller identity that owns this ref. */
+  ownerId: string;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -109,10 +117,13 @@ function pruneExpiredFileRefs(now = Date.now()): void {
  */
 export function storeFileRef(entry: FileRefEntry): string {
   pruneExpiredFileRefs();
+  const ownerId = entry.ownerId.trim();
+  if (!ownerId) throw new Error("File reference owner is required.");
   const token = randomUUID();
   fileRefStore.set(token, {
     entry: {
       ...entry,
+      ownerId,
       filename: normalizeStoredFilename(entry.filename),
     },
     expiresAt: Date.now() + FILE_REF_TTL_MS,
@@ -128,6 +139,18 @@ export function storeFileRef(entry: FileRefEntry): string {
 export function lookupFileRef(token: string): FileRefEntry | undefined {
   pruneExpiredFileRefs();
   return fileRefStore.get(token)?.entry;
+}
+
+/**
+ * Retrieve a ref only when it belongs to the authenticated caller.
+ * Missing, expired, and cross-principal refs intentionally share `undefined`.
+ */
+export function lookupAuthorizedFileRef(
+  token: string,
+  ownerId: string | undefined,
+): FileRefEntry | undefined {
+  const entry = lookupFileRef(token);
+  return entry && ownerId !== undefined && entry.ownerId === ownerId ? entry : undefined;
 }
 
 /**
@@ -165,6 +188,89 @@ export function deleteFileRef(token: string): boolean {
   const removed = fileRefStore.delete(token);
   fileRefBufferCache.delete(token);
   return removed;
+}
+
+/** Delete a ref only when the authenticated caller owns it. */
+export function deleteAuthorizedFileRef(token: string, ownerId: string | undefined): boolean {
+  const entry = lookupAuthorizedFileRef(token, ownerId);
+  return entry ? deleteFileRef(token) : false;
+}
+
+function capabilitySecret(): string {
+  return process.env["AIPOWERED_FILE_CAPABILITY_SECRET"]?.trim() || generatedCapabilitySecret;
+}
+
+function signCapabilityPayload(payload: string): string {
+  return createHmac("sha256", capabilitySecret()).update(payload).digest("base64url");
+}
+
+/**
+ * Create a short-lived capability for a provider to fetch one uploaded ref.
+ * The token is purpose-bound and provider-bound; it is not accepted by the
+ * ordinary owner download route.
+ */
+export function createProviderFileCapability(
+  fileRef: string,
+  provider: string,
+  now = Date.now(),
+): string {
+  const payload = Buffer.from(
+    JSON.stringify({
+      fileRef,
+      purpose: FILE_PROVIDER_CAPABILITY_PURPOSE,
+      provider,
+      expiresAt: now + FILE_PROVIDER_CAPABILITY_TTL_MS,
+    }),
+    "utf8",
+  ).toString("base64url");
+  return `${payload}.${signCapabilityPayload(payload)}`;
+}
+
+/**
+ * Resolve and authorize a provider capability. The returned file ref is kept
+ * separate from the ordinary owner-authenticated download path.
+ */
+export function lookupProviderFileCapability(
+  capability: string,
+  provider: string,
+  now = Date.now(),
+): { fileRef: string; entry: FileRefEntry } | undefined {
+  const [payload, signature] = capability.split(".");
+  if (!payload || !signature) return undefined;
+
+  const expectedSignature = signCapabilityPayload(payload);
+  const signatureBytes = Buffer.from(signature, "utf8");
+  const expectedBytes = Buffer.from(expectedSignature, "utf8");
+  if (
+    signatureBytes.length !== expectedBytes.length ||
+    !timingSafeEqual(signatureBytes, expectedBytes)
+  ) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      fileRef?: unknown;
+      purpose?: unknown;
+      provider?: unknown;
+      expiresAt?: unknown;
+    };
+    if (
+      typeof parsed.fileRef !== "string" ||
+      typeof parsed.provider !== "string" ||
+      parsed.purpose !== FILE_PROVIDER_CAPABILITY_PURPOSE ||
+      parsed.provider !== provider ||
+      typeof parsed.expiresAt !== "number" ||
+      !Number.isFinite(parsed.expiresAt) ||
+      now >= parsed.expiresAt
+    ) {
+      return undefined;
+    }
+    const entry = lookupFileRef(parsed.fileRef);
+    return entry ? { fileRef: parsed.fileRef, entry } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Clear only the decoded-byte cache. For use in unit tests only. */
