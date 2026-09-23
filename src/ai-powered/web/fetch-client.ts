@@ -250,6 +250,51 @@ const DEFAULT_MODELS: Record<string, Partial<Record<string, string>>> = {
   },
 };
 
+const ANTHROPIC_MAX_TOKENS_DEFAULT = 4096;
+
+interface DirectTextRequestContext {
+  baseUrl: string;
+  model: string;
+  prompt: string;
+  options: WebCallOptions | undefined;
+  stream: boolean;
+}
+
+interface DirectTextRequest {
+  endpoint: string;
+  body: Record<string, unknown>;
+}
+
+interface DirectStreamEvent {
+  text?: string;
+  done?: boolean;
+}
+
+interface DirectTextAdapter {
+  buildRequest(context: DirectTextRequestContext): DirectTextRequest;
+  parseStreamEvent(payload: Record<string, unknown>): DirectStreamEvent | undefined;
+}
+
+const OPENAI_COMPATIBLE_DIRECT_TEXT_ADAPTER: DirectTextAdapter = {
+  buildRequest({ baseUrl, model, prompt, options, stream }): DirectTextRequest {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (options?.systemPrompt) messages.push({ role: "system", content: options.systemPrompt });
+    messages.push({ role: "user", content: prompt });
+
+    const body: Record<string, unknown> = { model, messages };
+    if (stream) body["stream"] = true;
+    if (options?.temperature !== undefined) body["temperature"] = options.temperature;
+    if (options?.maxTokens !== undefined) body["max_tokens"] = options.maxTokens;
+    return { endpoint: `${baseUrl}/chat/completions`, body };
+  },
+
+  parseStreamEvent(payload): DirectStreamEvent | undefined {
+    const choices = payload["choices"] as Array<{ delta?: { content?: unknown } }> | undefined;
+    const delta = choices?.[0]?.delta?.content;
+    return typeof delta === "string" && delta.length > 0 ? { text: delta } : undefined;
+  },
+};
+
 // ---------------------------------------------------------------------------
 const OPENAI_IMAGE_INPUT_MODEL_IDS = new Set([
   "gpt-4o",
@@ -273,6 +318,60 @@ function inferDirectModeInputCapabilities(
   }
 
   return undefined;
+}
+
+const ANTHROPIC_DIRECT_TEXT_ADAPTER: DirectTextAdapter = {
+  buildRequest({ baseUrl, model, prompt, options, stream }): DirectTextRequest {
+    if (
+      options?.temperature !== undefined &&
+      (options.temperature < 0 || options.temperature > 1)
+    ) {
+      throw new Error("Anthropic direct mode supports temperature between 0 and 1.");
+    }
+
+    const maxTokens = options?.maxTokens ?? ANTHROPIC_MAX_TOKENS_DEFAULT;
+    if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+      throw new Error("Anthropic direct mode requires maxTokens to be a positive integer.");
+    }
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      max_tokens: maxTokens,
+    };
+    if (options?.systemPrompt !== undefined) body["system"] = options.systemPrompt;
+    if (options?.temperature !== undefined) body["temperature"] = options.temperature;
+    if (stream) body["stream"] = true;
+    return { endpoint: `${baseUrl}/messages`, body };
+  },
+
+  parseStreamEvent(payload): DirectStreamEvent | undefined {
+    if (payload["type"] === "message_stop") return { done: true };
+    if (payload["type"] !== "content_block_delta") return undefined;
+
+    const delta = payload["delta"];
+    if (!delta || typeof delta !== "object" || Array.isArray(delta)) return undefined;
+    const text = (delta as { type?: unknown; text?: unknown }).text;
+    const type = (delta as { type?: unknown }).type;
+    return type === "text_delta" && typeof text === "string" ? { text } : undefined;
+  },
+};
+
+function directProviderBaseUrl(provider: string): string {
+  const baseUrl = PROVIDER_BASE_URLS[provider];
+  if (!baseUrl) throw new Error("Unsupported direct provider: " + provider);
+  return baseUrl;
+}
+
+function directTextAdapter(provider: string): DirectTextAdapter {
+  return provider === "anthropic"
+    ? ANTHROPIC_DIRECT_TEXT_ADAPTER
+    : OPENAI_COMPATIBLE_DIRECT_TEXT_ADAPTER;
 }
 
 // DOM security banner (direct mode — non-suppressible)
@@ -733,6 +832,7 @@ export class WebAiClient {
     if (provider === "anthropic") {
       headers["x-api-key"] = apiKey;
       headers["anthropic-version"] = "2023-06-01";
+      headers["anthropic-dangerous-direct-browser-access"] = "true";
     } else {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
@@ -812,7 +912,7 @@ export class WebAiClient {
    * Parse a fetch Response that may be an error.
    * Throws a descriptive Error for non-2xx responses.
    */
-  private async assertOk(res: Response): Promise<void> {
+  private async assertOk(res: Response, provider?: string): Promise<void> {
     if (res.ok) return;
     const body = await res.text().catch(() => "");
     let message = body.trim();
@@ -820,7 +920,15 @@ export class WebAiClient {
     if (message) {
       try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
-        if (typeof parsed["error"] === "string") {
+        if (
+          provider === "anthropic" &&
+          parsed["error"] &&
+          typeof parsed["error"] === "object" &&
+          !Array.isArray(parsed["error"]) &&
+          typeof (parsed["error"] as Record<string, unknown>)["message"] === "string"
+        ) {
+          message = (parsed["error"] as Record<string, unknown>)["message"] as string;
+        } else if (typeof parsed["error"] === "string") {
           message = parsed["error"];
         } else if (typeof parsed["message"] === "string") {
           message = parsed["message"];
@@ -885,32 +993,26 @@ export class WebAiClient {
     }
     const { provider } = this.opts;
     const model = this.resolveModel("text", options?.model);
-    const messages: Array<{ role: string; content: string }> = [];
-    if (options?.systemPrompt) messages.push({ role: "system", content: options.systemPrompt });
-    messages.push({ role: "user", content: prompt });
-
-    const reqBody: Record<string, unknown> = { model, messages };
-    if (options?.temperature !== undefined) reqBody["temperature"] = options.temperature;
-    if (options?.maxTokens !== undefined) {
-      reqBody["max_tokens"] = options.maxTokens;
-    }
+    const request = directTextAdapter(provider).buildRequest({
+      baseUrl: directProviderBaseUrl(provider),
+      model,
+      prompt,
+      options,
+      stream: false,
+    });
 
     this._checkBudget(this._estimateProjectedCost(model, budgetPromptText));
-    const endpoint = `${PROVIDER_BASE_URLS[provider]}/messages`;
     const res = await this.fetchWithResilience(
       () =>
-        fetch(
-          provider === "anthropic" ? endpoint : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-          {
-            method: "POST",
-            headers: this.directHeaders(),
-            body: JSON.stringify(reqBody),
-            signal: options?.signal ?? null,
-          },
-        ),
+        fetch(request.endpoint, {
+          method: "POST",
+          headers: this.directHeaders(),
+          body: JSON.stringify(request.body),
+          signal: options?.signal ?? null,
+        }),
       options?.signal,
     );
-    await this.assertOk(res);
+    await this.assertOk(res, provider);
 
     if (provider === "anthropic") {
       const data = (await res.json()) as {
@@ -919,7 +1021,17 @@ export class WebAiClient {
         stop_reason?: string;
         usage?: { input_tokens: number; output_tokens: number };
       };
-      const text = data.content.find((b) => b.type === "text")?.text ?? "";
+      if (!Array.isArray(data.content)) {
+        throw new Error("Malformed Anthropic response: missing content blocks.");
+      }
+      const textBlocks = data.content.filter(
+        (b): b is { type: "text"; text: string } =>
+          b?.type === "text" && typeof b.text === "string",
+      );
+      const text = textBlocks.map((b) => b.text).join("");
+      if (textBlocks.length === 0) {
+        throw new Error("Malformed Anthropic response: missing text content block.");
+      }
       const anthropicResult: WebTextResult = {
         content: text,
         model: data.model,
@@ -1061,30 +1173,26 @@ export class WebAiClient {
     // Direct mode — SSE stream from provider
     const { provider } = this.opts;
     const model = this.resolveModel("text", options?.model);
-    const messages: Array<{ role: string; content: string }> = [];
-    if (options?.systemPrompt) messages.push({ role: "system", content: options.systemPrompt });
-    messages.push({ role: "user", content: prompt });
-
-    const reqBody: Record<string, unknown> = { model, messages, stream: true };
-    if (options?.temperature !== undefined) reqBody["temperature"] = options.temperature;
-    if (options?.maxTokens !== undefined) reqBody["max_tokens"] = options.maxTokens;
+    const request = directTextAdapter(provider).buildRequest({
+      baseUrl: directProviderBaseUrl(provider),
+      model,
+      prompt,
+      options,
+      stream: true,
+    });
+    this._checkBudget(this._estimateProjectedCost(model, prompt));
 
     const res = await this.fetchWithResilience(
       () =>
-        fetch(
-          provider === "anthropic"
-            ? `${PROVIDER_BASE_URLS[provider]}/messages`
-            : `${PROVIDER_BASE_URLS[provider]}/chat/completions`,
-          {
-            method: "POST",
-            headers: this.directHeaders(),
-            body: JSON.stringify(reqBody),
-            signal: options?.signal ?? null,
-          },
-        ),
+        fetch(request.endpoint, {
+          method: "POST",
+          headers: this.directHeaders(),
+          body: JSON.stringify(request.body),
+          signal: options?.signal ?? null,
+        }),
       options?.signal,
     );
-    await this.assertOk(res);
+    await this.assertOk(res, provider);
 
     const reader = res.body?.getReader();
     if (!reader) return;
@@ -1104,18 +1212,9 @@ export class WebAiClient {
         if (payload === "[DONE]") return;
         try {
           const evt = JSON.parse(payload) as Record<string, unknown>;
-          // OpenAI-compatible (including Venice, xAI)
-          const choices = evt["choices"] as Array<{ delta?: { content?: string } }> | undefined;
-          const delta = choices?.[0]?.delta?.content;
-          if (delta) {
-            yield delta;
-            continue;
-          }
-          // Anthropic streaming
-          const anthropicDelta = evt["delta"] as { type?: string; text?: string } | undefined;
-          if (anthropicDelta?.type === "text_delta" && anthropicDelta.text) {
-            yield anthropicDelta.text;
-          }
+          const streamEvent = directTextAdapter(provider).parseStreamEvent(evt);
+          if (streamEvent?.text !== undefined) yield streamEvent.text;
+          if (streamEvent?.done) return;
         } catch {
           // Malformed SSE chunk — skip
         }

@@ -71,7 +71,7 @@ Repository root: `C:\GitHub\ai-powered`
 - If you change the browser bundle or proxy behavior, also run `npm run build:web`.
 - For browser proxy work, verify local first, then the requested baseline origins when live access is available: `http://localhost:3001`, `https://contorted-jarrod-supersecure.ngrok-free.dev/`, and `https://ai-powered-proxy.onrender.com/`. Record which origins were actually checked.
 - For browser proxy work, verify local first, then the requested baseline origins when live access is available: `http://localhost:3001`, `https://contorted-jarrod-supersecure.ngrok-free.dev/`, and `https://ai-powered-proxy.onrender.com/`. Record which origins were actually checked.
-- For the repo's main CI checks, expect `npm run build`, `npm run build:web`, `npm run lint`, `npx prettier --check "src/**/*.ts" "tests/**/*.ts"`, and `npm test`.
+- For the repo's main CI checks, expect `npm run build`, `npm run build:web`, `npm run lint`, `npm run format:check:changed`, and `npm test`.
 
 ## Security
 

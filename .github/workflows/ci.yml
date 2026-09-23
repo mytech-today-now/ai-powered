@@ -55,6 +55,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -69,7 +71,7 @@ jobs:
         run: npm run lint
 
       - name: Prettier check
-        run: npx prettier --check "src/**/*.ts" "tests/**/*.ts"
+        run: npm run format:check:changed
 
   # ---------------------------------------------------------------------------
   # test – Vitest with AI_MOCK=true (no real credentials needed)

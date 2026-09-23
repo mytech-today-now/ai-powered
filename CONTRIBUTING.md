@@ -6,14 +6,14 @@ Thank you for contributing! Please read this guide before opening a PR.
 
 ## Branch Naming
 
-| Type | Pattern | Example |
-|------|---------|---------|
-| Feature | `feat/<short-description>` | `feat/add-venice-provider` |
-| Bug fix | `fix/<short-description>` | `fix/mask-apikey-in-logs` |
-| Refactor | `refactor/<short-description>` | `refactor/config-loader` |
-| Docs | `docs/<short-description>` | `docs/plugin-guide` |
-| CI/tooling | `ci/<short-description>` | `ci/add-coverage-report` |
-| Release | `release/v<semver>` | `release/v0.2.0` |
+| Type       | Pattern                        | Example                    |
+| ---------- | ------------------------------ | -------------------------- |
+| Feature    | `feat/<short-description>`     | `feat/add-venice-provider` |
+| Bug fix    | `fix/<short-description>`      | `fix/mask-apikey-in-logs`  |
+| Refactor   | `refactor/<short-description>` | `refactor/config-loader`   |
+| Docs       | `docs/<short-description>`     | `docs/plugin-guide`        |
+| CI/tooling | `ci/<short-description>`       | `ci/add-coverage-report`   |
+| Release    | `release/v<semver>`            | `release/v0.2.0`           |
 
 ---
 
@@ -32,6 +32,7 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 **Types:** `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`, `perf`, `security`
 
 **Examples:**
+
 ```
 feat(providers): add VeniceProvider with /chat/completions support
 fix(config): mask apiKey before logging merged config
@@ -39,6 +40,7 @@ security(pre-commit): add secret-scanning hook for sk-, xai-, ven- prefixes
 ```
 
 Breaking changes **MUST** include `BREAKING CHANGE:` in the footer:
+
 ```
 feat(core)!: rename getClient to getAiClient
 
@@ -51,7 +53,10 @@ BREAKING CHANGE: `getClient` export removed; use `getAiClient` instead.
 
 1. Create a branch from `main` following the naming convention above.
 2. Implement changes with tests (`npm test` must pass; all tests use `AI_MOCK=true`).
-3. Run `npm run lint && npm run format` before pushing.
+3. Run `npm run lint && npm run format` before pushing when you intentionally want
+   to format the full TypeScript source and test tree. The CI gate checks only
+   changed TypeScript files. To run that same scoped check locally, use
+   `npm run format:check:changed -- --base origin/main --head HEAD`.
 4. The Husky pre-commit hook runs `lint-staged` + secret-scanning automatically.
 5. Open a PR against `main` with a clear description referencing the bead task ID.
 6. At least one review approval is required before merge.
@@ -97,8 +102,8 @@ Register your plugin in `.ai-powered/config.json`:
 ```
 
 Rules:
+
 - Plugins receive a **frozen copy** of `AiConfig`; modifying it throws a `TypeError`.
 - Uncaught errors in a plugin are wrapped as `PluginError`, logged, and the plugin is bypassed.
 - Plugins must be ESM (`"type": "module"`) and export a default or named `AiPlugin` object.
 - Avoid synchronous blocking; all hooks must be `async`.
-

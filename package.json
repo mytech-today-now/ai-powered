@@ -29,6 +29,7 @@
     "test:watch": "vitest",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check:changed": "node scripts/check-changed-format.mjs",
     "prepare": "husky"
   },
   "files": [

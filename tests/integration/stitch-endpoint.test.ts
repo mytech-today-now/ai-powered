@@ -29,9 +29,11 @@ function makeFakeProc(exitCode = 0, stderrText = "") {
   const proc = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter & { resume: () => void };
     stderr: EventEmitter;
+    kill: ReturnType<typeof vi.fn>;
   };
   proc.stdout = Object.assign(new EventEmitter(), { resume: vi.fn() });
   proc.stderr = new EventEmitter();
+  proc.kill = vi.fn(() => true);
   setImmediate(() => {
     if (stderrText) proc.stderr.emit("data", Buffer.from(stderrText));
     proc.emit("close", exitCode);
@@ -43,9 +45,11 @@ function makeFakeProcEnoent() {
   const proc = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter & { resume: () => void };
     stderr: EventEmitter;
+    kill: ReturnType<typeof vi.fn>;
   };
   proc.stdout = Object.assign(new EventEmitter(), { resume: vi.fn() });
   proc.stderr = new EventEmitter();
+  proc.kill = vi.fn(() => true);
   setImmediate(() => {
     const err = Object.assign(new Error("spawn ffmpeg ENOENT"), { code: "ENOENT" });
     proc.emit("error", err);
@@ -59,6 +63,7 @@ vi.mock("node:fs/promises", () => ({
   mkdir: vi.fn().mockResolvedValue(undefined),
   writeFile: vi.fn().mockResolvedValue(undefined),
   readFile: vi.fn().mockResolvedValue(Buffer.from("fake-combined-mp4-bytes")),
+  stat: vi.fn().mockResolvedValue({ size: Buffer.byteLength("fake-combined-mp4-bytes") }),
   rm: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -69,6 +74,7 @@ import * as fsMock from "node:fs/promises";
 const spawnMock = spawn as unknown as ReturnType<typeof vi.fn>;
 const rmMock = fsMock.rm as unknown as ReturnType<typeof vi.fn>;
 const readFileMock = fsMock.readFile as unknown as ReturnType<typeof vi.fn>;
+const statMock = fsMock.stat as unknown as ReturnType<typeof vi.fn>;
 
 // ---------------------------------------------------------------------------
 // Shared Express server (started once, shared across all tests)
@@ -102,6 +108,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   spawnMock.mockImplementation(() => makeFakeProc());
   readFileMock.mockResolvedValue(Buffer.from("fake-combined-mp4-bytes"));
+  statMock.mockResolvedValue({ size: Buffer.byteLength("fake-combined-mp4-bytes") });
   rmMock.mockResolvedValue(undefined);
 });
 

@@ -91,6 +91,288 @@ describe("WebAiClient.listModels", () => {
   });
 });
 
+describe("WebAiClient direct text adapters", () => {
+  it("sends a valid Anthropic Messages request and maps the response", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.anthropic.com/v1/messages");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("x-api-key")).toBe("anthropic-test-key");
+      expect(headers.get("anthropic-version")).toBe("2023-06-01");
+      expect(headers.get("anthropic-dangerous-direct-browser-access")).toBe("true");
+      expect(headers.get("authorization")).toBeNull();
+
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      expect(body).toEqual({
+        model: "claude-test",
+        messages: [
+          {
+            role: "user",
+            content: "hello",
+          },
+        ],
+        max_tokens: 321,
+        system: "Answer briefly.",
+        temperature: 0.4,
+      });
+      expect(body).not.toHaveProperty("choices");
+      expect(body.messages).not.toContainEqual({ role: "system", content: "Answer briefly." });
+
+      return jsonResponse({
+        id: "msg_test",
+        type: "message",
+        role: "assistant",
+        model: "claude-test",
+        content: [{ type: "text", text: "hi there" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 7, output_tokens: 3 },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-test-key",
+    });
+    const result = await client.generateText("hello", {
+      model: "claude-test",
+      maxTokens: 321,
+      systemPrompt: "Answer briefly.",
+      temperature: 0.4,
+    });
+
+    expect(result).toMatchObject({
+      content: "hi there",
+      model: "claude-test",
+      provider: "anthropic",
+      finishReason: "end_turn",
+      usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("always supplies Anthropic max_tokens when the caller omits maxTokens", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { max_tokens?: number };
+      expect(body.max_tokens).toBe(4096);
+      return jsonResponse({
+        model: "claude-test",
+        content: [{ type: "text", text: "ok" }],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-test-key",
+      model: "claude-test",
+    });
+
+    await expect(client.generateText("hello")).resolves.toMatchObject({ content: "ok" });
+  });
+
+  it("rejects a malformed Anthropic response", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        model: "claude-test",
+        content: [{ type: "tool_use", id: "tool-1" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-test-key",
+    });
+
+    await expect(client.generateText("hello")).rejects.toThrow(
+      "Malformed Anthropic response: missing text content block.",
+    );
+  });
+
+  it("surfaces the nested Anthropic provider error without exposing the key", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        {
+          type: "error",
+          error: {
+            type: "invalid_request_error",
+            message: "The request body is invalid.",
+          },
+        },
+        400,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-secret-key",
+    });
+
+    const error = await client.generateText("hello").catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      name: "ProxyError",
+      statusCode: 400,
+      message: "The request body is invalid.",
+    });
+    expect(String((error as Error).message)).not.toContain("anthropic-secret-key");
+  });
+
+  it("parses Anthropic start, delta, and stop SSE events", async () => {
+    const sse = [
+      "event: message_start\n",
+      "data: " +
+        JSON.stringify({
+          type: "message_start",
+          message: { id: "msg_test", type: "message", role: "assistant" },
+        }) +
+        "\n\n",
+      "event: content_block_start\n",
+      "data: " +
+        JSON.stringify({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "" },
+        }) +
+        "\n\n",
+      "event: content_block_delta\n",
+      "data: " +
+        JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "Hello" },
+        }) +
+        "\n\n",
+      "event: content_block_delta\n",
+      "data: " +
+        JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: " world" },
+        }) +
+        "\n\n",
+      "event: message_delta\n",
+      "data: " +
+        JSON.stringify({
+          type: "message_delta",
+          delta: { stop_reason: "end_turn", stop_sequence: null },
+        }) +
+        "\n\n",
+      "event: message_stop\n",
+      'data: {"type":"message_stop"}\n\n',
+    ].join("");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.anthropic.com/v1/messages");
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        model: "claude-test",
+        max_tokens: 64,
+        stream: true,
+        system: "Stream briefly.",
+      });
+      expect(body.messages).toEqual([{ role: "user", content: "hello" }]);
+      return new Response(sse, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-test-key",
+    });
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText("hello", {
+      model: "claude-test",
+      maxTokens: 64,
+      systemPrompt: "Stream briefly.",
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["Hello", " world"]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("forwards cancellation to a direct Anthropic request", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBe(controller.signal);
+      controller.abort(new Error("cancelled"));
+      throw controller.signal.reason;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-secret-key",
+    });
+
+    await expect(client.generateText("hello", { signal: controller.signal })).rejects.toThrow(
+      "cancelled",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("runs the direct Anthropic budget preflight before fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createWebClient({
+      mode: "direct",
+      provider: "anthropic",
+      apiKey: "anthropic-test-key",
+      budgetUsd: 0,
+    });
+
+    await expect(client.generateText("over budget")).rejects.toBeInstanceOf(BudgetExceededError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the OpenAI-compatible direct request body unchanged", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.openai.com/v1/chat/completions");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer openai-test-key");
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      expect(body).toEqual({
+        model: "gpt-test",
+        messages: [
+          { role: "system", content: "Be concise." },
+          { role: "user", content: "hello" },
+        ],
+        temperature: 0.2,
+        max_tokens: 12,
+      });
+      return jsonResponse({
+        model: "gpt-test",
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    await expect(
+      client.generateText("hello", {
+        model: "gpt-test",
+        systemPrompt: "Be concise.",
+        temperature: 0.2,
+        maxTokens: 12,
+      }),
+    ).resolves.toMatchObject({ content: "ok", provider: "openai" });
+  });
+});
+
 it.each([
   {
     provider: "openai",

@@ -61,6 +61,16 @@ import { getLogger, serializePublicConfig } from "../utils.js";
 import { LimitsValidator } from "../limits-validator.js";
 import type { ProviderCallOptions } from "../providers/index.js";
 import type { ServeOptions } from "./index.js";
+import {
+  createResourcePolicy,
+  ffmpegTimeoutError,
+  invalidStitchClipError,
+  requestAbortedError,
+  ResourcePolicyError,
+  stitchConcurrencyError,
+  stitchLimitError,
+  type ResourcePolicy,
+} from "./resource-policy.js";
 import { selectI2VProvider } from "./smart-default.js";
 import { mountCompatRoutes } from "./compat/index.js";
 import { inferProviderFromModel } from "./compat/model-router.js";
@@ -573,6 +583,15 @@ function buildOverrides(
 
 /** Map domain errors to appropriate HTTP status codes. */
 function mapError(err: unknown, res: Response): boolean {
+  if (err instanceof ResourcePolicyError) {
+    if (err.code === "REQUEST_ABORTED") return true;
+    res.status(err.statusCode).json({
+      error: err.message,
+      code: err.code,
+      limit: err.limit,
+    });
+    return true;
+  }
   if (err instanceof BudgetExceededError) {
     res.status(402).json({ error: err.message, code: "BUDGET_EXCEEDED" });
     return true;
@@ -755,6 +774,37 @@ function resolvePublicFileUrls(
 // spawnFfmpeg — native ffmpeg wrapper (REQ-SS-03)
 // D1: native spawn over fluent-ffmpeg — minimal dep surface + full stderr capture.
 // D4: tail-2KB preserves diagnostic while dropping verbose version banner.
+interface DecodedStitchClip {
+  base64: string;
+  decodedBytes: number;
+}
+function inspectStitchClip(dataUri: string): DecodedStitchClip {
+  const comma = dataUri.indexOf(",");
+  const base64 = comma >= 0 ? dataUri.slice(comma + 1) : dataUri;
+  if (base64.length === 0 || base64.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+    throw invalidStitchClipError();
+  }
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  const decodedBytes = Math.floor((base64.length * 3) / 4) - padding;
+  return { base64, decodedBytes };
+}
+function assertStitchInputLimits(clips: string[], resourcePolicy: ResourcePolicy): void {
+  const { limits } = resourcePolicy;
+  if (clips.length > limits.maxStitchClips) {
+    throw stitchLimitError("stitch_clip_count");
+  }
+  let decodedTotal = 0;
+  for (const clip of clips) {
+    const { decodedBytes } = inspectStitchClip(clip);
+    if (decodedBytes > limits.maxStitchClipBytes) {
+      throw stitchLimitError("stitch_clip_bytes");
+    }
+    decodedTotal += decodedBytes;
+    if (decodedTotal > limits.maxStitchDecodedBytes) {
+      throw stitchLimitError("stitch_decoded_bytes");
+    }
+  }
+}
 // ---------------------------------------------------------------------------
 
 /**
@@ -766,7 +816,11 @@ function resolvePublicFileUrls(
  * @throws     Error with tail-2KB stderr on non-zero exit, or an actionable
  *             install-hint error when ffmpeg is not found in PATH (ENOENT).
  */
-function spawnFfmpeg(args: string[], cwd: string): Promise<string> {
+function spawnFfmpeg(
+  args: string[],
+  cwd: string,
+  options: { timeoutMs: number; signal?: AbortSignal },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", args, {
       cwd,
@@ -778,7 +832,37 @@ function spawnFfmpeg(args: string[], cwd: string): Promise<string> {
     // Drain stdout silently — concat output goes to the file, not stdout.
     proc.stdout.resume();
 
+    let settled = false;
+    let timeoutId: NodeJS.Timeout | undefined;
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      options.signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = (): boolean => {
+      if (settled) return false;
+      settled = true;
+      cleanup();
+      return true;
+    };
+    const onAbort = () => {
+      if (!finish()) return;
+      proc.kill("SIGKILL");
+      reject(requestAbortedError());
+    };
+    const onTimeout = () => {
+      if (!finish()) return;
+      proc.kill("SIGKILL");
+      reject(ffmpegTimeoutError());
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    timeoutId = setTimeout(onTimeout, options.timeoutMs);
+
     proc.on("close", (code) => {
+      if (!finish()) return;
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       if (code === 0) {
         resolve(stderr);
@@ -794,6 +878,7 @@ function spawnFfmpeg(args: string[], cwd: string): Promise<string> {
     });
 
     proc.on("error", (err) => {
+      if (!finish()) return;
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         reject(
           new Error(
@@ -815,7 +900,10 @@ function spawnFfmpeg(args: string[], cwd: string): Promise<string> {
 // Router factory
 // ---------------------------------------------------------------------------
 
-export function createRouter(opts: ServeOptions): Router {
+export function createRouter(
+  opts: ServeOptions,
+  resourcePolicy: ResourcePolicy = createResourcePolicy(opts.resourceLimits),
+): Router {
   const router = Router();
 
   // --- GET /.well-known/appspecific/com.chrome.devtools.json ---
@@ -1605,6 +1693,16 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(BatchBodySchema, req, res);
       if (!body) return;
+      const requestedDurationSeconds = body.items.reduce(
+        (total, item) => total + (item.duration ?? 0),
+        0,
+      );
+      if (body.items.length > resourcePolicy.limits.maxBatchItems) {
+        throw stitchLimitError("batch_item_count");
+      }
+      if (requestedDurationSeconds > resourcePolicy.limits.maxBatchDurationSeconds) {
+        throw stitchLimitError("batch_duration");
+      }
       const requestCredentials = readRequestProviderCredentials(req, res);
       if (requestCredentials === null) return;
 
@@ -1817,6 +1915,18 @@ export function createRouter(opts: ServeOptions): Router {
     wrap(async (req, res, next) => {
       const body = parseBody(StitchBodySchema, req, res);
       if (!body) return;
+      assertStitchInputLimits(body.clips, resourcePolicy);
+      const releaseStitch = resourcePolicy.tryAcquireStitch();
+      if (!releaseStitch) {
+        throw stitchConcurrencyError();
+      }
+      const abortController = new AbortController();
+      const onRequestAborted = () => abortController.abort();
+      const onResponseClose = () => {
+        if (!res.writableEnded) abortController.abort();
+      };
+      req.once("aborted", onRequestAborted);
+      res.once("close", onResponseClose);
 
       const logger = getLogger();
       const tmpDir = path.join(os.tmpdir(), "ai-powered-stitch-" + randomUUID());
@@ -1830,7 +1940,7 @@ export function createRouter(opts: ServeOptions): Router {
         const concatLines: string[] = [];
         for (let i = 0; i < body.clips.length; i++) {
           const dataUri = body.clips[i]!;
-          const base64 = dataUri.replace(/^data:[^,]+,/, "");
+          const { base64 } = inspectStitchClip(dataUri);
           const bytes = Buffer.from(base64, "base64");
           const clipName = `clip${i}.mp4`;
           await fs.writeFile(path.join(tmpDir, clipName), bytes);
@@ -1846,10 +1956,19 @@ export function createRouter(opts: ServeOptions): Router {
         await spawnFfmpeg(
           ["-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "combined.mp4"],
           tmpDir,
+          { timeoutMs: resourcePolicy.limits.maxFfmpegTimeoutMs, signal: abortController.signal },
         );
 
-        // Step 5: Read combined output and respond.
-        const combinedBytes = await fs.readFile(path.join(tmpDir, "combined.mp4"));
+        // Step 5: Check the on-disk output before buffering and encoding it.
+        const outputPath = path.join(tmpDir, "combined.mp4");
+        const outputStat = await fs.stat(outputPath);
+        if (outputStat.size > resourcePolicy.limits.maxStitchOutputBytes) {
+          throw stitchLimitError("stitch_output_bytes");
+        }
+        const combinedBytes = await fs.readFile(outputPath);
+        if (combinedBytes.length > resourcePolicy.limits.maxStitchOutputBytes) {
+          throw stitchLimitError("stitch_output_bytes");
+        }
         const sizeMB = parseFloat((combinedBytes.length / (1024 * 1024)).toFixed(1));
         logger.info({ sizeMB, clips: body.clips.length }, "POST /stitch: combined video ready");
         res.json({ data: "data:video/mp4;base64," + combinedBytes.toString("base64"), sizeMB });
@@ -1857,9 +1976,12 @@ export function createRouter(opts: ServeOptions): Router {
         if (!mapError(err, res)) next(err);
       } finally {
         // Step 6: Always clean up — even on error. Warn-only; never throws.
-        fs.rm(tmpDir, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+        req.off("aborted", onRequestAborted);
+        res.off("close", onResponseClose);
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
           getLogger().warn({ tmpDir, err: cleanupErr }, "POST /stitch: temp cleanup failed");
         });
+        releaseStitch();
       }
     }),
   );

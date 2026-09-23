@@ -10,7 +10,7 @@
  *   3. CORS — configurable origin (default http://localhost:5173)
  *   4. Caller authentication — before rate limiting, body parsing, or routes
  *   5. express-rate-limit — default 60 req/min, principal-aware when authed
- *   6. express.json body parser — 200 MB limit (REQ-SS-05 / design.md D5)
+ *   6. express.json body parser — configurable resource-policy limit
  *   7. API routes from server/routes.ts (Zod-validated per route)
  *   8. Centralised error handler:
  *        BudgetExceededError          → 402
@@ -30,6 +30,14 @@ import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
 import { getLogger, initLogger } from "../utils.js";
 import { createRouter, shouldServeAppShell } from "./routes.js";
 import { authenticateProxyRequest, proxyAuthDecision, TEST_BYPASS_PRINCIPAL_ID } from "./auth.js";
+import {
+  createResourcePolicy,
+  isRequestBodyTooLargeError,
+  requestBodyLimitError,
+  ResourcePolicyError,
+  type ResourceLimitOptions,
+  type ResourcePolicy,
+} from "./resource-policy.js";
 import type { AiConfig } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +69,8 @@ export interface ServeOptions {
   configOverrides?: Partial<AiConfig>;
   /** Authentication controls. Authentication is required by default. */
   auth?: { required?: boolean };
+  /** Resource budgets for buffered JSON and native stitch processing. */
+  resourceLimits?: ResourceLimitOptions;
 }
 
 export interface ResolvedServeBinding {
@@ -137,6 +147,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   const app = express();
   const configuredOrigin = opts.corsOrigin ?? "http://localhost:5173";
   const rpm = opts.rateLimit ?? 60;
+  const resourcePolicy: ResourcePolicy = createResourcePolicy(opts.resourceLimits);
 
   /** Test whether a request origin matches a configured pattern. */
   function originMatchesPattern(origin: string, pattern: string): boolean {
@@ -277,8 +288,10 @@ export function createServer(opts: ServeOptions = {}): express.Express {
     }),
   );
 
-  // 200 MB ceiling: a 24-clip Luma AI batch encodes to roughly 86 MB base64.
-  app.use(express.json({ limit: "200mb" }));
+  // The parser ceiling is deliberately below the old 200 MB limit. Route
+  // handlers apply decoded and output budgets after parsing without copying the
+  // already-buffered request body.
+  app.use(express.json({ limit: resourcePolicy.limits.maxJsonBodyBytes }));
 
   // Pino HTTP request/response logger. Raw credentials are never logged.
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -304,10 +317,29 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   });
 
   // API routes (Zod-validated, all errors propagate to handler below).
-  app.use("/", createRouter(opts));
+  app.use("/", createRouter(opts, resourcePolicy));
 
   // Centralised error handler — Express requires exactly 4 parameters.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (isRequestBodyTooLargeError(err)) {
+      const limitError = requestBodyLimitError();
+      logger.warn({ code: limitError.code, limit: limitError.limit }, limitError.message);
+      res.status(limitError.statusCode).json({
+        error: limitError.message,
+        code: limitError.code,
+        limit: limitError.limit,
+      });
+      return;
+    }
+    if (err instanceof ResourcePolicyError) {
+      if (err.code === "REQUEST_ABORTED") return;
+      res.status(err.statusCode).json({
+        error: err.message,
+        code: err.code,
+        limit: err.limit,
+      });
+      return;
+    }
     if (err instanceof BudgetExceededError) {
       logger.warn({ code: "BUDGET_EXCEEDED" }, err.message);
       res.status(402).json({ error: err.message, code: "BUDGET_EXCEEDED" });

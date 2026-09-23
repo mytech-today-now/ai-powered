@@ -425,6 +425,25 @@ app origin that will call the proxy. If uploaded media needs to be fetched back
 by a provider, set `PROXY_PUBLIC_BASE_URL` to the Render service URL.
 If you still need the older ngrok-specific CORS default, use `npm run serve:ngrok`.
 
+### Proxy resource budgets
+
+The proxy applies bounded request allocation before provider or native ffmpeg work. The hosted-safe defaults are:
+
+| Budget                           |     Default | Override                            |
+| -------------------------------- | ----------: | ----------------------------------- |
+| JSON body                        |     100 MiB | AI_PROXY_MAX_JSON_BODY_BYTES        |
+| Batch items                      |         100 | AI_PROXY_MAX_BATCH_ITEMS            |
+| Declared batch duration          | 600 seconds | AI_PROXY_MAX_BATCH_DURATION_SECONDS |
+| Stitch clips                     |          20 | AI_PROXY_MAX_STITCH_CLIPS           |
+| Stitch decoded bytes per clip    |      25 MiB | AI_PROXY_MAX_STITCH_CLIP_BYTES      |
+| Stitch decoded bytes per request |      75 MiB | AI_PROXY_MAX_STITCH_DECODED_BYTES   |
+| Stitch output bytes              |     100 MiB | AI_PROXY_MAX_STITCH_OUTPUT_BYTES    |
+| ffmpeg wall time                 | 120 seconds | AI_PROXY_FFMPEG_TIMEOUT_MS          |
+| Concurrent stitch jobs           |           2 | AI_PROXY_MAX_CONCURRENT_STITCHES    |
+
+Byte values are plain integers. These defaults apply to hosted and local runs; a local deployment can explicitly raise them through ServeOptions.resourceLimits or the environment variables when its measured capacity envelope supports it.
+Limit responses use status 413 for payload budgets, 429 for stitch concurrency, and 504 for an ffmpeg timeout. Each includes a stable code and limit field. A cancelled stitch kills the subprocess and cleans its UUID-scoped temporary directory.
+
 ### `session` — Manage conversation sessions
 
 ```bash
