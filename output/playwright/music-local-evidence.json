@@ -1,0 +1,115 @@
+{
+  "baseUrl": "http://127.0.0.1:3010",
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:3010/dist-web/jszip.min.js",
+      "postData": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:3010/dist-web/ai-powered.umd.js",
+      "postData": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:3010/dist-web/jszip.min.js",
+      "postData": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:3010/dist-web/ai-powered.umd.js",
+      "postData": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:3010/music",
+      "postData": "{\"prompt\":\"A calm piano loop\",\"provider\":\"openai\",\"model\":\"mock-music-v1\",\"lyrics\":\"Soft light over water\",\"instrumental\":false,\"duration\":5,\"seed\":7}"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:3010/dist-web/jszip.min.js",
+      "postData": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:3010/dist-web/ai-powered.umd.js",
+      "postData": null
+    }
+  ],
+  "responses": [
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3010/dist-web/jszip.min.js"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3010/dist-web/ai-powered.umd.js"
+    },
+    {
+      "status": 304,
+      "url": "http://127.0.0.1:3010/dist-web/jszip.min.js"
+    },
+    {
+      "status": 304,
+      "url": "http://127.0.0.1:3010/dist-web/ai-powered.umd.js"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3010/music",
+      "json": {
+        "modality": "music",
+        "provider": "mock",
+        "model": "mock-music-v1",
+        "data": "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==",
+        "mimeType": "audio/wav",
+        "durationSeconds": 5,
+        "title": "Mock track",
+        "lyrics": "Soft light over water",
+        "status": "completed",
+        "usage": {
+          "promptTokens": 0,
+          "completionTokens": 0,
+          "totalTokens": 0
+        },
+        "cost": {
+          "totalUsd": 0.05,
+          "isEstimate": false
+        },
+        "latencyMs": 1
+      }
+    },
+    {
+      "status": 304,
+      "url": "http://127.0.0.1:3010/dist-web/jszip.min.js"
+    },
+    {
+      "status": 304,
+      "url": "http://127.0.0.1:3010/dist-web/ai-powered.umd.js"
+    }
+  ],
+  "console": [],
+  "pageErrors": [],
+  "dom": {
+    "storageKeys": {
+      "mode": "ai-powered:connection:mode",
+      "proxyUrl": "ai-powered:connection:proxy-url",
+      "provider": "ai-powered:direct:provider",
+      "apiKeyPrefix": "ai-powered:direct:api-key:",
+      "budget": "ai-powered:direct:budget-usd"
+    },
+    "tabs": ["Text", "Image", "Audio", "Music", "Video", "\n        Structured\n      "],
+    "afterSuccess": {
+      "audioPresent": true,
+      "audioSrcPrefix": "blob:htt",
+      "controls": true,
+      "readyState": 0,
+      "outputText": "Mock track · mock · mock-music-v1"
+    },
+    "afterReload": {
+      "title": "ai-powered · web demo",
+      "musicPromptPresent": true,
+      "pageText": "AI-Powered\n\nPersistent multi-modal browser workbench\n\nby myTech.Today\nV0.1.0\nForest\nText\nImage\nAudio\nMusic\nVideo\nStructured\nProvider\nDefault\nMock (testing) ★\nGoogle Lyria\nElevenLabs Music\nMureka\nStability Stable Audio\nMubert\nApiframe\nKie Suno\nAce Data Cloud Suno\nMusicAPI.ai\nudioapi.pro\nApiPass Suno\nSunor Suno and Udio ★\nModel:\nDefault\nDescribe the music \nDuration (seconds)\nSeed\n Instrumental\nLyrics (optional) \nGenerate Music\n▸\nMusic history\n(\n0\n)\nExport All\nClear All\n\nNo saved music records yet."
+    }
+  }
+}
