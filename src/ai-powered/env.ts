@@ -36,13 +36,18 @@ import { z } from "zod";
 
 const authEndpointSchema = z
   .string({
-    required_error: "AIPOWERED_AUTH_ENDPOINT is required when agent key/JWT auth is used.",
+    required_error: "AIPOWERED_AUTH_ENDPOINT is required when agent key auth is used.",
   })
   .url("AIPOWERED_AUTH_ENDPOINT must be a valid URL.")
-  .startsWith(
-    "https://",
-    "AIPOWERED_AUTH_ENDPOINT must be a valid HTTPS URL. Expected: string matching /^https:\\/\\/.+/",
-  );
+  .startsWith("https://", "AIPOWERED_AUTH_ENDPOINT must be a valid HTTPS URL.")
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return !url.username && !url.password && !value.includes("?") && !value.includes("#");
+    } catch {
+      return false;
+    }
+  }, "AIPOWERED_AUTH_ENDPOINT must be a service base without userinfo, query, or fragment.");
 
 const jwtPublicKeySchema = z
   .string({
@@ -125,7 +130,9 @@ export function validateEnv(): EnvConfig {
  * not a valid HTTPS URL (REQ-EV-02).
  */
 export function requireAuthEndpoint(): string {
-  return authEndpointSchema.parse(process.env["AIPOWERED_AUTH_ENDPOINT"]);
+  // Consumers append fixed /api paths. Preserve any deployment prefix and
+  // normalize trailing slashes once for verification, funding, and MCP reads.
+  return authEndpointSchema.parse(process.env["AIPOWERED_AUTH_ENDPOINT"]).replace(/\/+$/, "");
 }
 
 /**

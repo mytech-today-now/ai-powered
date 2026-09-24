@@ -1,0 +1,46 @@
+
+> ai-powered@0.5.12 build
+> tsc --project tsconfig.json && node -e "const fs=require('fs');const src='src/ai-powered/providers/configs';const dst='dist/ai-powered/providers/configs';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.json')).forEach(f=>{fs.copyFileSync(src+'/'+f,dst+'/'+f);console.log('Copied',f,'to',dst);});" && npm run build:web
+
+Copied anthropic.json to dist/ai-powered/providers/configs
+Copied lumaai.json to dist/ai-powered/providers/configs
+Copied openai.json to dist/ai-powered/providers/configs
+Copied pika.json to dist/ai-powered/providers/configs
+Copied runway.json to dist/ai-powered/providers/configs
+Copied venice.json to dist/ai-powered/providers/configs
+Copied vibevoice.json to dist/ai-powered/providers/configs
+Copied xai.json to dist/ai-powered/providers/configs
+
+> ai-powered@0.5.12 build:web
+> vite build
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:85:31). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 20 modules transformed.
+rendering chunks...
+
+[vite:dts] Start generate declaration files...
+[vite:dts] Start rollup declaration files...
+Analysis will use the bundled TypeScript version 5.9.3
+[vite:dts] Declaration files built in 9002ms.
+
+computing gzip size...
+dist-web/ai-powered.esm.js  151.59 kB │ gzip: 35.98 kB │ map: 471.12 kB
+
+transforming...
+✓ 20 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-web/ai-powered.umd.js  122.70 kB │ gzip: 32.41 kB │ map: 470.29 kB
+
+✓ built in 9.33s
+[PLUGIN_TIMINGS] Plugin hooks ran for 9.1s of this 9.3s build (98%).
+The slowest hooks, timed inside each callback (the wait before a callback starts is excluded, the time it awaits is included):
+  - vite:dts buildStart (57%, 5.3s, 2 calls)
+  - vite:dts writeBundle (39%, 3.6s, 2 calls)
+Additional hook time came from hooks under 1s.
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+

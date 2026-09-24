@@ -23,10 +23,22 @@ controls browser transport policy and never authorizes a caller.
 
 Agent scopes currently used by the proxy are `generate`, `files:write`,
 `files:read`, and `read`; the configured global service key is unrestricted.
-Authentication and scope ownership for per-user budgets and stored-file access
-remain follow-up integration points where the existing route architecture does
-not yet expose resource ownership.
+Uploaded file references are already bound to the authenticated principal, with
+owner checks for download and deletion. Authoritative per-user budgets remain
+a separate integration requirement.
 
 For legacy Vitest fixtures only, the server permits the test runner's explicit
 mock bypass. Auth boundary tests set `auth.required: true`, which disables that
 bypass. Deployments do not receive this bypass.
+
+## External account issuer
+
+The scoped-key release boundary, ten management/verification endpoints, issuer decision gate,
+and dependency order are in [the auth-service contract](auth-service-contract.md).
+Portal session cookies do not authenticate resource requests, and agent/provider/internal service
+keys do not replace account sessions for key management. The issuer location and database are
+not yet confirmed. This proxy does not implement the account issuer.
+
+AIPOWERED_AUTH_ENDPOINT is an operator-configured HTTPS service base. Its accessor preserves
+path prefixes, strips trailing slashes, and rejects userinfo, queries, and fragments. Existing
+verification, funding, and account-credit consumers retain their fixed API paths.

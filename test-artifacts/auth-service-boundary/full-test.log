@@ -1,0 +1,4948 @@
+
+> ai-powered@0.5.12 test
+> vitest run
+
+
+ RUN  v4.1.11 C:/GitHub/ai-powered
+
+[2026-09-24 13:33:14.848 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:14.854 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:14.861 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:14.864 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:14.939 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:14.939 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:14.940 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:14.940 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:15.571 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:15.595 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:15.595 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:15.596 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.178 -0500] INFO (ai-powered): [ai-powered] LumaAIProvider: video generation complete
+    provider: "lumaai"
+    model: "ray-2"
+    generationId: "gen-test-123"
+    latencyMs: 2
+    imageToVideo: false
+[2026-09-24 13:33:23.187 -0500] INFO (ai-powered): [ai-powered] LumaAIProvider: video generation complete
+    provider: "lumaai"
+    model: "ray-2"
+    generationId: "gen-test-123"
+    latencyMs: 6000
+    imageToVideo: false
+[2026-09-24 13:33:17.538 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/"
+    status: 200
+    ms: 154
+    requestId: "5e1f0b84-be00-421f-9682-85ae666b20ea"
+[2026-09-24 13:33:17.707 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 200
+    ms: 55
+    requestId: "55f3967d-5ff4-4cc7-a14f-b43c8f84c0ba"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.783 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 200
+    ms: 10
+    requestId: "1ef3450e-4309-4303-93e8-70253f130b30"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.808 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 200
+    ms: 9
+    requestId: "2c4aa126-6ae9-444e-a5af-1047b110ddc6"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.820 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 400
+    ms: 2
+    requestId: "a492053b-5476-466c-a4a8-ff233496cc75"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.864 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/login"
+    status: 200
+    ms: 95
+    requestId: "80a9a69b-53f6-405f-bf16-28d0e5bda767"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.873 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 400
+    ms: 2
+    requestId: "ed9c5361-b17f-49a6-9b07-6af2de6dc833"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.899 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 200
+    ms: 13
+    requestId: "1e6917bf-e4da-468c-87ab-b32f61f8812d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.905 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 400
+    ms: 1
+    requestId: "615bcd64-19be-4b66-8b3d-ada1d93d37e0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.957 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/register"
+    status: 200
+    ms: 56
+    requestId: "8aead022-d01f-43c9-9b7f-d943fac04f7a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.954 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 200
+    ms: 45
+    requestId: "f2a3d998-59c9-4549-87b8-b864e849610b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.268 -0500] INFO (ai-powered): [ai-powered] LumaAIProvider: image-to-video generation complete
+    provider: "lumaai"
+    model: "ray-2"
+    generationId: "gen-test-123"
+    latencyMs: 0
+    twoKeyframe: false
+[2026-09-24 13:33:17.269 -0500] INFO (ai-powered): [ai-powered] LumaAIProvider: image-to-video generation complete
+    provider: "lumaai"
+    model: "ray-2"
+    generationId: "gen-test-123"
+    latencyMs: 0
+    twoKeyframe: false
+[2026-09-24 13:33:17.984 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/chat/completions"
+    status: 200
+    ms: 4
+    requestId: "d213bed0-670b-4543-8490-4c2ff81fff35"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.015 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/v1/models"
+    status: 200
+    ms: 4
+    requestId: "7725dceb-3c0c-4472-96b1-3564b68dffac"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.024 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/v1/models"
+    status: 200
+    ms: 2
+    requestId: "e6a7d9cc-3853-49f6-bb70-0eccc6d447c6"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.033 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/v1/models"
+    status: 200
+    ms: 3
+    requestId: "958ff5c0-16c9-4077-a4b3-aab3d16bc950"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.678 -0500] DEBUG (compat-chat): [compat-chat] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.054 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 400
+    ms: 30
+    requestId: "58d2fd33-8795-46c2-b404-58daf962f42c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.074 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/v1/models"
+    status: 200
+    ms: 1
+    requestId: "21c9e192-8655-4ce3-b9f7-00085ceb6f34"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.079 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/v1/models"
+    status: 200
+    ms: 1
+    requestId: "189122de-afc1-4ffd-97ae-56dc6c6b1957"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:17.683 -0500] DEBUG (compat-chat): [compat-chat] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:17.687 -0500] DEBUG (compat-chat): [compat-chat] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:17.692 -0500] INFO (compat-chat): [compat-chat] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:17.778 -0500] DEBUG (compat-chat): [compat-chat] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:17.779 -0500] DEBUG (compat-chat): [compat-chat] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:17.804 -0500] DEBUG (compat-chat): [compat-chat] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:17.804 -0500] DEBUG (compat-chat): [compat-chat] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:17.805 -0500] DEBUG (compat-chat): [compat-chat] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:17.806 -0500] INFO (compat-chat): [compat-chat] AI call completed
+    modality: "structured"
+    model: "mock-structured-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:17.896 -0500] DEBUG (compat-chat): [compat-chat] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:17.896 -0500] DEBUG (compat-chat): [compat-chat] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:17.897 -0500] DEBUG (compat-chat): [compat-chat] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:17.898 -0500] INFO (compat-chat): [compat-chat] AI call completed
+    modality: "structured"
+    model: "mock-structured-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:17.911 -0500] DEBUG (compat-chat): [compat-chat] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:17.931 -0500] DEBUG (compat-chat): [compat-chat] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:17.931 -0500] DEBUG (compat-chat): [compat-chat] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:17.931 -0500] INFO (compat-chat): [compat-chat] AI call completed
+    modality: "structured"
+    model: "mock-structured-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:17.982 -0500] DEBUG (compat-chat): [compat-chat] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:17.982 -0500] DEBUG (compat-chat): [compat-chat] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:17.983 -0500] DEBUG (compat-chat): [compat-chat] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:17.983 -0500] INFO (compat-chat): [compat-chat] AI call completed
+    modality: "structured"
+    model: "mock-structured-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.105 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 400
+    ms: 3
+    requestId: "24e86ebc-b980-4f6d-8c23-78f80296f114"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.122 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/guest-demo"
+    status: 200
+    ms: 137
+    requestId: "240308dc-7cd0-49e1-be1c-fd71a55dfdca"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.130 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 400
+    ms: 2
+    requestId: "db5aaedb-4730-4db6-b51f-952051daec1e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.156 -0500] DEBUG (compat-video): [compat-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.163 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/video/generations"
+    status: 200
+    ms: 9
+    requestId: "67398f18-5f2d-4344-b5f9-6f354cff37d5"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.156 -0500] DEBUG (compat-video): [compat-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.157 -0500] DEBUG (compat-video): [compat-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.158 -0500] INFO (compat-video): [compat-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.182 -0500] DEBUG (compat-video): [compat-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.184 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/video/generations"
+    status: 200
+    ms: 3
+    requestId: "726372f5-7861-42f5-9b35-b74c0f73f2b4"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.182 -0500] DEBUG (compat-video): [compat-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.183 -0500] DEBUG (compat-video): [compat-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.183 -0500] INFO (compat-video): [compat-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.192 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/video/generations"
+    status: 400
+    ms: 1
+    requestId: "eb31400a-f7aa-480c-ab79-d1cb37885558"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.198 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/auth/callback"
+    status: 200
+    ms: 62
+    requestId: "f133823c-0dcf-4369-8b69-cf4ac31f13f0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.213 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 74
+    requestId: "038299f7-e012-4a6c-b5af-20a098653a94"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.229 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 4
+    requestId: "a673e780-743c-4138-a7ed-0f96b4d588cd"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.233 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/video/generations"
+    status: 400
+    ms: 4
+    requestId: "826b679a-9ad6-4321-a7ee-56fcf03829d5"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.251 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 6
+    requestId: "846c7ad3-d89e-4013-8912-c3ec4912608a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.250 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info.html"
+    status: 200
+    ms: 36
+    requestId: "0c3245b0-18fe-47e8-bb14-b6c3fa0eac89"
+[2026-09-24 13:33:18.336 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/config.html"
+    status: 200
+    ms: 75
+    requestId: "3dc0046a-4083-4bd5-9ee2-84ae07795c15"
+[2026-09-24 13:33:18.314 -0500] DEBUG (compat-video): [compat-video] getAiClient: config resolved
+    provider: "venice"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:18.334 -0500] DEBUG (compat-video): [compat-video] VeniceProvider: initialised
+    apiKey: "[REDACTED]"
+[2026-09-24 13:33:18.347 -0500] DEBUG (compat-video): [compat-video] Provider instantiated
+    provider: "venice"
+[2026-09-24 13:33:18.348 -0500] DEBUG (compat-video): [compat-video] Attempting provider call
+    provider: "venice"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.349 -0500] INFO (compat-video): [compat-video] AI call completed
+    modality: "video"
+    model: "wan-2.5-preview-image-to-video"
+    provider: "venice"
+    costUsd: "0.000000"
+    isEstimate: false
+    cumulativeCostUsd: "0.000000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.368 -0500] INFO (compat-video): [compat-video] request
+    method: "POST"
+    url: "/v1/video/generations"
+    status: 200
+    ms: 56
+    requestId: "0782711d-c882-46eb-bc20-e046824f5d81"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.511 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/app.js"
+    status: 200
+    ms: 164
+    requestId: "d567f93e-7233-4746-9f55-0dd9b36e1619"
+[2026-09-24 13:33:18.482 -0500] DEBUG (compat-image): [compat-image] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.513 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/images/generations"
+    status: 200
+    ms: 34
+    requestId: "84a7a8d0-b89a-4c5c-8d22-5c49227d431c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.510 -0500] DEBUG (compat-image): [compat-image] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.511 -0500] DEBUG (compat-image): [compat-image] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.511 -0500] INFO (compat-image): [compat-image] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.551 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/images/generations"
+    status: 200
+    ms: 34
+    requestId: "f7a1257a-d801-49d1-825a-508a5d15d3ef"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.549 -0500] DEBUG (compat-image): [compat-image] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.549 -0500] DEBUG (compat-image): [compat-image] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.550 -0500] DEBUG (compat-image): [compat-image] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.550 -0500] INFO (compat-image): [compat-image] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.547 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info-content.js"
+    status: 200
+    ms: 115
+    requestId: "9bdcdd02-ff87-41b3-a893-f6587643556a"
+[2026-09-24 13:33:18.591 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/images/generations"
+    status: 400
+    ms: 2
+    requestId: "0fd7648f-9c00-41ca-ac81-05f81c5936c2"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.599 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/images/generations"
+    status: 400
+    ms: 2
+    requestId: "55df016b-4cdb-41d4-86be-c3dbf47385bd"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.645 -0500] DEBUG (compat-image): [compat-image] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.646 -0500] DEBUG (compat-image): [compat-image] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.647 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/images/generations"
+    status: 422
+    ms: 3
+    requestId: "50ce582c-03a9-42d6-ba4a-f1d9bc53af82"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.724 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/styles.css"
+    status: 200
+    ms: 122
+    requestId: "4fb0e035-5b0f-4128-972e-e6c7cd6e2c79"
+[2026-09-24 13:33:18.729 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 200
+    ms: 77
+    requestId: "2e77aec0-7215-4f33-b3a8-17c7e730f575"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.721 -0500] DEBUG (compat-transcribe): [compat-transcribe] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.721 -0500] DEBUG (compat-transcribe): [compat-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.725 -0500] DEBUG (compat-transcribe): [compat-transcribe] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.726 -0500] INFO (compat-transcribe): [compat-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.747 -0500] DEBUG (compat-transcribe): [compat-transcribe] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.752 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 200
+    ms: 13
+    requestId: "103ffe3b-65f9-47f3-95c4-7ddd5709a9d0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.748 -0500] DEBUG (compat-transcribe): [compat-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.748 -0500] DEBUG (compat-transcribe): [compat-transcribe] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.750 -0500] INFO (compat-transcribe): [compat-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.765 -0500] DEBUG (compat-transcribe): [compat-transcribe] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.766 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 200
+    ms: 8
+    requestId: "3397fa21-5f46-4c65-9fc7-3970be13a609"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.765 -0500] DEBUG (compat-transcribe): [compat-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.765 -0500] DEBUG (compat-transcribe): [compat-transcribe] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.766 -0500] INFO (compat-transcribe): [compat-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.772 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 501
+    ms: 2
+    requestId: "31e159aa-632a-4768-af68-7d6d9b2f80ae"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.780 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 400
+    ms: 2
+    requestId: "5257b356-234d-410b-8eda-5296a8277ae3"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.824 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/speech"
+    status: 200
+    ms: 3
+    requestId: "2f1c5cf2-8464-4112-98aa-077e6d34bfa8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.822 -0500] DEBUG (compat-tts): [compat-tts] getAiClient: config resolved
+    provider: "mock"
+    model: "tts-1"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.822 -0500] DEBUG (compat-tts): [compat-tts] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.823 -0500] DEBUG (compat-tts): [compat-tts] Attempting provider call
+    provider: "mock"
+    model: "tts-1"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.824 -0500] INFO (compat-tts): [compat-tts] AI call completed
+    modality: "audio"
+    model: "mock-tts-v1"
+    provider: "mock"
+    costUsd: "0.000060"
+    isEstimate: false
+    cumulativeCostUsd: "0.000060"
+    latencyMs: 1
+    promptTokens: 4
+    completionTokens: 0
+    totalTokens: 4
+[2026-09-24 13:33:18.832 -0500] DEBUG (compat-tts): [compat-tts] getAiClient: config resolved
+    provider: "mock"
+    model: "tts-1"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.829 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/ai-powered.umd.js"
+    status: 200
+    ms: 96
+    requestId: "56e72ee9-c134-4f69-af47-d6ce6e8d769d"
+[2026-09-24 13:33:18.833 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/speech"
+    status: 200
+    ms: 2
+    requestId: "798e23ff-d227-4e59-bd78-d1b5ce4c5525"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.832 -0500] DEBUG (compat-tts): [compat-tts] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.832 -0500] DEBUG (compat-tts): [compat-tts] Attempting provider call
+    provider: "mock"
+    model: "tts-1"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.832 -0500] INFO (compat-tts): [compat-tts] AI call completed
+    modality: "audio"
+    model: "mock-tts-v1"
+    provider: "mock"
+    costUsd: "0.000045"
+    isEstimate: false
+    cumulativeCostUsd: "0.000045"
+    latencyMs: 1
+    promptTokens: 3
+    completionTokens: 0
+    totalTokens: 3
+[2026-09-24 13:33:18.839 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/speech"
+    status: 400
+    ms: 1
+    requestId: "b2319708-15cf-44db-8952-cf589ff24879"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.865 -0500] DEBUG (compat-anthropic): [compat-anthropic] getAiClient: config resolved
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.866 -0500] DEBUG (compat-anthropic): [compat-anthropic] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.866 -0500] DEBUG (compat-anthropic): [compat-anthropic] Attempting provider call
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.866 -0500] INFO (compat-anthropic): [compat-anthropic] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.867 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 200
+    ms: 15
+    requestId: "bd682baf-b308-4bf9-ba96-af74a4283452"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.873 -0500] DEBUG (compat-anthropic): [compat-anthropic] getAiClient: config resolved
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.873 -0500] DEBUG (compat-anthropic): [compat-anthropic] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.876 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 200
+    ms: 4
+    requestId: "74a75fa1-9b05-4aae-8d71-f7902c9e735e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.914 -0500] DEBUG (compat-anthropic): [compat-anthropic] getAiClient: config resolved
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:18.941 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 200
+    ms: 51
+    requestId: "b5c5f178-8280-45fa-bcc4-40b4214621fc"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.937 -0500] DEBUG (compat-anthropic): [compat-anthropic] AnthropicProvider: initialised
+    apiKey: "[REDACTED]"
+[2026-09-24 13:33:18.939 -0500] DEBUG (compat-anthropic): [compat-anthropic] Provider instantiated
+    provider: "anthropic"
+[2026-09-24 13:33:18.940 -0500] DEBUG (compat-anthropic): [compat-anthropic] Attempting provider call
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.940 -0500] INFO (compat-anthropic): [compat-anthropic] AI call completed
+    modality: "text"
+    model: "claude-3-5-sonnet-20241022"
+    provider: "anthropic"
+    costUsd: "0.000000"
+    isEstimate: false
+    cumulativeCostUsd: "0.000000"
+    latencyMs: 12
+    promptTokens: 18
+    completionTokens: 12
+    totalTokens: 30
+[2026-09-24 13:33:18.950 -0500] DEBUG (compat-anthropic): [compat-anthropic] getAiClient: config resolved
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:18.951 -0500] DEBUG (compat-anthropic): [compat-anthropic] AnthropicProvider: initialised
+    apiKey: "[REDACTED]"
+[2026-09-24 13:33:18.951 -0500] DEBUG (compat-anthropic): [compat-anthropic] Provider instantiated
+    provider: "anthropic"
+[2026-09-24 13:33:18.951 -0500] DEBUG (compat-anthropic): [compat-anthropic] Attempting provider call
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.951 -0500] INFO (compat-anthropic): [compat-anthropic] AI call completed
+    modality: "text"
+    model: "claude-3-5-sonnet-20241022"
+    provider: "anthropic"
+    costUsd: "0.000000"
+    isEstimate: false
+    cumulativeCostUsd: "0.000000"
+    latencyMs: 12
+    promptTokens: 18
+    completionTokens: 12
+    totalTokens: 30
+[2026-09-24 13:33:18.953 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 200
+    ms: 4
+    requestId: "64dac722-b5d0-4534-8615-9688ef2605aa"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.969 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/jszip.min.js"
+    status: 200
+    ms: 109
+    requestId: "8aabb6b9-90bf-47bf-b55e-4ce73b19dbcc"
+[2026-09-24 13:33:18.966 -0500] DEBUG (compat-anthropic): [compat-anthropic] getAiClient: config resolved
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:18.968 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 200
+    ms: 4
+    requestId: "72c81fbb-6771-4f41-b016-7aa552ce7e72"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.967 -0500] DEBUG (compat-anthropic): [compat-anthropic] AnthropicProvider: initialised
+    apiKey: "[REDACTED]"
+[2026-09-24 13:33:18.967 -0500] DEBUG (compat-anthropic): [compat-anthropic] Provider instantiated
+    provider: "anthropic"
+[2026-09-24 13:33:18.967 -0500] DEBUG (compat-anthropic): [compat-anthropic] Attempting provider call
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.967 -0500] INFO (compat-anthropic): [compat-anthropic] AI call completed
+    modality: "text"
+    model: "claude-3-5-sonnet-20241022"
+    provider: "anthropic"
+    costUsd: "0.000000"
+    isEstimate: false
+    cumulativeCostUsd: "0.000000"
+    latencyMs: 12
+    promptTokens: 18
+    completionTokens: 12
+    totalTokens: 30
+[2026-09-24 13:33:18.977 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 400
+    ms: 3
+    requestId: "c98534c3-93b2-4588-a48d-9f937703a0e5"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.988 -0500] DEBUG (compat-anthropic): [compat-anthropic] getAiClient: config resolved
+    provider: "anthropic"
+    model: "claude-3-5-sonnet-20241022"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.988 -0500] DEBUG (compat-anthropic): [compat-anthropic] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.989 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/messages"
+    status: 422
+    ms: 2
+    requestId: "68514b15-cb72-4bea-86ac-e10a60463f34"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.995 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 1
+    requestId: "57fc483d-7956-4628-b6b9-1af8700a940a"
+[2026-09-24 13:33:19.006 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/config"
+    status: 200
+    ms: 6
+    requestId: "ef73d7cc-ff50-4442-8c35-b8607c5a8114"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.012 -0500] DEBUG (serve-models): [serve-models] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.012 -0500] DEBUG (serve-models): [serve-models] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.015 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 200
+    ms: 6
+    requestId: "bf08a451-045d-4347-b9b3-b16b69795f10"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.088 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 8
+    requestId: "454573da-7e79-4487-9e4b-a492015a19d4"
+[2026-09-24 13:33:19.094 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/pricing"
+    status: 200
+    ms: 74
+    requestId: "8f924af3-22d4-4f5b-93ba-0bf01e7a3b6e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.100 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/pricing"
+    status: 200
+    ms: 2
+    requestId: "ab598e41-7d86-4ae3-b68a-e93f298e4be1"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.105 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/pricing"
+    status: 200
+    ms: 1
+    requestId: "c9e1172c-34d1-4dc3-b17d-3c4c9bbcb487"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.110 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/pricing"
+    status: 200
+    ms: 1
+    requestId: "8bd7e50b-381d-45bb-8cf4-ce3526f3731b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.118 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/providers"
+    status: 200
+    ms: 2
+    requestId: "22311e14-0ccb-487f-b277-8eb450fdcbcc"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.125 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.126 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.126 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:19.126 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:19.127 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 5
+    requestId: "3a8de41f-4daa-4c6f-82be-10261f6bc4e7"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.131 -0500] DEBUG (serve-stream): [serve-stream] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.133 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stream"
+    status: 200
+    ms: 3
+    requestId: "a91c6659-4440-4406-848a-224dc9447bbb"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.131 -0500] DEBUG (serve-stream): [serve-stream] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.139 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/image"
+    status: 200
+    ms: 3
+    requestId: "3719e79a-cf46-4be3-935a-3db7b34be849"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.138 -0500] DEBUG (serve-image): [serve-image] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.138 -0500] DEBUG (serve-image): [serve-image] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.138 -0500] DEBUG (serve-image): [serve-image] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:19.139 -0500] INFO (serve-image): [serve-image] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.167 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.179 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.180 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 2
+    requestId: "76807e5b-ad09-428a-a593-ac00db39a1da"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.179 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.179 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:19.179 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.168 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.171 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.174 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.178 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.179 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.179 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.179 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.226 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.226 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.227 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.227 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:18.246 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.246 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.247 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.247 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.248 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.249 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.250 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.250 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.250 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.250 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.410 -0500] DEBUG (serve-models): [serve-models] getAiClient: config resolved
+    provider: "openrouter"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:18.411 -0500] WARN (serve-models): [serve-models] GET /models: provider could not be constructed
+    provider: "openrouter"
+    modality: "video"
+    errorName: "Error"
+[2026-09-24 13:33:18.416 -0500] INFO (serve-batch): [serve-batch] request
+    method: "GET"
+    url: "/models"
+    status: 503
+    ms: 9
+    requestId: "5b19a5fa-f053-4770-8c95-6ffbb1cafb6e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.422 -0500] DEBUG (serve-models): [serve-models] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:18.424 -0500] DEBUG (serve-models): [serve-models] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.424 -0500] DEBUG (serve-models): [serve-models] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.424 -0500] WARN (serve-models): [serve-models] GET /models: provider inactive, served static model catalog
+    provider: "openai"
+    modality: "video"
+    errorName: "Error"
+[2026-09-24 13:33:18.434 -0500] INFO (serve-batch): [serve-batch] request
+    method: "GET"
+    url: "/models"
+    status: 200
+    ms: 13
+    requestId: "5827b1b0-4b22-419d-ab68-1b430cb62d30"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.608 -0500] INFO (serve-models): [serve-models] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 68
+    provider: "openai"
+[2026-09-24 13:33:18.613 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 59
+    requestId: "0b26783b-5436-4c27-be7a-b660f97596a2"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.656 -0500] INFO (serve-models): [serve-models] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "application/pdf"
+    sizeBytes: 18
+    provider: "anthropic"
+[2026-09-24 13:33:18.657 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 4
+    requestId: "69a64e85-59f5-4a97-8b3c-cee9285fe3d9"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.664 -0500] INFO (serve-models): [serve-models] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 68
+    provider: "openai"
+[2026-09-24 13:33:18.668 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 5
+    requestId: "038105ad-5c4f-4a67-b09a-735ef3ca5dec"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.676 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.677 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.677 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.677 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.679 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 7
+    requestId: "dc377cd9-87b8-4ee5-bad3-8643833bab74"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.689 -0500] INFO (serve-text): [serve-text] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "application/pdf"
+    sizeBytes: 18
+    provider: "anthropic"
+[2026-09-24 13:33:18.691 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 4
+    requestId: "bc0bb88f-cb68-4699-b6a1-4840061b2c03"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.780 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "anthropic"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.780 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.781 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "anthropic"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.781 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.782 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 25
+    requestId: "c045cdf4-8f23-4539-a56b-fdf1c5013242"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.787 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 400
+    ms: 2
+    requestId: "2b5796f7-1752-477a-a37d-6fffa08da52d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.854 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 415
+    ms: 33
+    requestId: "fb1c7396-a4ef-4735-8340-0296fa508699"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.866 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 422
+    ms: 3
+    requestId: "af9dca01-c26a-4d94-bfce-2d520b2a6426"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.881 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 422
+    ms: 12
+    requestId: "9abce4e9-a06f-4f77-951d-0d45eb344871"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.905 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/text"
+    status: 400
+    ms: 1
+    requestId: "8028da29-08dd-4ea0-b2fb-80af941e3ad3"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.914 -0500] INFO (serve-text): [serve-text] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "application/pdf"
+    sizeBytes: 18
+    provider: "openai"
+[2026-09-24 13:33:18.915 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 3
+    requestId: "c9aaa14f-6d52-44be-bfd2-2ba01b585356"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.927 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/text"
+    status: 422
+    ms: 4
+    requestId: "0409544c-ce2d-4d4f-be57-a9d5be9ab69f"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.937 -0500] INFO (serve-text): [serve-text] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 68
+    provider: "openai"
+[2026-09-24 13:33:18.938 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 5
+    requestId: "e154cbb9-c13a-45e5-b89e-965f200153c3"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.943 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.943 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.943 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.943 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.944 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 3
+    requestId: "9eae700c-df12-4734-88c3-873ae79a61b0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.953 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:18.954 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:18.954 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:18.954 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:18.955 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 3
+    requestId: "3f1d5ad0-5288-4d21-88d2-7d1af3f18583"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:18.964 -0500] INFO (serve-text): [serve-text] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 68
+    provider: "openai"
+[2026-09-24 13:33:18.965 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 4
+    requestId: "f2329c11-b9fd-4fdc-bca8-22a97b1a015f"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.038 -0500] INFO (serve-models): [serve-models] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 4
+    requestId: "982e8646-ffe6-4f1d-a3dd-f51e1862f54c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.228 -0500] DEBUG (serve-speak): [serve-speak] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.228 -0500] DEBUG (serve-speak): [serve-speak] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.228 -0500] DEBUG (serve-speak): [serve-speak] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:19.228 -0500] INFO (serve-speak): [serve-speak] AI call completed
+    modality: "audio"
+    model: "mock-tts-v1"
+    provider: "mock"
+    costUsd: "0.000090"
+    isEstimate: false
+    cumulativeCostUsd: "0.000090"
+    latencyMs: 1
+    promptTokens: 6
+    completionTokens: 0
+    totalTokens: 6
+[2026-09-24 13:33:19.229 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/speak"
+    status: 200
+    ms: 7
+    requestId: "1076c445-1e5c-430c-b4ee-f228667c6af0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.250 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.251 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.251 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:19.251 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:19.263 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 17
+    requestId: "f576295f-f985-4495-a0b9-97d17232b38f"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.287 -0500] INFO (serve-models): [serve-models] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 1
+    requestId: "6db228f1-255f-4beb-a49a-7a2f4a98bc70"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.278 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:19.317 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 47
+    requestId: "649f802d-4651-432f-8f00-38e159e738d7"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.279 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:19.316 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:19.317 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:19.297 -0500] INFO (serve-text): [serve-text] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 68
+    provider: "openai"
+[2026-09-24 13:33:19.298 -0500] INFO (serve-models): [serve-models] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 2
+    requestId: "e9a9502f-42d9-4d4d-ad7b-2762da2091d8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.352 -0500] INFO (serve-models): [serve-models] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 0
+    requestId: "23d0b7a4-860e-433f-8fdf-99d780c790e8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.415 -0500] INFO (serve-models): [serve-models] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 1
+    requestId: "c004a6d4-a8ee-447b-8845-3e0b96146134"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:19.861 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info.html"
+    status: 200
+    ms: 89
+    requestId: "7a3ce1d0-35ee-40f1-89f0-465cb8a38022"
+[2026-09-24 13:33:20.312 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/styles.css"
+    status: 200
+    ms: 67
+    requestId: "e4ad395b-8142-4a55-973f-57b631286f8f"
+[2026-09-24 13:33:20.315 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/settings.js"
+    status: 200
+    ms: 59
+    requestId: "07ddc25d-dd3a-492d-ace8-af9bcf6fb547"
+[2026-09-24 13:33:20.324 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info-content.js"
+    status: 200
+    ms: 66
+    requestId: "c98dab61-ed9c-4214-861e-1295fad88cb8"
+[2026-09-24 13:33:20.399 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info.js"
+    status: 200
+    ms: 139
+    requestId: "d2bcfebc-4a8e-487b-9ab3-8fc3aacfbda7"
+[2026-09-24 13:33:24.081 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 37
+    requestId: "7e18dd3c-3a43-440e-8dd0-9d8890baf86c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.149 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 44
+    requestId: "3a7651ec-ee3f-4eba-abd2-4a11214b399b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.196 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 7
+    requestId: "df9cb046-3e79-4248-9513-33b9fd6fee02"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.204 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 2
+    requestId: "ae76b5e6-9a51-4ff6-9455-ebac2f4783c3"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.239 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 3
+    requestId: "2c5f0600-97de-4e61-bea2-338bfb58da19"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.247 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 2
+    requestId: "0a0b7be1-6adb-4b0e-b45a-66de839e9fca"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.256 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 2
+    requestId: "879bec8f-7248-40eb-a000-21a1fa10c899"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.301 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 400
+    ms: 5
+    requestId: "8f3b5392-be94-4baf-983b-75e01e50ad7f"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.318 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 400
+    ms: 2
+    requestId: "76f47f36-09b5-404e-afa2-960e7cf092f0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.354 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 30
+    requestId: "a4fa21ea-469c-4bd0-a7b4-466d4300a174"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.364 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 3
+    requestId: "eb37e9e3-9934-4f1e-80f4-0bebb4041e7a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.372 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 3
+    requestId: "5be87946-70d7-421c-85d5-37360a7c5aae"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.380 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 2
+    requestId: "d8c394b9-8cf4-442a-941e-8de97b93d1d8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.403 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 19
+    requestId: "baaf9e2d-8ea1-4b3f-92e2-bb971683bcd3"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.060 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.438 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 27
+    requestId: "5b685615-2406-41f5-8f33-d2a6bcf6a61d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.064 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.068 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.070 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.146 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.146 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.147 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.147 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.193 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.194 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.194 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.194 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.203 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.203 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.203 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.203 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.237 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.238 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.238 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.238 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.246 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.246 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.246 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.246 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.254 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.254 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.254 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.254 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.352 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.352 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.352 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.352 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.363 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.363 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.363 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.363 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.370 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.370 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.370 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.371 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.378 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.378 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.379 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.379 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.401 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.402 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.402 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.402 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.412 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.412 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.412 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.412 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.506 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:24.506 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:24.506 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:24.507 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:24.508 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 26
+    requestId: "d2128711-70d0-4691-9e52-841d3b7ea078"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.565 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 400
+    ms: 2
+    requestId: "305f07ad-6471-4bfd-afcb-23e78de239d2"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:24.569 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 400
+    ms: 1
+    requestId: "4e442580-27b4-4110-b003-0d41a7d3918e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:27.702 -0500] INFO (ai-powered): [ai-powered] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 21
+    provider: "openai"
+[2026-09-24 13:33:27.717 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 305
+    requestId: "011d9af8-c80c-441d-a55e-bebf15038119"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:27.872 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 4
+    requestId: "35903bf2-4d20-49e2-bbcf-3a487bde3e6b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:27.950 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 2
+    requestId: "a4b783f3-d1a0-4f17-854d-4b016b1e35f0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:28.033 -0500] INFO (ai-powered): [ai-powered] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 21
+    provider: "openai"
+[2026-09-24 13:33:28.034 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 3
+    requestId: "d6f6fb20-d9eb-437d-b604-1554d14312b6"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:28.058 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 2
+    requestId: "097cfc7b-9b1c-427a-ab88-0f2258821491"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:28.110 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 2
+    requestId: "96eb1f98-5adc-49bd-ba91-6b2b08709d0e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:28.122 -0500] INFO (ai-powered): [ai-powered] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/png"
+    sizeBytes: 21
+    provider: "openai"
+[2026-09-24 13:33:28.123 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 4
+    requestId: "c2c763c6-823b-4453-ba80-e6696a510d6d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:28.131 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 2
+    requestId: "4ae53b5c-6c83-40c2-a55d-af1742f1c9d7"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.733 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 81
+    requestId: "a92bb85e-2d03-4180-96c1-83bf50b7c32b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.834 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 50
+    requestId: "0973e1ff-d49d-4d8f-9990-49a0e60aa75d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.882 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/speak"
+    status: 200
+    ms: 33
+    requestId: "3589b590-e530-44a4-906f-ddbd08b3668e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.894 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/speak"
+    status: 200
+    ms: 5
+    requestId: "c02d320b-923f-48f5-9eb3-c0f2537e633c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.937 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/providers"
+    status: 200
+    ms: 17
+    requestId: "686fb757-7750-42f0-9e0f-c8078eb4bf6f"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.988 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 33
+    requestId: "0b92afd5-887c-4682-9d71-6cb38b1f7dde"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.002 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 3
+    requestId: "31a5df24-1c19-4156-b754-7bd00b5e0d67"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.023 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 400
+    ms: 2
+    requestId: "e578011b-da03-4cf4-8d4d-c17c818cc15c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.033 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/speak"
+    status: 200
+    ms: 2
+    requestId: "3da41fa2-53d8-43e4-9695-a91566e7114b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.051 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/speak"
+    status: 400
+    ms: 6
+    requestId: "74fa9bfb-7883-4cef-9d21-79674473d8f0"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.062 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/config"
+    status: 200
+    ms: 7
+    requestId: "8ce701cc-d4ad-454f-a909-59dd1792b163"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.080 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/config"
+    status: 500
+    ms: 8
+    requestId: "f354cc6d-5f91-43c2-8108-a9aeeb4e51c1"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:31.702 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:31.705 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:31.707 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:31.709 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:31.786 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:31.787 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:31.788 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:31.788 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:31.853 -0500] DEBUG (serve-speak): [serve-speak] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:31.853 -0500] DEBUG (serve-speak): [serve-speak] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:31.854 -0500] DEBUG (serve-speak): [serve-speak] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:31.879 -0500] INFO (serve-speak): [serve-speak] AI call completed
+    modality: "audio"
+    model: "mock-tts-v1"
+    provider: "mock"
+    costUsd: "0.000045"
+    isEstimate: false
+    cumulativeCostUsd: "0.000045"
+    latencyMs: 1
+    promptTokens: 3
+    completionTokens: 0
+    totalTokens: 3
+[2026-09-24 13:33:31.892 -0500] DEBUG (serve-speak): [serve-speak] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:31.892 -0500] DEBUG (serve-speak): [serve-speak] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:31.892 -0500] DEBUG (serve-speak): [serve-speak] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:31.892 -0500] INFO (serve-speak): [serve-speak] AI call completed
+    modality: "audio"
+    model: "mock-tts-v1"
+    provider: "mock"
+    costUsd: "0.000045"
+    isEstimate: false
+    cumulativeCostUsd: "0.000045"
+    latencyMs: 1
+    promptTokens: 3
+    completionTokens: 0
+    totalTokens: 3
+[2026-09-24 13:33:31.986 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "vibevoice"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:31.986 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:31.986 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "vibevoice"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:31.987 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:32.000 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:32.000 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:32.000 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:32.000 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:32.032 -0500] DEBUG (serve-speak): [serve-speak] getAiClient: config resolved
+    provider: "vibevoice"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:32.032 -0500] DEBUG (serve-speak): [serve-speak] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:32.032 -0500] DEBUG (serve-speak): [serve-speak] Attempting provider call
+    provider: "vibevoice"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:32.032 -0500] INFO (serve-speak): [serve-speak] AI call completed
+    modality: "audio"
+    model: "mock-tts-v1"
+    provider: "mock"
+    costUsd: "0.000060"
+    isEstimate: false
+    cumulativeCostUsd: "0.000060"
+    latencyMs: 1
+    promptTokens: 4
+    completionTokens: 0
+    totalTokens: 4
+[2026-09-24 13:33:32.080 -0500] ERROR (serve-speak): [serve-speak] GET /config failed
+    requestId: "f354cc6d-5f91-43c2-8108-a9aeeb4e51c1"
+    error: {
+      "name": "Error",
+      "message": "config blew up"
+    }
+[2026-09-24 13:33:32.152 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/"
+    status: 200
+    ms: 38
+    requestId: "92e15623-7e31-44bd-85f5-2e4296cb0d49"
+[2026-09-24 13:33:32.199 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/config"
+    status: 200
+    ms: 3
+    requestId: "4916de68-abb0-4235-a3e8-030fb08db49b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.208 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 200
+    ms: 2
+    requestId: "48b688b5-0484-4543-95e6-71e88d31720e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.255 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 200
+    ms: 1
+    requestId: "7c87dd93-b143-456f-bfc2-2894716309db"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.331 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 200
+    ms: 2
+    requestId: "36da7439-9068-43ab-9402-ddc60b5cbb58"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.336 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 200
+    ms: 1
+    requestId: "4efc2b8c-e84a-4fd2-8a14-1be422bd006a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.342 -0500] WARN (serve-speak): [serve-speak] GET /models: provider could not be constructed
+    provider: "openai"
+    errorName: "Error"
+[2026-09-24 13:33:32.343 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 503
+    ms: 2
+    requestId: "86e92009-91db-4b82-aa18-1641e14acc47"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.359 -0500] WARN (serve-speak): [serve-speak] GET /models: model listing failed
+    modality: "text"
+    errorName: "Error"
+[2026-09-24 13:33:32.360 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 500
+    ms: 2
+    requestId: "a0ee076f-dfc0-4a48-843f-8f5d1d5b9c19"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.385 -0500] WARN (serve-speak): [serve-speak] GET /models: model listing failed
+    provider: "custom"
+    errorName: "ProviderError"
+[2026-09-24 13:33:32.386 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/models"
+    status: 500
+    ms: 2
+    requestId: "0ff13324-fc14-4ce0-b974-3207827ac4d7"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.424 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 422
+    ms: 5
+    requestId: "97a5031e-b2ab-4eee-8e23-8948267c3eaa"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.454 -0500] INFO (serve-speak): [serve-speak] request
+    method: "POST"
+    url: "/video"
+    status: 422
+    ms: 2
+    requestId: "1072ec40-c1f4-4026-b2db-71ab0699c8a6"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.474 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/music"
+    status: 200
+    ms: 3
+    requestId: "e2388bec-59ed-4486-a080-ff312a89c08c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.471 -0500] DEBUG (serve-music): [serve-music] getAiClient: config resolved
+    provider: "mock"
+    model: "mock-music-v1"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:32.472 -0500] DEBUG (serve-music): [serve-music] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:32.472 -0500] DEBUG (serve-music): [serve-music] Attempting provider call
+    provider: "mock"
+    model: "mock-music-v1"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:32.473 -0500] INFO (serve-music): [serve-music] AI call completed
+    modality: "music"
+    model: "mock-music-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:32.487 -0500] DEBUG (serve-music): [serve-music] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:32.488 -0500] DEBUG (serve-music): [serve-music] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:32.488 -0500] DEBUG (serve-music): [serve-music] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:32.488 -0500] INFO (serve-music): [serve-music] AI call completed
+    modality: "music"
+    model: "mock-music-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:32.490 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/music"
+    status: 200
+    ms: 4
+    requestId: "a2100f91-5099-4919-ab8c-b8a0c2495386"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:32.524 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/music"
+    status: 400
+    ms: 1
+    requestId: "5dea9c88-4c42-445d-a87d-d5822a8e3b24"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:34.032 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info.html"
+    status: 200
+    ms: 6
+    requestId: "4bec442e-f335-45db-bd72-b793d81ffaec"
+[2026-09-24 13:33:34.463 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/styles.css"
+    status: 200
+    ms: 5
+    requestId: "07a20611-cb5e-464c-bd7d-80c4f4601069"
+[2026-09-24 13:33:34.477 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/settings.js"
+    status: 200
+    ms: 11
+    requestId: "8c8ca843-9b8a-46f1-a46d-42d832260c31"
+[2026-09-24 13:33:34.479 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info-content.js"
+    status: 200
+    ms: 11
+    requestId: "db205ebf-b686-48c6-8440-305681e59af9"
+[2026-09-24 13:33:34.540 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info.js"
+    status: 200
+    ms: 69
+    requestId: "b1452096-d933-427e-8f80-e5936cc87c03"
+[2026-09-24 13:33:34.802 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/info/readme"
+    status: 200
+    ms: 17
+    requestId: "39548b14-fb70-4a46-b263-2557bf7f88b2"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:34.798 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 10
+    requestId: "e0733d79-6045-414e-9f01-7ad883854f56"
+[2026-09-24 13:33:34.853 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 2
+    requestId: "611f84e7-2389-4d38-91e6-42d2e3a9d2e5"
+[2026-09-24 13:33:34.949 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 4
+    requestId: "4785d665-2386-482d-b88f-e40bad97675c"
+[2026-09-24 13:33:34.971 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 1
+    requestId: "30e7b6d1-b508-4d7d-9d0c-f285e70f532c"
+[2026-09-24 13:33:34.978 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 2
+    requestId: "b273ef93-a145-457d-b703-cdd58f622ee1"
+[2026-09-24 13:33:34.984 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 1
+    requestId: "e0d49d85-8537-472c-b3f2-33584459fc46"
+[2026-09-24 13:33:35.023 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 2
+    requestId: "c3404d4e-c1e5-4140-b16e-1c08c86c2bbb"
+[2026-09-24 13:33:35.029 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 2
+    requestId: "2f3e3a82-1fb4-4ed7-a61e-5cf848cca66d"
+[2026-09-24 13:33:35.056 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 2
+    requestId: "83d458d8-1b41-458a-b2ba-d682685e6408"
+[2026-09-24 13:33:35.211 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 5
+    requestId: "ce8640b5-df86-4517-8eb5-2bb9252c0ebd"
+[2026-09-24 13:33:36.289 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 100
+    requestId: "da74beb1-ea6b-4147-b731-7b528c1aeecf"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.330 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 8
+    requestId: "7c70f858-1417-48b2-8106-eec61a991f9d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.383 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 6
+    requestId: "a6474ec8-41dd-4d2e-9f0a-d14335219c8b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.423 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 3
+    requestId: "54d881c7-8e2e-4b2e-83e2-e7270d25fda1"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.435 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 3
+    requestId: "eea620f0-3777-4be5-8e0f-40ff0dca3a5d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.546 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 50
+    requestId: "dfc9b1cc-07dc-4487-86b7-f66c97dc7cf8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.558 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 4
+    requestId: "6ee1614b-0fcb-409a-923d-3368c23e2b72"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.221 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.225 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.229 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.232 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.235 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.235 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.235 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.286 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.324 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.325 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.325 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.326 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.328 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.328 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.328 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.328 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.381 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.381 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.381 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.382 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.421 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.421 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.422 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.422 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.556 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.556 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.556 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.557 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.614 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.622 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 11
+    requestId: "c89101da-fc55-4445-a998-b8dabc2d75ce"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.619 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.620 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.620 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.557 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 85
+    requestId: "307f020e-f239-4034-886d-44feebd21768"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.787 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/audio/transcribe"
+    status: 200
+    ms: 9
+    requestId: "21eeddb8-2150-4a1a-b507-e7d71e73e58d"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.755 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "pika"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:36.756 -0500] DEBUG (serve-video): [serve-video] PikaProvider: initialised
+    apiKey: "[REDACTED]"
+[2026-09-24 13:33:36.756 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "pika"
+[2026-09-24 13:33:36.756 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "pika"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.757 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "pika/pika-2.5/text-to-video"
+    provider: "pika"
+    costUsd: "0.000000"
+    isEstimate: false
+    cumulativeCostUsd: "0.000000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.830 -0500] INFO (serve-video): [serve-video] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 78
+    requestId: "8b64224f-aaf3-463b-bf03-2f685fef27cf"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:36.536 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.541 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.544 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.546 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:36.783 -0500] DEBUG (serve-transcribe): [serve-transcribe] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:36.783 -0500] DEBUG (serve-transcribe): [serve-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:36.783 -0500] DEBUG (serve-transcribe): [serve-transcribe] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:36.784 -0500] INFO (serve-transcribe): [serve-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:37.030 -0500] DEBUG (compat-transcribe): [compat-transcribe] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:37.032 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 200
+    ms: 160
+    requestId: "26ea5dd5-d3b1-4e67-a173-5a99ea66642a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:37.030 -0500] DEBUG (compat-transcribe): [compat-transcribe] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:37.031 -0500] DEBUG (compat-transcribe): [compat-transcribe] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:37.031 -0500] INFO (compat-transcribe): [compat-transcribe] AI call completed
+    modality: "audio"
+    model: "mock-whisper-v1"
+    provider: "mock"
+    costUsd: "0.003000"
+    isEstimate: false
+    cumulativeCostUsd: "0.003000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:37.076 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/v1/audio/transcriptions"
+    status: 400
+    ms: 35
+    requestId: "95775322-f020-48e0-8454-23623e943b9b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:37.040 -0500] INFO (serve-video): [serve-video] POST /video: using public URLs for image keyframes
+    publicUrlCount: 1
+    provider: "venice"
+[2026-09-24 13:33:37.042 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "venice"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: false
+[2026-09-24 13:33:37.043 -0500] DEBUG (serve-video): [serve-video] VeniceProvider: initialised
+    apiKey: "[REDACTED]"
+[2026-09-24 13:33:37.099 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "venice"
+[2026-09-24 13:33:37.099 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "venice"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:37.099 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "wan-2.5-preview-image-to-video"
+    provider: "venice"
+    costUsd: "0.000000"
+    isEstimate: false
+    cumulativeCostUsd: "0.000000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:37.101 -0500] INFO (serve-video): [serve-video] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 92
+    requestId: "98e01b10-d433-4631-8aa3-988d1ff85da2"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:37.420 -0500] INFO (serve-video): [serve-video] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 14
+    requestId: "af1aa6f5-2979-4891-8154-891d55008188"
+[2026-09-24 13:33:37.764 -0500] INFO (serve-video): [serve-video] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 7
+    requestId: "de64bc7e-1dfb-473e-80b8-b06ffc8c5897"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:37.817 -0500] INFO (serve-video): [serve-video] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 3
+    requestId: "ef3df6db-720d-42ca-9017-fb2a98467455"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:37.831 -0500] INFO (serve-video): [serve-video] request
+    method: "POST"
+    url: "/video"
+    status: 400
+    ms: 2
+    requestId: "1ef1c6b7-485b-46fe-9693-a913c6e30029"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:37.840 -0500] INFO (serve-video): [serve-video] request
+    method: "POST"
+    url: "/video"
+    status: 422
+    ms: 2
+    requestId: "375dab5b-a1e5-4b2a-9301-ce9452141cda"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:40.644 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:40.653 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:40.664 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:40.672 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:41.180 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:41.181 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:41.181 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:41.181 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:41.194 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:41.195 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:41.195 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:41.196 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:41.479 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:41.480 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:41.480 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:41.481 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:41.492 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:41.492 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:41.493 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:41.493 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:41.528 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:41.528 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:41.528 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:41.529 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:42.688 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:42.688 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:42.689 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:42.689 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.289 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.362 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.376 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.381 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.402 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.404 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:17.407 -0500] INFO (ai-powered): [ai-powered] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:48.784 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/image"
+    status: 200
+    ms: 49
+    requestId: "fc7dd936-aac0-4ab0-9bcd-a37ababeb2eb"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:48.760 -0500] DEBUG (serve-image): [serve-image] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:48.766 -0500] DEBUG (serve-image): [serve-image] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:48.767 -0500] DEBUG (serve-image): [serve-image] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:48.768 -0500] INFO (serve-image): [serve-image] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:49.620 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/image"
+    status: 200
+    ms: 345
+    requestId: "93fa85a8-debc-40aa-ab24-dd3e4a657f20"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:49.284 -0500] DEBUG (serve-image): [serve-image] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:49.285 -0500] DEBUG (serve-image): [serve-image] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:49.288 -0500] DEBUG (serve-image): [serve-image] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:49.469 -0500] INFO (serve-image): [serve-image] AI call completed
+    modality: "image"
+    model: "mock-image-v1"
+    provider: "mock"
+    costUsd: "0.040000"
+    isEstimate: false
+    cumulativeCostUsd: "0.040000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:50.319 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/image"
+    status: 400
+    ms: 88
+    requestId: "fee269d6-d958-4dc7-803c-f5e340e543b5"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.368 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/image"
+    status: 422
+    ms: 15
+    requestId: "3a602fb7-3364-4ebd-847e-9afc07872fef"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:49.848 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 66
+    requestId: "5d01e26c-2424-4266-9e02-ef442546a933"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:49.919 -0500] WARN (ai-powered): [ai-powered] Proxy request rejected by body limit
+    requestId: "950ef053-1009-4279-bde2-9c6582ecc249"
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "Request body exceeds the configured body-byte limit.",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "statusCode": 413,
+      "limit": "body_bytes"
+    }
+[2026-09-24 13:33:49.992 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 47
+    requestId: "1278b0c0-2cb7-4910-acd5-b9ad4ed3cdfe"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.064 -0500] WARN (ai-powered): [ai-powered] Proxy request failed
+    requestId: "aa73d06f-3b9b-422b-8416-225a0b9503ae"
+    publicCode: "RESOURCE_LIMIT_EXCEEDED"
+    status: 413
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "Request exceeds the configured batch_item_count limit.",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "statusCode": 413,
+      "limit": "batch_item_count"
+    }
+[2026-09-24 13:33:50.064 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 413
+    ms: 15
+    requestId: "aa73d06f-3b9b-422b-8416-225a0b9503ae"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.262 -0500] WARN (ai-powered): [ai-powered] Proxy request failed
+    requestId: "70d9e129-a3b5-45b0-9f28-a51f9580ccf4"
+    publicCode: "RESOURCE_LIMIT_EXCEEDED"
+    status: 413
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "Request exceeds the configured batch_duration limit.",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "statusCode": 413,
+      "limit": "batch_duration"
+    }
+[2026-09-24 13:33:50.262 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 413
+    ms: 12
+    requestId: "70d9e129-a3b5-45b0-9f28-a51f9580ccf4"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:49.829 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:50.498 -0500] WARN (ai-powered): [ai-powered] Proxy request failed
+    requestId: "077ae51a-9f41-4c00-9517-7c969402e1c4"
+    publicCode: "INVALID_STITCH_CLIP"
+    status: 400
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "A stitch clip is not valid base64 media data.",
+      "code": "INVALID_STITCH_CLIP",
+      "statusCode": 400,
+      "limit": "stitch_clip_encoding"
+    }
+[2026-09-24 13:33:50.498 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 400
+    ms: 221
+    requestId: "077ae51a-9f41-4c00-9517-7c969402e1c4"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.517 -0500] WARN (ai-powered): [ai-powered] Proxy request failed
+    requestId: "0ea2df67-af7d-4c55-867e-013c9dea07d6"
+    publicCode: "RESOURCE_LIMIT_EXCEEDED"
+    status: 413
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "Request exceeds the configured stitch_clip_bytes limit.",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "statusCode": 413,
+      "limit": "stitch_clip_bytes"
+    }
+[2026-09-24 13:33:49.835 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:49.839 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:49.842 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:49.964 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:49.968 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:49.969 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:49.970 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:49.976 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:49.984 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:49.986 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:49.986 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:50.518 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 413
+    ms: 5
+    requestId: "0ea2df67-af7d-4c55-867e-013c9dea07d6"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.532 -0500] WARN (ai-powered): [ai-powered] Proxy request failed
+    requestId: "8cb93ffd-af18-40d7-bd25-c94ffa203c20"
+    publicCode: "RESOURCE_LIMIT_EXCEEDED"
+    status: 413
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "Request exceeds the configured stitch_decoded_bytes limit.",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "statusCode": 413,
+      "limit": "stitch_decoded_bytes"
+    }
+[2026-09-24 13:33:50.532 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 413
+    ms: 3
+    requestId: "8cb93ffd-af18-40d7-bd25-c94ffa203c20"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.552 -0500] DEBUG (serve-video): [serve-video] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:50.552 -0500] DEBUG (serve-video): [serve-video] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:50.553 -0500] DEBUG (serve-video): [serve-video] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:50.553 -0500] INFO (serve-video): [serve-video] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:50.556 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 200
+    ms: 45
+    requestId: "bcb2489b-0f63-45ea-8393-1d0e9546e0ab"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.672 -0500] INFO (serve-batch): [serve-batch] POST /stitch: temp dir created
+    tmpDir: "C:\Users\kyle_\AppData\Local\Temp\ai-powered-stitch-be6061b2-0506-4606-828c-10b4aef5e61a"
+    clipCount: 2
+[2026-09-24 13:33:50.673 -0500] INFO (serve-batch): [serve-batch] POST /stitch: clip written
+    clipName: "clip0.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:50.673 -0500] INFO (serve-batch): [serve-batch] POST /stitch: clip written
+    clipName: "clip1.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:50.673 -0500] INFO (serve-batch): [serve-batch] POST /stitch: spawning ffmpeg concat…
+    clips: 2
+[2026-09-24 13:33:50.684 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 413
+    ms: 13
+    requestId: "ec5bc95a-77a6-4152-b8bb-669891cdf22c"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.701 -0500] INFO (serve-batch): [serve-batch] POST /stitch: temp dir created
+    tmpDir: "C:\Users\kyle_\AppData\Local\Temp\ai-powered-stitch-91efc130-9da4-4d83-855a-ebc9abfdd884"
+    clipCount: 2
+[2026-09-24 13:33:50.701 -0500] INFO (serve-batch): [serve-batch] POST /stitch: clip written
+    clipName: "clip0.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:50.701 -0500] INFO (serve-batch): [serve-batch] POST /stitch: clip written
+    clipName: "clip1.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:50.701 -0500] INFO (serve-batch): [serve-batch] POST /stitch: spawning ffmpeg concat…
+    clips: 2
+[2026-09-24 13:33:50.852 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/video"
+    status: 400
+    ms: 272
+    requestId: "349e6db6-36c4-4761-8ca0-7d4dc9e50364"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.872 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 504
+    ms: 175
+    requestId: "0e2816ad-a546-4114-b48d-47b820840776"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.893 -0500] INFO (serve-batch): [serve-batch] POST /stitch: temp dir created
+    tmpDir: "C:\Users\kyle_\AppData\Local\Temp\ai-powered-stitch-38536577-7e06-4bc0-99ef-933631fc5ae2"
+    clipCount: 2
+[2026-09-24 13:33:50.893 -0500] INFO (serve-batch): [serve-batch] POST /stitch: clip written
+    clipName: "clip0.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:50.894 -0500] INFO (serve-batch): [serve-batch] POST /stitch: clip written
+    clipName: "clip1.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:50.894 -0500] INFO (serve-batch): [serve-batch] POST /stitch: spawning ffmpeg concat…
+    clips: 2
+[2026-09-24 13:33:50.924 -0500] WARN (ai-powered): [ai-powered] Proxy request failed
+    requestId: "78e1e2e8-f9c8-486b-9e3a-303fa54e9712"
+    publicCode: "RESOURCE_CONCURRENCY_LIMIT"
+    status: 429
+    error: {
+      "name": "ResourcePolicyError",
+      "message": "Stitch concurrency limit is currently exhausted.",
+      "code": "RESOURCE_CONCURRENCY_LIMIT",
+      "statusCode": 429,
+      "limit": "stitch_concurrency"
+    }
+[2026-09-24 13:33:50.926 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 429
+    ms: 8
+    requestId: "78e1e2e8-f9c8-486b-9e3a-303fa54e9712"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:50.928 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 504
+    ms: 36
+    requestId: "b791cdfa-425c-42a1-acc0-7af5bd129fcf"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:51.250 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 251
+    requestId: "f4262805-99ef-4d84-b59b-02d8b610c378"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:51.201 -0500] INFO (serve-video): [serve-video] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/jpeg"
+    sizeBytes: 1024
+    provider: "openai"
+[2026-09-24 13:33:51.492 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 415
+    ms: 5
+    requestId: "ba952fe3-576c-4a5a-8999-f846983cdf35"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:52.746 -0500] INFO (serve-video): [serve-video] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/jpeg"
+    sizeBytes: 5242880
+    provider: "openai"
+[2026-09-24 13:33:52.860 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 853
+    requestId: "757467a5-2fc1-4c13-b684-9819573fd592"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:53.531 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 400
+    ms: 263
+    requestId: "2ffc1aa6-6dec-41fd-aaaf-2105572b942a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:53.550 -0500] INFO (serve-video): [serve-video] POST /upload: file stored
+    principalId: "test-bypass"
+    mimeType: "image/webp"
+    sizeBytes: 2048
+    provider: "openai"
+[2026-09-24 13:33:53.551 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 5
+    requestId: "025cb512-5f6c-4cbb-ad2a-d3e303e4cb34"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:53.120 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 593
+    requestId: "1358468a-3d76-4268-ae14-8e6061d22f8e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:52.673 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:52.816 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:52.823 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:53.090 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:53.854 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 400
+    ms: 168
+    requestId: "2e53fa65-b171-4c7a-8c37-aa2c17feae3f"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:53.884 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:53.890 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 10
+    requestId: "94d2f08d-e586-42bf-bf1c-fc0d4d8098f8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:53.885 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:53.887 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:53.888 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:53.937 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 5
+    requestId: "a090ef78-ccc0-43cb-9342-53cd957d6b85"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:54.051 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:54.085 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 129
+    requestId: "6d121795-b2d6-4b98-8bdb-6237033e49d4"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:54.062 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:54.082 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:54.083 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:54.401 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 4
+    requestId: "db69de04-7fd5-4633-8e7f-0212ab2eeb5e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:54.585 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:54.591 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 156
+    requestId: "8e775ad1-ac07-4a4c-b2dd-c785266d22fc"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:54.586 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:54.586 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:54.586 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:54.588 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:54.589 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:54.589 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:54.589 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:33:55.414 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:55.417 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:55.418 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:55.419 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:55.421 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 195
+    requestId: "83b77fce-ae9d-4865-bde2-d875a17913fa"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:55.575 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:55.579 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:55.580 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:55.580 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:55.582 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 11
+    requestId: "80936a33-377a-484e-a6a1-a38256674678"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:55.602 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:55.603 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:55.603 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:55.603 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:55.605 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 4
+    requestId: "3a887327-7dac-46fa-9f65-d5373d4f8976"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:56.298 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:56.302 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 6
+    requestId: "d79c359f-1262-494a-a78b-10ee115bb83b"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:56.299 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:56.300 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:56.300 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:56.654 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 17
+    requestId: "d853e4b4-eb7a-4d58-a884-a307f503e990"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:56.649 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:56.650 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:56.651 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:56.653 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:57.289 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:57.295 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/batch"
+    status: 200
+    ms: 8
+    requestId: "3cb85a7b-a9e3-4fdd-acd2-9b88eae10cf8"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:57.290 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:57.290 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:57.290 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:57.292 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:57.292 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:57.292 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:57.293 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:57.294 -0500] DEBUG (serve-batch): [serve-batch] getAiClient: config resolved
+    provider: "lumaai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:33:57.294 -0500] DEBUG (serve-batch): [serve-batch] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:33:57.294 -0500] DEBUG (serve-batch): [serve-batch] Attempting provider call
+    provider: "lumaai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:33:57.294 -0500] INFO (serve-batch): [serve-batch] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:33:59.794 -0500] INFO (ai-powered): [ai-powered] POST /stitch: temp dir created
+    tmpDir: "C:\Users\kyle_\AppData\Local\Temp\ai-powered-stitch-349bbc65-edbc-4639-a81b-11d7f8d20935"
+    clipCount: 2
+[2026-09-24 13:33:59.800 -0500] INFO (ai-powered): [ai-powered] POST /stitch: clip written
+    clipName: "clip0.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:59.800 -0500] INFO (ai-powered): [ai-powered] POST /stitch: clip written
+    clipName: "clip1.mp4"
+    sizeBytes: 3
+[2026-09-24 13:33:59.801 -0500] INFO (ai-powered): [ai-powered] POST /stitch: spawning ffmpeg concat…
+    clips: 2
+[2026-09-24 13:33:59.808 -0500] INFO (ai-powered): [ai-powered] POST /stitch: combined video ready
+    sizeMB: 0
+    clips: 2
+[2026-09-24 13:33:59.828 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 200
+    ms: 181
+    requestId: "c0282219-a98c-4513-9a85-9e6ee3bcc6be"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:33:59.886 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 400
+    ms: 17
+    requestId: "fa867906-9c23-46cb-8927-ee1251b43857"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:34:00.005 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 400
+    ms: 6
+    requestId: "c4f0d33d-eb83-4acf-af7a-c710358424b5"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:34:00.218 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 400
+    ms: 3
+    requestId: "c68291f8-aee1-44f0-9fd6-19b3a86d6a1a"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:34:00.232 -0500] INFO (ai-powered): [ai-powered] POST /stitch: temp dir created
+    tmpDir: "C:\Users\kyle_\AppData\Local\Temp\ai-powered-stitch-3f15a941-8a67-4365-b836-dc2d3c1f0e71"
+    clipCount: 2
+[2026-09-24 13:34:00.233 -0500] INFO (ai-powered): [ai-powered] POST /stitch: clip written
+    clipName: "clip0.mp4"
+    sizeBytes: 3
+[2026-09-24 13:34:00.233 -0500] INFO (ai-powered): [ai-powered] POST /stitch: clip written
+    clipName: "clip1.mp4"
+    sizeBytes: 3
+[2026-09-24 13:34:00.234 -0500] INFO (ai-powered): [ai-powered] POST /stitch: spawning ffmpeg concat…
+    clips: 2
+[2026-09-24 13:34:00.243 -0500] ERROR (ai-powered): [ai-powered] Proxy request failed
+    requestId: "8baf76c1-63f3-45c4-8ec7-637f95708e85"
+    publicCode: "INTERNAL_SERVER_ERROR"
+    status: 500
+    error: {
+      "name": "Error",
+      "message": "ffmpeg not found in PATH. Install it on the server host: macOS: brew install ffmpeg Ubuntu: sudo apt-get install -y ffmpeg Windows: scoop install ffmpeg Or use: npm install @ffmpeg-installer/ffmpeg"
+    }
+[2026-09-24 13:34:00.369 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 500
+    ms: 140
+    requestId: "8baf76c1-63f3-45c4-8ec7-637f95708e85"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:34:00.387 -0500] INFO (ai-powered): [ai-powered] POST /stitch: temp dir created
+    tmpDir: "C:\Users\kyle_\AppData\Local\Temp\ai-powered-stitch-519a55f3-d748-4f75-a23b-8600a78de675"
+    clipCount: 2
+[2026-09-24 13:34:00.387 -0500] INFO (ai-powered): [ai-powered] POST /stitch: clip written
+    clipName: "clip0.mp4"
+    sizeBytes: 3
+[2026-09-24 13:34:00.388 -0500] INFO (ai-powered): [ai-powered] POST /stitch: clip written
+    clipName: "clip1.mp4"
+    sizeBytes: 3
+[2026-09-24 13:34:00.456 -0500] INFO (ai-powered): [ai-powered] POST /stitch: spawning ffmpeg concat…
+    clips: 2
+[2026-09-24 13:34:00.463 -0500] INFO (ai-powered): [ai-powered] POST /stitch: combined video ready
+    sizeMB: 0
+    clips: 2
+[2026-09-24 13:34:00.465 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/stitch"
+    status: 200
+    ms: 83
+    requestId: "f364987b-1606-4e7a-a32a-b3ba51d25a8e"
+    principalId: "test-bypass"
+    credentialType: "global"
+[2026-09-24 13:34:01.170 -0500] INFO (ai-powered): [ai-powered] ai-powered proxy server listening on :0
+[2026-09-24 13:34:01.202 -0500] INFO (ai-powered): [ai-powered] ai-powered proxy server listening on :0
+[2026-09-24 13:34:01.222 -0500] INFO (ai-powered): [ai-powered] ai-powered proxy server listening on :0
+[2026-09-24 13:34:06.745 -0500] INFO (ai-powered): [ai-powered] POST /upload: file stored
+    principalId: "file-owner"
+    mimeType: "image/png"
+    sizeBytes: 16
+    provider: "openai"
+[2026-09-24 13:34:06.942 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 247
+    requestId: "6673206a-056a-4fab-98ae-f8d12971d256"
+    principalId: "file-owner"
+    credentialType: "apikey"
+[2026-09-24 13:34:07.230 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 19
+    requestId: "bc2c9713-2add-418f-a89c-e7d406f457e3"
+    principalId: "file-owner"
+    credentialType: "apikey"
+[2026-09-24 13:34:07.247 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 3
+    requestId: "155b89db-ee0d-409c-826e-4aba8471998a"
+    principalId: "file-other"
+    credentialType: "apikey"
+[2026-09-24 13:34:07.578 -0500] INFO (ai-powered): [ai-powered] POST /upload: file stored
+    principalId: "file-owner"
+    mimeType: "image/png"
+    sizeBytes: 16
+    provider: "openai"
+[2026-09-24 13:34:07.580 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 8
+    requestId: "73396930-8dd1-42cf-846f-3b1690d316fd"
+    principalId: "file-owner"
+    credentialType: "apikey"
+[2026-09-24 13:34:07.749 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 4
+    requestId: "91d329a6-09b7-4132-a4fe-0013e7b273e8"
+[2026-09-24 13:34:07.761 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 2
+    requestId: "889eeae5-b9a3-4bd1-b9fa-935e26c9fd9e"
+[2026-09-24 13:34:07.801 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 21
+    requestId: "8b5e4f50-2df7-4941-91d1-5174a8e68d70"
+    principalId: "file-owner"
+    credentialType: "apikey"
+[2026-09-24 13:34:07.904 -0500] INFO (ai-powered): [ai-powered] POST /upload: file stored
+    principalId: "file-owner"
+    mimeType: "image/png"
+    sizeBytes: 16
+    provider: "openai"
+[2026-09-24 13:34:07.919 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 18
+    requestId: "9a509a1c-7ab3-4a41-8b20-7cb7d3a7c863"
+    principalId: "file-owner"
+    credentialType: "apikey"
+[2026-09-24 13:34:08.064 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 2
+    requestId: "0b0d2ec2-ce80-4375-9f19-422fb6fd5a67"
+[2026-09-24 13:34:08.090 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 404
+    ms: 4
+    requestId: "4e1059c0-9dbc-486e-9617-9db5f0861cc5"
+[2026-09-24 13:34:26.690 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 130
+    requestId: "47d1ea3f-f660-47d6-9a08-c5664020b5f9"
+    principalId: "service"
+    credentialType: "global"
+[2026-09-24 13:34:26.737 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/providers"
+    status: 200
+    ms: 4
+    requestId: "066052b8-59bd-4951-bc8c-e0c6569b83e9"
+    principalId: "browser-agent"
+    credentialType: "apikey"
+[2026-09-24 13:34:26.751 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 6
+    requestId: "bbfc6a5a-3607-4e08-ad4a-8c7f91aa4c31"
+    principalId: "browser-agent"
+    credentialType: "apikey"
+[2026-09-24 13:34:26.851 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/upload"
+    status: 201
+    ms: 80
+    requestId: "1544b7a2-ff36-410d-bd73-53e86c34001d"
+    principalId: "browser-agent"
+    credentialType: "apikey"
+[2026-09-24 13:34:26.907 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/files/[redacted]"
+    status: 200
+    ms: 21
+    requestId: "b12cf575-166a-4323-8382-9b721303f730"
+    principalId: "browser-agent"
+    credentialType: "apikey"
+[2026-09-24 13:34:26.675 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:26.679 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:26.684 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:26.687 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:34:26.749 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:26.749 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:26.750 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:26.750 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:34:26.842 -0500] INFO (serve-text): [serve-text] POST /upload: file stored
+    principalId: "browser-agent"
+    mimeType: "text/plain"
+    sizeBytes: 18
+    provider: "openai"
+[2026-09-24 13:34:27.292 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:27.297 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 13
+    requestId: "ff1cfec9-c50f-472e-94ad-4a7b54de5018"
+    principalId: "jwt-generator"
+    credentialType: "jwt"
+[2026-09-24 13:34:27.294 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:27.294 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:27.294 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:34:27.343 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:27.352 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 13
+    requestId: "5ca76c68-b1a1-42e2-9911-62c14b5fef21"
+    principalId: "service"
+    credentialType: "global"
+[2026-09-24 13:34:27.344 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:27.344 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:27.344 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:34:27.377 -0500] DEBUG (serve-text): [serve-text] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:27.380 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/text"
+    status: 200
+    ms: 15
+    requestId: "aa8e1c00-dd4e-4f11-81bc-adfd3888b6e8"
+    principalId: "agent-generator"
+    credentialType: "apikey"
+[2026-09-24 13:34:27.378 -0500] DEBUG (serve-text): [serve-text] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:27.378 -0500] DEBUG (serve-text): [serve-text] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:27.379 -0500] INFO (serve-text): [serve-text] AI call completed
+    modality: "text"
+    model: "mock-text-v1"
+    provider: "mock"
+    costUsd: "0.000278"
+    isEstimate: false
+    cumulativeCostUsd: "0.000278"
+    latencyMs: 1
+    promptTokens: 42
+    completionTokens: 118
+    totalTokens: 160
+[2026-09-24 13:34:27.394 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/health"
+    status: 200
+    ms: 2
+    requestId: "e9c6a9a2-0221-406e-93e1-ac7ffca0e2dc"
+[2026-09-24 13:34:27.462 -0500] INFO (ai-powered): [ai-powered] request
+    method: "GET"
+    url: "/"
+    status: 200
+    ms: 42
+    requestId: "3e79d6fb-aceb-42e1-81ee-18ca925cfe97"
+[2026-09-24 13:34:27.481 -0500] DEBUG (serve-music): [serve-music] getAiClient: config resolved
+    provider: "openai"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:27.485 -0500] INFO (ai-powered): [ai-powered] request
+    method: "POST"
+    url: "/music"
+    status: 200
+    ms: 7
+    requestId: "e5182b1f-bb39-4504-a873-c76e249a74a2"
+    principalId: "service"
+    credentialType: "global"
+[2026-09-24 13:34:27.481 -0500] DEBUG (serve-music): [serve-music] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:27.482 -0500] DEBUG (serve-music): [serve-music] Attempting provider call
+    provider: "openai"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:27.482 -0500] INFO (serve-music): [serve-music] AI call completed
+    modality: "music"
+    model: "mock-music-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:34:30.665 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:30.691 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:30.722 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:30.748 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 1
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+[2026-09-24 13:34:30.949 -0500] DEBUG (single-shot): [single-shot] getAiClient: config resolved
+    provider: "mock"
+    model: "gpt-4o"
+    apiKey: "[REDACTED]"
+    mock: true
+[2026-09-24 13:34:30.949 -0500] DEBUG (single-shot): [single-shot] Provider instantiated
+    provider: "mock"
+[2026-09-24 13:34:30.949 -0500] DEBUG (single-shot): [single-shot] Attempting provider call
+    provider: "mock"
+    model: "gpt-4o"
+    attempt: 1
+    total: 1
+[2026-09-24 13:34:30.950 -0500] INFO (single-shot): [single-shot] AI call completed
+    modality: "video"
+    model: "mock-video-v1"
+    provider: "mock"
+    costUsd: "0.050000"
+    isEstimate: false
+    cumulativeCostUsd: "0.050000"
+    latencyMs: 0
+    promptTokens: 0
+    completionTokens: 0
+    totalTokens: 0
+ ❯ tests/unit/check-changed-format.test.ts (8 tests | 3 failed) 100358ms
+     × passes a correctly formatted changed TypeScript file 13414ms
+     × resolves a pull request event range 20383ms
+     × resolves a push range across multiple commits 26698ms
+ ❯ tests/integration/cli.test.ts (20 tests | 3 failed) 139327ms
+     × writes a single raw line to stdout 25788ms
+     × emits a JSON object with content, usage, model, cost, and modality fields 16134ms
+     × exits 0 and reports all checks as passing 10320ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/cli.test.ts > text --mock --quiet > writes a single raw line to stdout
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/integration/cli.test.ts:215:3
+    213|
+    214| describe("text --mock --quiet", () => {
+    215|   it("writes a single raw line to stdout", () => {
+       |   ^
+    216|     const { stdout, exitCode } = run(["text", "--mock", "--quiet", "He…
+    217|     expect(exitCode).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/integration/cli.test.ts > text --mock --json > emits a JSON object with content, usage, model, cost, and modality fields
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/integration/cli.test.ts:227:3
+    225|
+    226| describe("text --mock --json", () => {
+    227|   it("emits a JSON object with content, usage, model, cost, and modali…
+       |   ^
+    228|     const { stdout, exitCode } = run(["text", "--mock", "--json", "Hel…
+    229|     expect(exitCode).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/integration/cli.test.ts > health-check --mock > exits 0 and reports all checks as passing
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/integration/cli.test.ts:272:3
+    270|
+    271| describe("health-check --mock", () => {
+    272|   it("exits 0 and reports all checks as passing", () => {
+       |   ^
+    273|     const { stdout, exitCode } = run(["health-check", "--mock"]);
+    274|     expect(exitCode).toBe(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/unit/check-changed-format.test.ts > changed-file Prettier check > passes a correctly formatted changed TypeScript file
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/check-changed-format.test.ts:111:3
+    109|   });
+    110|
+    111|   it("passes a correctly formatted changed TypeScript file", () => {
+       |   ^
+    112|     writeFixtureFile(fixture.root, "src/good.ts", "const value = 2;\n"…
+    113|     const head = commitFixture(fixture.root, "formatted change");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/unit/check-changed-format.test.ts > changed-file Prettier check > resolves a pull request event range
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/check-changed-format.test.ts:132:3
+    130|   });
+    131|
+    132|   it("resolves a pull request event range", () => {
+       |   ^
+    133|     writeFixtureFile(fixture.root, "src/good.ts", "const value = 2;\n"…
+    134|     const head = commitFixture(fixture.root, "pull request change");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  tests/unit/check-changed-format.test.ts > changed-file Prettier check > resolves a push range across multiple commits
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/check-changed-format.test.ts:148:3
+    146|   });
+    147|
+    148|   it("resolves a push range across multiple commits", () => {
+       |   ^
+    149|     writeFixtureFile(fixture.root, "src/good.ts", "const value = 2;\n"…
+    150|     const firstHead = commitFixture(fixture.root, "first push commit");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  2 failed | 103 passed (105)
+      Tests  6 failed | 1514 passed (1520)
+   Start at  13:33:04
+   Duration  141.65s (transform 53.27s, setup 24.37s, import 303.36s, tests 425.53s, environment 222.36s)
+

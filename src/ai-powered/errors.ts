@@ -21,8 +21,8 @@
  * Invariants:
  * - `RATE_LIMITED` and `PROVIDER_TIMEOUT` are retryable (`retryable: true`).
  * - All `AUTH_*` codes, `PROVIDER_CONTENT_POLICY`, `INSUFFICIENT_CREDITS`,
- *   `AGENT_CREDIT_CAP_EXCEEDED`, `NOT_FOUND`, and `IDEMPOTENCY_CONFLICT`
- *   are not retryable (`retryable: false`).
+ *   `AGENT_CREDIT_CAP_EXCEEDED`, `NOT_FOUND`, `IDEMPOTENCY_CONFLICT`, and
+ *   `ARTIFACT_DELIVERY_ERROR` are not retryable (`retryable: false`).
  */
 export type AgentErrorCode =
   /** No credential of any kind is available. */
@@ -47,6 +47,8 @@ export type AgentErrorCode =
   | "NOT_FOUND"
   /** Same idempotencyKey submitted with different parameters. */
   | "IDEMPOTENCY_CONFLICT"
+  /** Generation completed but the media artifact could not be published. */
+  | "ARTIFACT_DELIVERY_ERROR"
   /** Agent credential exceeded request-rate limits. */
   | "RATE_LIMITED";
 

@@ -26,6 +26,7 @@ import { resolveCredential, type ResolvedCredential } from "./auth.js";
 import { checkIdempotency, storeIdempotency } from "./idempotency.js";
 import { deliverWebhook } from "./webhook.js";
 import { fundAgentAccount } from "./payments.js";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -71,6 +72,8 @@ export interface SingleShotOptions {
   idempotencyKey?: string;
   /** Stripe pm_* token enabling auto-top-up on INSUFFICIENT_CREDITS. */
   agentPaymentMethodId?: string;
+  /** Abort an in-flight provider call or artifact download. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -130,6 +133,236 @@ type JobLedgerRecord =
   | { jobId: string; status: "pending" }
   | { jobId: string; status: "complete"; result: SingleShotResult }
   | { jobId: string; status: "failed"; error: SerializedAiPoweredError };
+
+const SINGLE_SHOT_MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+const SINGLE_SHOT_DOWNLOAD_TIMEOUT_MS = 30_000;
+const ARTIFACT_RECOVERY_TTL_MS = 24 * 60 * 60 * 1000;
+const ARTIFACT_DELIVERY_MESSAGE =
+  "Generation finished, but the video could not be saved. Retry the download before generating again.";
+
+type ArtifactDeliveryReason =
+  "invalid-url" | "http-status" | "invalid-content" | "oversized" | "interrupted" | "filesystem";
+
+class ArtifactDeliveryError extends AiPoweredError {
+  constructor(readonly reason: ArtifactDeliveryReason) {
+    super("ARTIFACT_DELIVERY_ERROR", ARTIFACT_DELIVERY_MESSAGE, false);
+  }
+}
+
+interface ArtifactRecoveryEntry {
+  data: string;
+  mimeType: string;
+  cost: { totalUsd: number };
+  createdAt: number;
+}
+
+const artifactRecovery = new Map<string, ArtifactRecoveryEntry>();
+
+function artifactRecoveryKey(opts: SingleShotOptions): string | undefined {
+  if (opts.idempotencyKey === undefined) return undefined;
+  return `${opts.idempotencyKey}\u0000${opts.provider}\u0000${opts.shot.id}`;
+}
+
+function readArtifactRecovery(key: string | undefined): ArtifactRecoveryEntry | undefined {
+  if (key === undefined) return undefined;
+  const entry = artifactRecovery.get(key);
+  if (entry === undefined) return undefined;
+  if (Date.now() - entry.createdAt > ARTIFACT_RECOVERY_TTL_MS) {
+    artifactRecovery.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function artifactRecoveryEntry(videoResult: {
+  data: string;
+  mimeType: string;
+  cost: { totalUsd: number };
+}): ArtifactRecoveryEntry {
+  return {
+    data: videoResult.data,
+    mimeType: videoResult.mimeType,
+    cost: { totalUsd: videoResult.cost.totalUsd },
+    createdAt: Date.now(),
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function temporaryArtifactPath(outputPath: string): string {
+  const directory = path.dirname(outputPath);
+  const basename = path.basename(outputPath) || "clip";
+  return path.join(directory, `.${basename}.${randomUUID()}.tmp`);
+}
+
+async function removeTemporaryArtifact(tempPath: string): Promise<void> {
+  await fs.rm(tempPath, { force: true }).catch(() => undefined);
+}
+
+async function publishDataUri(data: string, outputPath: string): Promise<void> {
+  const match = /^data:([^,]+),(.*)$/s.exec(data);
+  const metadata = match?.[1] ?? "";
+  const encoded = match?.[2] ?? "";
+  const mimeType = metadata.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (
+    !metadata.toLowerCase().includes(";base64") ||
+    !mimeType.startsWith("video/") ||
+    encoded.length === 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) ||
+    encoded.length % 4 === 1
+  ) {
+    throw new ArtifactDeliveryError("invalid-content");
+  }
+
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.length === 0 || bytes.length > SINGLE_SHOT_MAX_VIDEO_BYTES) {
+    throw new ArtifactDeliveryError(
+      bytes.length > SINGLE_SHOT_MAX_VIDEO_BYTES ? "oversized" : "invalid-content",
+    );
+  }
+
+  const tempPath = temporaryArtifactPath(outputPath);
+  try {
+    await fs.writeFile(tempPath, bytes, { flag: "wx" });
+    await fs.rename(tempPath, outputPath);
+  } catch {
+    await removeTemporaryArtifact(tempPath);
+    throw new ArtifactDeliveryError("filesystem");
+  }
+}
+
+function assertHttpMediaUrl(data: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(data);
+  } catch {
+    throw new ArtifactDeliveryError("invalid-url");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ArtifactDeliveryError("invalid-url");
+  }
+  return parsed;
+}
+
+function responseContentType(response: Response): string {
+  return response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+}
+
+async function downloadVideoUrl(
+  data: string,
+  expectedMimeType: string,
+  outputPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  assertHttpMediaUrl(data);
+
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener("abort", forwardAbort, { once: true });
+  const timeoutId = setTimeout(() => controller.abort(), SINGLE_SHOT_DOWNLOAD_TIMEOUT_MS);
+  const tempPath = temporaryArtifactPath(outputPath);
+  let fileHandle: fs.FileHandle | undefined;
+  let phase: "download" | "filesystem" | "publish" = "download";
+  let readingBody = false;
+  try {
+    const response = await fetch(data, {
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new ArtifactDeliveryError("http-status");
+    }
+
+    const contentType = responseContentType(response);
+    const fallbackMimeType = expectedMimeType.split(";", 1)[0]?.toLowerCase() ?? "";
+    if (
+      !contentType.startsWith("video/") &&
+      !(contentType.length === 0 && fallbackMimeType.startsWith("video/"))
+    ) {
+      throw new ArtifactDeliveryError("invalid-content");
+    }
+
+    const declaredLength = response.headers.get("content-length");
+    const contentLength = declaredLength === null ? NaN : Number(declaredLength);
+    if (
+      declaredLength !== null &&
+      (!/^\d+$/.test(declaredLength.trim()) ||
+        !Number.isSafeInteger(contentLength) ||
+        contentLength > SINGLE_SHOT_MAX_VIDEO_BYTES)
+    ) {
+      throw new ArtifactDeliveryError("oversized");
+    }
+
+    phase = "filesystem";
+    fileHandle = await fs.open(tempPath, "wx");
+    let written = 0;
+    const reader = response.body?.getReader();
+    if (reader !== undefined) {
+      try {
+        while (true) {
+          readingBody = true;
+          const chunk = await reader.read();
+          readingBody = false;
+          if (chunk.done) break;
+          const value = chunk.value;
+          written += value.byteLength;
+          if (written > SINGLE_SHOT_MAX_VIDEO_BYTES) {
+            await reader.cancel().catch(() => undefined);
+            throw new ArtifactDeliveryError("oversized");
+          }
+          await fileHandle.write(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } else {
+      readingBody = true;
+      const bytes = Buffer.from(await response.arrayBuffer());
+      readingBody = false;
+      written = bytes.length;
+      if (written > SINGLE_SHOT_MAX_VIDEO_BYTES) {
+        throw new ArtifactDeliveryError("oversized");
+      }
+      await fileHandle.write(bytes);
+    }
+
+    if (written === 0) {
+      throw new ArtifactDeliveryError("invalid-content");
+    }
+    await fileHandle.close();
+    fileHandle = undefined;
+    phase = "publish";
+    await fs.rename(tempPath, outputPath);
+  } catch (error) {
+    if (fileHandle !== undefined) {
+      await fileHandle.close().catch(() => undefined);
+    }
+    if (error instanceof ArtifactDeliveryError) throw error;
+    if (phase === "download" || readingBody || isAbortError(error)) {
+      throw new ArtifactDeliveryError("interrupted");
+    }
+    throw new ArtifactDeliveryError("filesystem");
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", forwardAbort);
+    await removeTemporaryArtifact(tempPath);
+  }
+}
+
+async function materializeVideo(
+  videoResult: { data: string; mimeType: string },
+  outputPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (videoResult.data.startsWith("data:")) {
+    await publishDataUri(videoResult.data, outputPath);
+    return;
+  }
+  await downloadVideoUrl(videoResult.data, videoResult.mimeType, outputPath, signal);
+}
 
 const DEFAULT_JOB_LEDGER_PATH = path.join(
   process.cwd(),
@@ -536,22 +769,25 @@ export async function generateSingleShot(opts: SingleShotOptions): Promise<Singl
 
   // ── Inner helper: execute the provider call + write file ──────────────────
   async function callProvider(): Promise<SingleShotResult> {
-    const client = await getAiClient("single-shot", {
-      provider: internalProvider as ProviderName,
-    });
-
-    const videoResult = await client.generateVideo(opts.shot.prompt, {
-      duration: opts.shot.durationSeconds,
-    });
-
-    // Write video data to outputPath.
-    // VideoResult.data is either a base64 data URI or a plain URL.
-    if (videoResult.data.startsWith("data:")) {
-      const base64 = videoResult.data.replace(/^data:[^;]+;base64,/, "");
-      await fs.writeFile(opts.outputPath, Buffer.from(base64, "base64"));
+    const recoveryKey = artifactRecoveryKey(opts);
+    const recovered = readArtifactRecovery(recoveryKey);
+    let videoResult: ArtifactRecoveryEntry;
+    if (recovered !== undefined) {
+      videoResult = recovered;
     } else {
-      await fs.writeFile(opts.outputPath, videoResult.data, "utf8");
+      const client = await getAiClient("single-shot", {
+        provider: internalProvider as ProviderName,
+      });
+      const generated = await client.generateVideo(opts.shot.prompt, {
+        duration: opts.shot.durationSeconds,
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      });
+      videoResult = artifactRecoveryEntry(generated);
+      if (recoveryKey !== undefined) artifactRecovery.set(recoveryKey, videoResult);
     }
+
+    await materializeVideo(videoResult, opts.outputPath, opts.signal);
+    if (recoveryKey !== undefined) artifactRecovery.delete(recoveryKey);
 
     return {
       jobId,

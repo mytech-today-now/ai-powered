@@ -1,0 +1,200 @@
+{
+  "notice": "Synthetic interface examples only. No issuer server or durable database is implemented by these fixtures.",
+  "verifiedAccount": {
+    "accountId": "acc_fixture_1",
+    "email": "visitor@example.test",
+    "emailVerified": true,
+    "agentId": "agt_fixture_1"
+  },
+  "create": {
+    "status": 201,
+    "headers": {
+      "Cache-Control": "no-store"
+    },
+    "body": {
+      "key": "ap_agent_fixture_only_not_a_real_secret",
+      "metadata": {
+        "keyId": "key_fixture_1",
+        "agentId": "agt_fixture_1",
+        "label": "CI worker",
+        "scopes": ["read", "generate"],
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "expiresAt": "2026-10-24T00:00:00.000Z",
+        "revokedAt": null,
+        "lastUsedAt": null,
+        "suffix": "cret"
+      }
+    }
+  },
+  "verification": {
+    "agentId": "agt_fixture_1",
+    "scopes": ["read", "generate"]
+  },
+  "list": {
+    "keys": [
+      {
+        "keyId": "key_fixture_1",
+        "agentId": "agt_fixture_1",
+        "label": "CI worker",
+        "scopes": ["read", "generate"],
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "expiresAt": "2026-10-24T00:00:00.000Z",
+        "revokedAt": null,
+        "lastUsedAt": null,
+        "suffix": "cret"
+      }
+    ],
+    "nextCursor": null
+  },
+  "denials": [
+    {
+      "name": "anonymous creation",
+      "operationId": "createKey",
+      "caller": "anonymous",
+      "status": 401,
+      "code": "AUTH_MISSING",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "AUTH_MISSING"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "provider credential is not a portal session",
+      "operationId": "createKey",
+      "caller": "provider-key",
+      "status": 401,
+      "code": "AUTH_MISSING",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "AUTH_MISSING"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "agent key is not a portal session",
+      "operationId": "createKey",
+      "caller": "agent-key",
+      "status": 401,
+      "code": "AUTH_MISSING",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "AUTH_MISSING"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "service key is not a portal session",
+      "operationId": "createKey",
+      "caller": "service-key",
+      "status": 401,
+      "code": "AUTH_MISSING",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "AUTH_MISSING"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "visitor cannot request service credentials",
+      "operationId": "createKey",
+      "caller": "verified-session",
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "VALIDATION_ERROR"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "unverified account cannot issue",
+      "operationId": "createKey",
+      "caller": "unverified-session",
+      "status": 403,
+      "code": "ACCOUNT_NOT_VERIFIED",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "ACCOUNT_NOT_VERIFIED"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "another account cannot rotate",
+      "operationId": "rotateKey",
+      "caller": "other-owner-session",
+      "status": 404,
+      "code": "KEY_NOT_FOUND",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "KEY_NOT_FOUND"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "revoked key cannot verify",
+      "operationId": "verifyKey",
+      "caller": "revoked-key",
+      "status": 401,
+      "code": "AUTH_INVALID_KEY",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "AUTH_INVALID_KEY"
+      },
+      "sideEffects": []
+    },
+    {
+      "name": "missing service decision prevents release",
+      "operationId": "verifyKey",
+      "caller": "operator",
+      "status": 503,
+      "code": "AUTH_SERVICE_UNAVAILABLE",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "body": {
+        "error": "Request could not be authorized.",
+        "code": "AUTH_SERVICE_UNAVAILABLE"
+      },
+      "sideEffects": []
+    }
+  ],
+  "serviceAccess": {
+    "header": "X-AI-API-Key",
+    "custodian": "operator",
+    "principal": {
+      "type": "global",
+      "agentId": "service",
+      "scopes": [],
+      "unrestricted": true
+    }
+  },
+  "legacyVerification": {
+    "agentId": "agt_legacy",
+    "scopes": []
+  }
+}

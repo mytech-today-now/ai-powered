@@ -1,0 +1,13 @@
+
+> ai-powered@0.5.12 test
+> vitest run tests/integration/cli.test.ts tests/unit/check-changed-format.test.ts --maxWorkers=2
+
+
+ RUN  v4.1.11 C:/GitHub/ai-powered
+
+
+ Test Files  2 passed (2)
+      Tests  28 passed (28)
+   Start at  13:36:12
+   Duration  54.85s (transform 209ms, setup 207ms, import 171ms, tests 73.33s, environment 1ms)
+

@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "decision": {
+    "status": "blocked",
+    "serviceOwner": null,
+    "serviceLocation": null,
+    "database": null,
+    "reason": "No issuer owner, deployable location, or durable database is established by this checkout."
+  },
+  "scopes": ["read", "generate", "files:read", "files:write"],
+  "identityPolicy": "one-agent-per-account",
+  "operations": [
+    {
+      "operationId": "register",
+      "method": "POST",
+      "path": "/api/auth/register",
+      "caller": "public",
+      "request": "registration",
+      "response": "pending-account",
+      "ratePolicy": "register",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "login",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "caller": "public",
+      "request": "login",
+      "response": "account-session",
+      "ratePolicy": "login",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "logout",
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "caller": "session-csrf",
+      "request": "empty",
+      "response": "no-content",
+      "ratePolicy": "session-write",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "verifyEmail",
+      "method": "POST",
+      "path": "/api/auth/verify-email",
+      "caller": "verification-token",
+      "request": "verification-token",
+      "response": "verified-account",
+      "ratePolicy": "verify-email",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "me",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "caller": "session",
+      "request": "none",
+      "response": "account",
+      "ratePolicy": "session-read",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "createKey",
+      "method": "POST",
+      "path": "/api/auth/keys",
+      "caller": "verified-session-csrf",
+      "request": "key-options",
+      "response": "one-time-key",
+      "ratePolicy": "key-write",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "listKeys",
+      "method": "GET",
+      "path": "/api/auth/keys",
+      "caller": "session",
+      "request": "pagination",
+      "response": "safe-key-list",
+      "ratePolicy": "session-read",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "rotateKey",
+      "method": "POST",
+      "path": "/api/auth/keys/:id/rotate",
+      "caller": "verified-owner-session-csrf",
+      "request": "empty",
+      "response": "one-time-key",
+      "ratePolicy": "key-write",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "revokeKey",
+      "method": "POST",
+      "path": "/api/auth/keys/:id/revoke",
+      "caller": "owner-session-csrf",
+      "request": "empty",
+      "response": "revoked-key",
+      "ratePolicy": "key-write",
+      "cacheControl": "no-store"
+    },
+    {
+      "operationId": "verifyKey",
+      "method": "POST",
+      "path": "/api/auth/verify-key",
+      "caller": "agent-key-possession",
+      "request": "raw-key",
+      "response": "verification",
+      "ratePolicy": "verify-key",
+      "cacheControl": "no-store"
+    }
+  ],
+  "dependencies": [
+    {
+      "item": 2,
+      "capability": "durable-identity-store",
+      "coordinatesWith": [1]
+    },
+    {
+      "item": 3,
+      "capability": "registration-email-verification",
+      "coordinatesWith": [1, 2, 14]
+    },
+    {
+      "item": 4,
+      "capability": "portal-sessions",
+      "coordinatesWith": [1, 2, 3, 14]
+    },
+    {
+      "item": 5,
+      "capability": "scoped-key-issuance",
+      "coordinatesWith": [1, 2, 3, 4, 6]
+    },
+    {
+      "item": 6,
+      "capability": "safe-key-inventory",
+      "coordinatesWith": [2, 4, 5]
+    },
+    {
+      "item": 7,
+      "capability": "durable-key-verifier",
+      "coordinatesWith": [1, 2, 3, 4, 5, 8, 15]
+    },
+    {
+      "item": 8,
+      "capability": "revocation-cache-policy",
+      "coordinatesWith": [2, 7, 14]
+    },
+    {
+      "item": 9,
+      "capability": "rotation-account-deletion",
+      "coordinatesWith": [2, 4, 5, 6, 7, 8]
+    },
+    {
+      "item": 10,
+      "capability": "proxy-scope-enforcement",
+      "coordinatesWith": [1, 7]
+    },
+    {
+      "item": 11,
+      "capability": "visitor-settings",
+      "coordinatesWith": [5, 6, 12, 13]
+    },
+    {
+      "item": 12,
+      "capability": "credential-transport",
+      "coordinatesWith": [7, 11]
+    },
+    {
+      "item": 13,
+      "capability": "account-portal",
+      "coordinatesWith": [3, 4, 5, 6, 8, 9, 11, 12]
+    },
+    {
+      "item": 14,
+      "capability": "distributed-abuse-controls",
+      "coordinatesWith": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    },
+    {
+      "item": 15,
+      "capability": "private-errors-audit",
+      "coordinatesWith": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    },
+    {
+      "item": 16,
+      "capability": "release-lifecycle-proof",
+      "coordinatesWith": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    }
+  ]
+}
