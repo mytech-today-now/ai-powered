@@ -20,6 +20,7 @@ export interface ProxyPrincipal {
   /** Stable non-secret identity used for request attribution and rate limits. */
   readonly id: string;
   readonly credentialType: ResolvedCredential["type"];
+  readonly unrestricted: boolean;
   readonly scopes: readonly string[];
 }
 
@@ -115,10 +116,10 @@ function normalizePrincipalId(credential: ResolvedCredential): string {
 }
 
 function hasScope(principal: ProxyPrincipal, requiredScope: string | undefined): boolean {
-  // The existing global service identity is intentionally unrestricted. JWTs
-  // and verified API keys with an explicit scope list are least-privilege.
-  if (principal.credentialType === "global" || principal.scopes.length === 0) return true;
-  return principal.scopes.includes(requiredScope ?? "read");
+  // Only the explicitly marked service identity is unrestricted. Agent
+  // credentials with missing or invalid scopes fail closed.
+  if (principal.unrestricted) return true;
+  return requiredScope !== undefined && principal.scopes.includes(requiredScope);
 }
 
 /**
@@ -169,7 +170,7 @@ export async function authenticateProxyRequest(
         authFailure(res, 401, "AUTH_INVALID_KEY");
         return;
       }
-      credential = { type: "global", agentId: "service", scopes: [] };
+      credential = { type: "global", unrestricted: true, agentId: "service", scopes: [] };
     } else {
       authFailure(res, 401, "AUTH_MISSING");
       return;
@@ -178,6 +179,7 @@ export async function authenticateProxyRequest(
     const principal: ProxyPrincipal = {
       id: normalizePrincipalId(credential),
       credentialType: credential.type,
+      unrestricted: credential.unrestricted,
       scopes: [...credential.scopes],
     };
     if (!hasScope(principal, decision.scope)) {

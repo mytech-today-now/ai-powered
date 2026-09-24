@@ -31,6 +31,8 @@ import { requireAuthEndpoint, requireJwtPublicKey } from "./env.js";
 export interface ResolvedCredential {
   /** How the credential was supplied. */
   type: "jwt" | "apikey" | "global";
+  /** Whether this credential is the deliberately unrestricted service identity. */
+  unrestricted: boolean;
   /**
    * Agent identifier extracted from the credential.
    *
@@ -42,9 +44,9 @@ export interface ResolvedCredential {
   /**
    * Permission scopes granted to this credential.
    *
-   * - `jwt`    → empty array (scope enforcement is a future Story)
-   * - `apikey` → scopes returned by the verify-key endpoint
-   * - `global` → empty array
+   * - `jwt`    → validated `scopes` claim
+   * - `apikey` → validated `scopes` returned by the verify-key endpoint
+   * - `global` → empty array; unrestricted is explicit above
    */
   scopes: string[];
 }
@@ -91,6 +93,25 @@ export function _clearKeyCache(): void {
  * Spec D2: allow 30-second clock skew between issuer and verifier.
  */
 const CLOCK_TOLERANCE_S = 30;
+
+/** Exact scope vocabulary used by the proxy routes and the auth issuer contract. */
+const SUPPORTED_AGENT_SCOPES = new Set(["read", "generate", "files:read", "files:write"]);
+
+/**
+ * Validate the issuer's array-form scope claim without broadening permissions.
+ * Any missing, empty, unknown, or malformed list becomes no agent permission.
+ */
+function parseAgentScopes(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) return [];
+  if (
+    !value.every(
+      (scope): scope is string => typeof scope === "string" && SUPPORTED_AGENT_SCOPES.has(scope),
+    )
+  ) {
+    return [];
+  }
+  return [...new Set(value)];
+}
 
 // ---------------------------------------------------------------------------
 // maskApiKey — for safe representation in error messages (REQ-CI-06)
@@ -195,11 +216,12 @@ export async function resolveCredential(opts: SingleShotOptions): Promise<Resolv
     // AC-01: valid token → extract sub as agentId; no network call made.
     return {
       type: "jwt",
+      unrestricted: false,
       agentId:
         typeof payload.sub === "string" && payload.sub.length > 0
           ? payload.sub
           : (opts.agentId ?? undefined),
-      scopes: [],
+      scopes: parseAgentScopes((payload as jwt.JwtPayload & { scopes?: unknown }).scopes),
     };
   }
 
@@ -212,7 +234,12 @@ export async function resolveCredential(opts: SingleShotOptions): Promise<Resolv
     // Check 60-second cache first (D3 — REQ-CI-03).
     const cached = _keyCache.get(opts.agentApiKey);
     if (cached !== undefined && Date.now() < cached.expiresAt) {
-      return { type: "apikey", agentId: cached.agentId, scopes: cached.scopes };
+      return {
+        type: "apikey",
+        unrestricted: false,
+        agentId: cached.agentId,
+        scopes: cached.scopes,
+      };
     }
 
     // Cache miss or expired — call the verify-key endpoint.
@@ -241,21 +268,26 @@ export async function resolveCredential(opts: SingleShotOptions): Promise<Resolv
       );
     }
 
-    const data = (await res.json()) as { agentId: string; scopes?: string[] };
+    const data = (await res.json()) as { agentId: string; scopes?: unknown };
     const entry: KeyCacheEntry = {
       agentId: data.agentId,
-      scopes: Array.isArray(data.scopes) ? data.scopes : [],
+      scopes: parseAgentScopes(data.scopes),
       expiresAt: Date.now() + 60_000, // 60-second TTL (REQ-CI-03)
     };
     _keyCache.set(opts.agentApiKey, entry);
 
-    return { type: "apikey", agentId: entry.agentId, scopes: entry.scopes };
+    return {
+      type: "apikey",
+      unrestricted: false,
+      agentId: entry.agentId,
+      scopes: entry.scopes,
+    };
   }
 
   // ── Priority 3: AIPOWERED_API_KEY global fallback ────────────────────────
   const globalKey = process.env["AIPOWERED_API_KEY"];
   if (globalKey !== undefined && globalKey.length > 0) {
-    return { type: "global", agentId: "service", scopes: [] };
+    return { type: "global", unrestricted: true, agentId: "service", scopes: [] };
   }
 
   // ── No credential found (REQ-CI-04) ──────────────────────────────────────

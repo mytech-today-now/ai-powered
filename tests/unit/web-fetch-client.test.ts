@@ -226,6 +226,31 @@ describe("WebAiClient proxy caller authentication", () => {
     });
   });
 
+  it("explains insufficient scope with the required permission guidance", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        {
+          error: "Authenticated caller lacks the required scope.",
+          code: "AUTH_INSUFFICIENT_SCOPE",
+        },
+        403,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+    });
+    await expect(client.generateText("hello")).rejects.toMatchObject({
+      name: "ProxyError",
+      code: "AUTH_INSUFFICIENT_SCOPE",
+      statusCode: 403,
+      message:
+        "This credential does not allow this operation. Use a credential with the required permission.",
+    });
+  });
+
   it("authenticates same-proxy media reads but not external media URLs", async () => {
     const fetchMock = vi
       .fn()

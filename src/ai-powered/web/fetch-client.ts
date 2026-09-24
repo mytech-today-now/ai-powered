@@ -1236,7 +1236,7 @@ export class WebAiClient {
         "The proxy caller credential was rejected or revoked. Open Settings / Configuration to update it.";
     } else if (code === "AUTH_INSUFFICIENT_SCOPE") {
       message =
-        "The proxy caller credential lacks permission for this action. Open Settings / Configuration to update it.";
+        "This credential does not allow this operation. Use a credential with the required permission.";
     }
     throw new WebProxyError(message, code, res.status, requestId);
   }

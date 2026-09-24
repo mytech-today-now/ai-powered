@@ -58,6 +58,20 @@ Credential forwarding is fail-closed for arbitrary cross-origin proxy URLs. It
 is enabled for localhost and for a page served by the same origin as the proxy.
 Use a same-origin deployment for the ngrok and Render browser workflows.
 
+### Caller authorization scopes
+
+Protected proxy routes require an authenticated caller and the exact scope
+required by that route. Agent JWTs and verified agent API keys use the issuer's
+array-form 'scopes' claim with these values: 'read', 'generate',
+'files:read', and 'files:write'. Missing, empty, mixed-type, unknown, or
+otherwise malformed agent scopes authorize no protected operation. The global
+'AIPOWERED_API_KEY' service principal is the only deliberately unrestricted
+credential.
+
+This is a compatibility change for legacy unscoped agent credentials. Before
+rollout, reissue scoped credentials or restore an explicitly documented issuer
+mapping. Do not restore broad access for empty scope lists.
+
 ### CORS origin policy
 
 The proxy uses CORS only to control whether a browser may read a response. It

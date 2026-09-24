@@ -6,19 +6,44 @@
  */
 
 import * as http from "node:http";
+import { generateKeyPairSync } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import jwt from "jsonwebtoken";
 import { createServer } from "../../src/ai-powered/server/index.js";
 import { _clearKeyCache } from "../../src/ai-powered/auth.js";
+import { proxyAuthDecision } from "../../src/ai-powered/server/auth.js";
 
 const SERVICE_KEY = "ap_sk_proxy_service_test";
 const AGENT_KEY = "fb_sk_agent_proxy_test";
 const REVOKED_KEY = "fb_sk_revoked_proxy_test";
 const WRONG_SCOPE_KEY = "fb_sk_wrong_scope_proxy_test";
+const EMPTY_SCOPE_KEY = "fb_sk_empty_scope_proxy_test";
+const MALFORMED_SCOPE_KEY = "fb_sk_malformed_scope_proxy_test";
+
+const { privateKey: jwtPrivateKey, publicKey: jwtPublicKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+});
+const JWT_PUBLIC_KEY = jwtPublicKey.export({ type: "spki", format: "pem" }).toString();
+const READ_ONLY_JWT = jwt.sign({ sub: "jwt-read-only", scopes: ["read"] }, jwtPrivateKey, {
+  algorithm: "RS256",
+});
+const EMPTY_SCOPES_JWT = jwt.sign({ sub: "jwt-empty", scopes: [] }, jwtPrivateKey, {
+  algorithm: "RS256",
+});
+const MALFORMED_SCOPES_JWT = jwt.sign(
+  { sub: "jwt-malformed", scopes: ["generate", 7] },
+  jwtPrivateKey,
+  { algorithm: "RS256" },
+);
+const GENERATE_JWT = jwt.sign({ sub: "jwt-generator", scopes: ["generate"] }, jwtPrivateKey, {
+  algorithm: "RS256",
+});
 
 let server: http.Server;
 let port: number;
 let savedApiKey: string | undefined;
 let savedAuthEndpoint: string | undefined;
+let savedJwtPublicKey: string | undefined;
 
 function readJson(res: http.IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -108,8 +133,10 @@ beforeAll(
     new Promise<void>((resolve) => {
       savedApiKey = process.env["AIPOWERED_API_KEY"];
       savedAuthEndpoint = process.env["AIPOWERED_AUTH_ENDPOINT"];
+      savedJwtPublicKey = process.env["AIPOWERED_JWT_PUBLIC_KEY"];
       process.env["AIPOWERED_API_KEY"] = SERVICE_KEY;
       process.env["AIPOWERED_AUTH_ENDPOINT"] = "https://auth.example.test";
+      process.env["AIPOWERED_JWT_PUBLIC_KEY"] = JWT_PUBLIC_KEY;
       const app = createServer({ mock: true, auth: { required: true } });
       server = app.listen(0, "127.0.0.1", () => {
         port = (server.address() as { port: number }).port;
@@ -127,6 +154,8 @@ afterAll(
       else process.env["AIPOWERED_API_KEY"] = savedApiKey;
       if (savedAuthEndpoint === undefined) delete process.env["AIPOWERED_AUTH_ENDPOINT"];
       else process.env["AIPOWERED_AUTH_ENDPOINT"] = savedAuthEndpoint;
+      if (savedJwtPublicKey === undefined) delete process.env["AIPOWERED_JWT_PUBLIC_KEY"];
+      else process.env["AIPOWERED_JWT_PUBLIC_KEY"] = savedJwtPublicKey;
       server.close((err) => (err ? reject(err) : resolve()));
     }),
 );
@@ -140,6 +169,19 @@ afterEach(() => {
 });
 
 describe("proxy caller authentication", () => {
+  it.each([
+    ["catalog reads", "GET", "/providers", "read"],
+    ["generation", "POST", "/text", "generate"],
+    ["file upload", "POST", "/upload", "files:write"],
+    ["file download", "GET", "/files/ref", "files:read"],
+    ["file delete", "DELETE", "/files/ref", "files:write"],
+  ] as const)("maps %s to the %s scope", (_label, method, path, expectedScope) => {
+    expect(proxyAuthDecision({ method, path })).toEqual({
+      public: false,
+      scope: expectedScope,
+    });
+  });
+
   it("rejects a direct non-browser request before provider work", async () => {
     const res = await request("POST", "/text", { prompt: "should not run" });
     const body = await readJson(res);
@@ -315,6 +357,98 @@ describe("proxy caller authentication", () => {
       error: "Authenticated caller lacks the required scope.",
       code: "AUTH_INSUFFICIENT_SCOPE",
     });
+  });
+
+  it.each([
+    {
+      label: "verified API key with empty scopes",
+      headers: { "X-AI-Agent-Key": EMPTY_SCOPE_KEY },
+      response: { agentId: "empty-scope-agent", scopes: [] },
+      authCalls: 1,
+    },
+    {
+      label: "verified API key without scopes",
+      headers: { "X-AI-Agent-Key": "fb_sk_absent_scope_proxy_test" },
+      response: { agentId: "absent-scope-agent" },
+      authCalls: 1,
+    },
+    {
+      label: "verified API key with malformed scopes",
+      headers: { "X-AI-Agent-Key": MALFORMED_SCOPE_KEY },
+      response: { agentId: "malformed-scope-agent", scopes: ["generate", 7] },
+      authCalls: 1,
+    },
+    {
+      label: "signed read-only JWT",
+      headers: { Authorization: "Bearer " + READ_ONLY_JWT },
+      response: undefined,
+      authCalls: 0,
+    },
+    {
+      label: "signed JWT with empty scopes",
+      headers: { Authorization: "Bearer " + EMPTY_SCOPES_JWT },
+      response: undefined,
+      authCalls: 0,
+    },
+    {
+      label: "signed JWT with malformed scopes",
+      headers: { Authorization: "Bearer " + MALFORMED_SCOPES_JWT },
+      response: undefined,
+      authCalls: 0,
+    },
+  ])(
+    "denies $label for generation and upload before provider or file work",
+    async ({ headers, response, authCalls }) => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => response,
+      });
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const generated = await request("POST", "/text", { prompt: "must be denied" }, headers);
+      expect(generated.statusCode).toBe(403);
+      expect(await readJson(generated)).toEqual({
+        error: "Authenticated caller lacks the required scope.",
+        code: "AUTH_INSUFFICIENT_SCOPE",
+      });
+
+      const uploaded = await multipartUpload("/upload", headers);
+      expect(uploaded.statusCode).toBe(403);
+      expect(await readJson(uploaded)).toEqual({
+        error: "Authenticated caller lacks the required scope.",
+        code: "AUTH_INSUFFICIENT_SCOPE",
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(authCalls);
+    },
+  );
+
+  it("enforces the signed JWT generate scope while preserving the service principal", async () => {
+    const restricted = await request(
+      "POST",
+      "/text",
+      { prompt: "read-only JWT must fail" },
+      { Authorization: "Bearer " + READ_ONLY_JWT },
+    );
+    expect(restricted.statusCode).toBe(403);
+
+    const generated = await request(
+      "POST",
+      "/text",
+      { prompt: "generate JWT may run" },
+      { Authorization: "Bearer " + GENERATE_JWT },
+    );
+    expect(generated.statusCode).toBe(200);
+    expect((await readJson(generated)).content).toBeTypeOf("string");
+
+    const service = await request(
+      "POST",
+      "/text",
+      { prompt: "service remains unrestricted" },
+      { "X-AI-API-Key": SERVICE_KEY },
+    );
+    expect(service.statusCode).toBe(200);
   });
 
   it("accepts a valid verified agent key with the generate scope", async () => {

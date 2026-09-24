@@ -287,6 +287,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
       req.aiPrincipal = {
         id: TEST_BYPASS_PRINCIPAL_ID,
         credentialType: "global",
+        unrestricted: true,
         scopes: [],
       };
       next();

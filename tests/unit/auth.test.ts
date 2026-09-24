@@ -88,6 +88,7 @@ describe("T-FB-02: resolveCredential — agentToken (JWT)", () => {
 
     expect(cred.type).toBe("jwt");
     expect(cred.agentId).toBe("agent-42");
+    expect(cred.unrestricted).toBe(false);
     expect(cred.scopes).toEqual([]);
     // jwt.verify called once with the right algorithm and clock tolerance
     expect(mockVerify).toHaveBeenCalledOnce();
@@ -104,6 +105,23 @@ describe("T-FB-02: resolveCredential — agentToken (JWT)", () => {
     const cred = await resolveCredential({ agentToken: "fake.jwt.token", agentId: "fallback-id" });
 
     expect(cred.agentId).toBe("fallback-id");
+  });
+
+  it.each([
+    ["absent scopes claim", undefined, []],
+    ["empty scopes claim", [], []],
+    ["mixed-type scopes claim", ["read", 7], []],
+    ["unknown scope claim", ["admin"], []],
+    ["valid scopes claim", ["read", "files:read"], ["read", "files:read"]],
+  ] as const)("validates %s without broadening authorization", async (_label, claim, expected) => {
+    const payload: jwt.JwtPayload & { scopes?: unknown } = { sub: "agent-scoped" };
+    if (claim !== undefined) payload.scopes = claim;
+    mockVerify.mockReturnValue(payload);
+
+    const cred = await resolveCredential({ agentToken: "fake.jwt.token" });
+
+    expect(cred.unrestricted).toBe(false);
+    expect(cred.scopes).toEqual(expected);
   });
 
   it("AC-02: expired JWT → throws AiPoweredError(AUTH_INVALID_TOKEN, retryable=false)", async () => {
@@ -204,8 +222,36 @@ describe("T-FB-03: resolveCredential — agentApiKey 60-second cache", () => {
 
     expect(cred.type).toBe("apikey");
     expect(cred.agentId).toBe("agent-cached");
+    expect(cred.unrestricted).toBe(false);
     expect(cred.scopes).toEqual(["generate"]);
   });
+
+  it.each([
+    ["absent scopes response", undefined, []],
+    ["empty scopes response", [], []],
+    ["mixed-type scopes response", ["generate", 7], []],
+    ["unknown scope response", ["admin"], []],
+    ["valid scopes response", ["generate", "files:write"], ["generate", "files:write"]],
+  ] as const)(
+    "validates %s without treating it as unrestricted",
+    async (_label, scopes, expected) => {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          agentId: "agent-scoped",
+          ...(scopes === undefined ? {} : { scopes }),
+        }),
+      });
+
+      const cred = await resolveCredential({
+        agentApiKey: FAKE_API_KEY + "-" + String(_label),
+      });
+
+      expect(cred.unrestricted).toBe(false);
+      expect(cred.scopes).toEqual(expected);
+    },
+  );
 
   it("non-OK response from verify-key → AiPoweredError(AUTH_INVALID_KEY, retryable=false)", async () => {
     fetchSpy.mockResolvedValueOnce({ ok: false, status: 401 });
@@ -273,6 +319,7 @@ describe("T-FB-04: resolveCredential — no credential → AUTH_MISSING", () => 
     const cred = await resolveCredential({});
     expect(cred.type).toBe("global");
     expect(cred.agentId).toBe("service");
+    expect(cred.unrestricted).toBe(true);
     delete process.env["AIPOWERED_API_KEY"];
   });
 });

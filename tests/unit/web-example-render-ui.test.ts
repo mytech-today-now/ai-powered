@@ -28,6 +28,20 @@ describe("web-example proxy UI", () => {
     expect(appJs).not.toContain("cycle-service.ps1 -Ngrok");
     expect(appJs).not.toContain("ngrok tunnel");
   });
+
+  it("gives scope denials accessible guidance with a state-preserving settings link", () => {
+    expect(indexHtml).toContain(
+      '<div id="global-error-toast" class="global-error hidden" role="alert" aria-live="assertive">',
+    );
+    expect(appJs).toContain(
+      "This credential does not allow this operation. Use a credential with the required permission.",
+    );
+    expect(appJs).toContain('globalErrorMsg.id = "proxy-auth-guidance"');
+    expect(appJs).toContain('describedBy.add("proxy-auth-guidance")');
+    expect(appJs).toContain("link.href = settingsUrlWithReturnPath()");
+    expect(appJs).toContain("Open Settings / Configuration to update it.");
+  });
+
   it("uses the requested header, history placement, and aligned control markup", () => {
     expect(indexHtml).toContain("<h1>AI-Powered</h1>");
     expect(indexHtml).toContain(

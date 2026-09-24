@@ -1906,7 +1906,7 @@
       case "AUTH_INVALID_KEY":
         return "The proxy caller credential was rejected or revoked. ";
       case "AUTH_INSUFFICIENT_SCOPE":
-        return "The proxy caller credential lacks permission for this action. ";
+        return "This credential does not allow this operation. Use a credential with the required permission. ";
       default:
         return "The proxy connection could not be authenticated. ";
     }
