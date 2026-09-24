@@ -13,6 +13,8 @@
     proxyUrl: "ai-powered:connection:proxy-url",
     provider: "ai-powered:direct:provider",
     apiKeyPrefix: "ai-powered:direct:api-key:",
+    callerCredential: "ai-powered:proxy:caller-credential",
+    callerCredentialType: "ai-powered:proxy:caller-credential-type",
     budget: "ai-powered:direct:budget-usd",
   });
 
@@ -105,6 +107,23 @@
     return { apiKey: raw };
   }
 
+  function normalizeCallerCredentialType(type) {
+    return type === "bearer" || type === "agent-key" || type === "api-key" ? type : "agent-key";
+  }
+
+  function readCallerCredential() {
+    const value =
+      safeStorage(localStorage).get(STORAGE_KEYS.callerCredential) ||
+      safeStorage(sessionStorage).get(STORAGE_KEYS.callerCredential) ||
+      "";
+    if (!value.trim()) return undefined;
+    const type = normalizeCallerCredentialType(
+      safeStorage(localStorage).get(STORAGE_KEYS.callerCredentialType) ||
+        safeStorage(sessionStorage).get(STORAGE_KEYS.callerCredentialType),
+    );
+    return { type, value: value.trim() };
+  }
+
   function readState() {
     const local = safeStorage(localStorage);
     const mode = local.get(STORAGE_KEYS.mode) === "direct" ? "direct" : "proxy";
@@ -113,6 +132,7 @@
       proxyUrl: local.get(STORAGE_KEYS.proxyUrl) || "",
       provider: normalizeProvider(local.get(STORAGE_KEYS.provider)),
       budget: local.get(STORAGE_KEYS.budget) || "",
+      callerCredential: readCallerCredential(),
     };
   }
 
@@ -121,11 +141,27 @@
     return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   }
 
-  function proxyHeaders(provider, proxyUrl) {
-    const headers = { "Content-Type": "application/json" };
+  function callerHeaders(proxyUrl, callerCredential) {
+    const headers = {};
     if (!isTrustedProxyUrl(proxyUrl || readState().proxyUrl)) return headers;
-    const encoded = encodeCredentials(readCredentialPayload(provider));
-    if (encoded) headers["X-AI-Provider-Credentials"] = encoded;
+    const credential = callerCredential ?? readCallerCredential();
+    if (!credential || !credential.value) return headers;
+    if (credential.type === "bearer") headers.Authorization = "Bearer " + credential.value;
+    if (credential.type === "agent-key") headers["X-AI-Agent-Key"] = credential.value;
+    if (credential.type === "api-key") headers["X-AI-API-Key"] = credential.value;
+    return headers;
+  }
+
+  function proxyHeaders(provider, proxyUrl, options) {
+    const headers =
+      options?.includeContentType === false ? {} : { "Content-Type": "application/json" };
+    const target = proxyUrl || readState().proxyUrl;
+    if (!isTrustedProxyUrl(target)) return headers;
+    Object.assign(headers, callerHeaders(target, options?.callerCredential));
+    if (options?.includeProvider !== false) {
+      const encoded = encodeCredentials(readCredentialPayload(provider));
+      if (encoded) headers["X-AI-Provider-Credentials"] = encoded;
+    }
     return headers;
   }
 
@@ -142,6 +178,9 @@
     readCredential,
     readCredentialPayload,
     credentialForRequest,
+    callerCredentialForRequest: readCallerCredential,
+    callerHeaders,
+    normalizeCallerCredentialType,
     proxyHeaders,
     readState,
   });

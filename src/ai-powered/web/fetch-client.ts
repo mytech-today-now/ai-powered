@@ -50,6 +50,17 @@ export interface WebCallOptions {
   providerCredential?: string | Record<string, string>;
 }
 
+/**
+ * Caller identity for a protected proxy request.
+ *
+ * Exactly one server-supported header is emitted for a credential. Provider
+ * credentials are intentionally kept in a separate option and header.
+ */
+export type WebCallerCredential =
+  | { type: "bearer"; value: string }
+  | { type: "agent-key"; value: string }
+  | { type: "api-key"; value: string };
+
 /** Music-generation controls accepted by WebAiClient.generateMusic(). */
 export interface WebMusicOptions extends WebCallOptions {
   lyrics?: string;
@@ -174,6 +185,8 @@ export interface WebProxyOptions {
   profile?: string;
   /** Optional request credential supplied by a trusted browser settings surface. */
   providerCredential?: string | Record<string, string>;
+  /** Optional caller identity for a protected proxy (Bearer, agent key, or service key). */
+  callerCredential?: WebCallerCredential;
 }
 
 /**
@@ -852,6 +865,46 @@ export class WebAiClient {
     if (value !== undefined) body[key] = value;
   }
 
+  private isTrustedProxyOrigin(value: string): boolean {
+    if (this.opts.mode !== "proxy") return false;
+    try {
+      const target = new URL(value);
+      const current = typeof location === "undefined" ? "" : location.origin;
+      return (
+        target.hostname === "localhost" ||
+        target.hostname === "127.0.0.1" ||
+        target.origin === current
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private isTrustedProxyResource(value: string): boolean {
+    if (this.opts.mode !== "proxy" || !this.isTrustedProxyOrigin(this.proxyBase)) return false;
+    try {
+      const resource = new URL(value, this.proxyBase);
+      const proxy = new URL(this.proxyBase);
+      return resource.origin === proxy.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  private callerHeaders(): Record<string, string> {
+    if (this.opts.mode !== "proxy") return {};
+    const credential = this.opts.callerCredential;
+    if (!credential || typeof credential.value !== "string" || !credential.value.trim()) {
+      return {};
+    }
+
+    const value = credential.value.trim();
+    if (credential.type === "bearer") return { Authorization: `Bearer ${value}` };
+    if (credential.type === "agent-key") return { "X-AI-Agent-Key": value };
+    if (credential.type === "api-key") return { "X-AI-API-Key": value };
+    return {};
+  }
+
   private addProxyRoutingFields(body: Record<string, unknown>, options?: WebCallOptions): void {
     this.setBodyField(body, "provider", options?.provider);
     this.setBodyField(body, "model", options?.model);
@@ -861,18 +914,8 @@ export class WebAiClient {
   private proxyHeaders(options?: WebCallOptions): Record<string, string> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.opts.mode !== "proxy") return headers;
-    let trusted = false;
-    try {
-      const target = new URL(this.proxyBase);
-      const current = typeof location === "undefined" ? "" : location.origin;
-      trusted =
-        target.hostname === "localhost" ||
-        target.hostname === "127.0.0.1" ||
-        target.origin === current;
-    } catch {
-      // Invalid proxy URLs remain untrusted.
-    }
-    if (!trusted) return headers;
+    if (!this.isTrustedProxyOrigin(this.proxyBase)) return headers;
+    Object.assign(headers, this.callerHeaders());
     const credential = options?.providerCredential ?? this.opts.providerCredential;
     if (credential === undefined) return headers;
     const payload = typeof credential === "string" ? { apiKey: credential } : credential;
@@ -880,6 +923,22 @@ export class WebAiClient {
       unescape(encodeURIComponent(JSON.stringify(payload))),
     );
     return headers;
+  }
+
+  private proxyResourceHeaders(resourceUrl: string): Record<string, string> {
+    return this.isTrustedProxyResource(resourceUrl) ? this.callerHeaders() : {};
+  }
+
+  private fetchProxyResource(resourceUrl: string, signal?: AbortSignal): Promise<Response> {
+    return this.fetchWithResilience(
+      () =>
+        fetch(resourceUrl, {
+          headers: this.proxyResourceHeaders(resourceUrl),
+          signal: signal ?? null,
+        }),
+      signal,
+      "safe-read",
+    );
   }
 
   private addProxyImageFields(body: Record<string, unknown>, options?: WebImageOptions): void {
@@ -937,6 +996,19 @@ export class WebAiClient {
       } catch {
         // Keep the raw text body when the error payload is not JSON.
       }
+    }
+    if (code === "AUTH_MISSING") {
+      message =
+        "Proxy access requires a caller credential. Open Settings / Configuration to connect.";
+    } else if (code === "AUTH_INVALID_TOKEN") {
+      message =
+        "The proxy caller credential is invalid or expired. Open Settings / Configuration to update it.";
+    } else if (code === "AUTH_INVALID_KEY") {
+      message =
+        "The proxy caller credential was rejected or revoked. Open Settings / Configuration to update it.";
+    } else if (code === "AUTH_INSUFFICIENT_SCOPE") {
+      message =
+        "The proxy caller credential lacks permission for this action. Open Settings / Configuration to update it.";
     }
     throw new WebProxyError(message || `HTTP ${res.status}`, code, res.status);
   }
@@ -1258,11 +1330,7 @@ export class WebAiClient {
       if (data.url) {
         // Capture into const so TypeScript preserves the string narrowing inside the closure.
         const imgUrl = data.url;
-        const imgRes = await this.fetchWithResilience(
-          () => fetch(imgUrl, { signal: options?.signal ?? null }),
-          options?.signal,
-          "safe-read",
-        );
+        const imgRes = await this.fetchProxyResource(imgUrl, options?.signal);
         return imgRes.blob();
       }
       if (data.b64_json) {
@@ -1556,11 +1624,7 @@ export class WebAiClient {
       if (data.url) {
         // Capture into const so TypeScript preserves the string narrowing inside the closure.
         const vidUrl = data.url;
-        const vidRes = await this.fetchWithResilience(
-          () => fetch(vidUrl, { signal: options?.signal ?? null }),
-          options?.signal,
-          "safe-read",
-        );
+        const vidRes = await this.fetchProxyResource(vidUrl, options?.signal);
         return vidRes.blob();
       }
       if (data.b64_json) {
@@ -1628,11 +1692,7 @@ export class WebAiClient {
     let audio: Blob;
     const mime = data.mimeType ?? "audio/mpeg";
     if (data.url) {
-      const audioResponse = await this.fetchWithResilience(
-        () => fetch(data.url!, { signal: options?.signal ?? null }),
-        options?.signal,
-        "safe-read",
-      );
+      const audioResponse = await this.fetchProxyResource(data.url, options?.signal);
       audio = await audioResponse.blob();
     } else {
       const encoded = data.b64_json ?? data.data;

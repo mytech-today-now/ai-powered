@@ -66,6 +66,43 @@ function request(
   });
 }
 
+function multipartUpload(
+  path: string,
+  headers: Record<string, string>,
+): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const boundary = "----ai-powered-auth-test";
+    const payload = Buffer.from(
+      [
+        `--${boundary}`,
+        'Content-Disposition: form-data; name="file"; filename="auth-test.txt"',
+        "Content-Type: text/plain",
+        "",
+        "authenticated file",
+        `--${boundary}--`,
+        "",
+      ].join("\r\n"),
+    );
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path,
+        method: "POST",
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": payload.length,
+          ...headers,
+        },
+      },
+      resolve,
+    );
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 beforeAll(
   () =>
     new Promise<void>((resolve) => {
@@ -140,6 +177,21 @@ describe("proxy caller authentication", () => {
     expect(JSON.stringify(body)).not.toContain(raw);
   });
 
+  it("rejects ambiguous caller credentials instead of choosing one", async () => {
+    const first = "first-caller-secret";
+    const second = "second-caller-secret";
+    const res = await request("GET", "/providers", undefined, {
+      "X-AI-Agent-Key": first,
+      "X-AI-API-Key": second,
+    });
+    const body = await readJson(res);
+
+    expect(res.statusCode).toBe(401);
+    expect(body.code).toBe("AUTH_INVALID_TOKEN");
+    expect(JSON.stringify(body)).not.toContain(first);
+    expect(JSON.stringify(body)).not.toContain(second);
+  });
+
   it("accepts the existing global service credential and reaches mock routes", async () => {
     const res = await request(
       "POST",
@@ -151,6 +203,75 @@ describe("proxy caller authentication", () => {
 
     expect(res.statusCode).toBe(200);
     expect(body).toHaveProperty("content");
+  });
+
+  it("accepts one caller credential across catalog, upload, generation, and owner file retrieval", async () => {
+    const providerOnlyFetch = vi.fn();
+    vi.stubGlobal("fetch", providerOnlyFetch);
+
+    const providerOnly = await request(
+      "POST",
+      "/text",
+      { prompt: "provider-only must fail" },
+      {
+        "X-AI-Provider-Credentials": Buffer.from(
+          JSON.stringify({ apiKey: "provider-only" }),
+        ).toString("base64"),
+      },
+    );
+    expect(providerOnly.statusCode).toBe(401);
+    expect((await readJson(providerOnly)).code).toBe("AUTH_MISSING");
+    expect(providerOnlyFetch).not.toHaveBeenCalled();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          agentId: "browser-agent",
+          scopes: ["read", "generate", "files:read", "files:write"],
+        }),
+      }),
+    );
+    const callerHeaders = {
+      "X-AI-Agent-Key": AGENT_KEY,
+      "X-AI-Provider-Credentials": Buffer.from(
+        JSON.stringify({ apiKey: "provider-only" }),
+      ).toString("base64"),
+    };
+
+    const catalog = await request("GET", "/providers", undefined, callerHeaders);
+    expect(catalog.statusCode).toBe(200);
+    expect(Array.isArray(await readJson(catalog))).toBe(true);
+
+    const generated = await request(
+      "POST",
+      "/text",
+      { prompt: "authenticated browser generation" },
+      callerHeaders,
+    );
+    expect(generated.statusCode).toBe(200);
+    expect((await readJson(generated)).content).toBeTypeOf("string");
+
+    const uploaded = await multipartUpload("/upload", callerHeaders);
+    expect(uploaded.statusCode).toBe(201);
+    const uploadBody = await readJson(uploaded);
+    const fileRef = uploadBody.fileRef;
+    expect(fileRef).toBeTypeOf("string");
+
+    const file = await request("GET", `/files/${fileRef as string}`, undefined, callerHeaders);
+    expect(file.statusCode).toBe(200);
+    expect(file.headers["cache-control"]).toBe("private, no-store");
+    expect(
+      await new Promise<string>((resolve, reject) => {
+        let body = "";
+        file.setEncoding("utf8");
+        file.on("data", (chunk) => (body += chunk));
+        file.on("end", () => resolve(body));
+        file.on("error", reject);
+      }),
+    ).toBe("authenticated file");
   });
 
   it("rejects a revoked agent key without echoing it", async () => {

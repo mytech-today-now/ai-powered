@@ -91,6 +91,118 @@ describe("WebAiClient.listModels", () => {
   });
 });
 
+describe("WebAiClient proxy caller authentication", () => {
+  it.each([
+    ["bearer", "Bearer browser-jwt"],
+    ["agent-key", "browser-agent-key"],
+    ["api-key", "browser-service-key"],
+  ] as const)(
+    "emits exactly one %s caller header alongside provider credentials",
+    async (type, value) => {
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        expect(atob(headers.get("X-AI-Provider-Credentials") ?? "")).toContain("provider-secret");
+        expect(headers.get("authorization")).toBe(type === "bearer" ? value : null);
+        expect(headers.get("X-AI-Agent-Key")).toBe(type === "agent-key" ? value : null);
+        expect(headers.get("X-AI-API-Key")).toBe(type === "api-key" ? value : null);
+        return jsonResponse([{ id: "mock-text-v1", name: "Mock Text", capabilities: ["text"] }]);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = createWebClient({
+        mode: "proxy",
+        proxyUrl: "http://localhost:3001",
+        providerCredential: { apiKey: "provider-secret" },
+        callerCredential: { type, value: value.replace(/^Bearer /, "") },
+      });
+
+      await expect(client.listModels()).resolves.toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("fails closed for unrelated proxy origins and sends neither credential class", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("X-AI-Agent-Key")).toBeNull();
+      expect(headers.get("X-AI-API-Key")).toBeNull();
+      expect(headers.get("X-AI-Provider-Credentials")).toBeNull();
+      expect(JSON.stringify(init?.body ?? "")).not.toContain("provider-secret");
+      return jsonResponse([{ id: "mock-text-v1", name: "Mock Text", capabilities: ["text"] }]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "https://unrelated.example",
+      providerCredential: { apiKey: "provider-secret" },
+      callerCredential: { type: "agent-key", value: "caller-secret" },
+    });
+
+    await expect(client.listModels()).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("maps protected proxy auth failures to stable, non-secret browser messages", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ error: "Authentication required.", code: "AUTH_MISSING" }, 401),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+    });
+    await expect(client.generateText("hello")).rejects.toMatchObject({
+      name: "ProxyError",
+      code: "AUTH_MISSING",
+      statusCode: 401,
+      message:
+        "Proxy access requires a caller credential. Open Settings / Configuration to connect.",
+    });
+  });
+
+  it("authenticates same-proxy media reads but not external media URLs", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async (_input: RequestInfo | URL) =>
+        jsonResponse({
+          url: "http://localhost:3001/files/protected-output",
+          cost: { totalUsd: 0, isEstimate: false },
+        }),
+      )
+      .mockImplementationOnce(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(new Headers(init?.headers).get("X-AI-Agent-Key")).toBe("caller-secret");
+        return new Response(Uint8Array.from([1, 2, 3]), { status: 200 });
+      })
+      .mockImplementationOnce(async (_input: RequestInfo | URL) =>
+        jsonResponse({
+          url: "https://cdn.example/output.png",
+          cost: { totalUsd: 0, isEstimate: false },
+        }),
+      )
+      .mockImplementationOnce(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("X-AI-Agent-Key")).toBeNull();
+        expect(headers.get("X-AI-Provider-Credentials")).toBeNull();
+        return new Response(Uint8Array.from([4, 5, 6]), { status: 200 });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "proxy",
+      proxyUrl: "http://localhost:3001",
+      providerCredential: { apiKey: "provider-secret" },
+      callerCredential: { type: "agent-key", value: "caller-secret" },
+    });
+
+    await expect(client.generateImage("same proxy")).resolves.toBeInstanceOf(Blob);
+    await expect(client.generateImage("external")).resolves.toBeInstanceOf(Blob);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe("WebAiClient direct text adapters", () => {
   it("sends a valid Anthropic Messages request and maps the response", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

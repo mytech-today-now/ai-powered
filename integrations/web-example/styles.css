@@ -2149,7 +2149,8 @@ body:has(.info-header) .info-shell {
   border: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.78rem;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .info-article,

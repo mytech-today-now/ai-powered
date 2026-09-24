@@ -94,6 +94,14 @@
     return _detected || DEFAULT_PROXY_URL;
   }
 
+  function settingsUrlWithReturnPath() {
+    const current = new URL(window.location.href);
+    const info = new URL("info.html", current);
+    info.searchParams.set("returnTo", current.pathname + current.search + current.hash);
+    info.hash = "settings-configuration";
+    return info.toString();
+  }
+
   function syncConnectionFromStorage() {
     const rawStoredMode = safeGetItem(localStorage, connectionStorageKeys.mode);
     const storedMode = rawStoredMode === "direct" ? "direct" : "proxy";
@@ -331,7 +339,9 @@
   async function verifyDirectCredential(provider, apiKey) {
     const baseUrl = DIRECT_PROVIDER_BASE_URLS[provider];
     if (!baseUrl) {
-      throw new Error(`The ${directProviderLabel(provider)} credential cannot be verified in this browser.`);
+      throw new Error(
+        `The ${directProviderLabel(provider)} credential cannot be verified in this browser.`,
+      );
     }
 
     const response = await fetch(`${baseUrl}/models`, {
@@ -398,7 +408,10 @@
     const value = apiKeyInput.value.trim();
     if (!value) {
       setCredentialInvalid(true);
-      setCredentialStatus("error", `Enter the ${directProviderLabel(provider)} credential before verifying.`);
+      setCredentialStatus(
+        "error",
+        `Enter the ${directProviderLabel(provider)} credential before verifying.`,
+      );
       return;
     }
 
@@ -424,7 +437,10 @@
     const value = apiKeyInput.value.trim();
     if (!value) {
       setCredentialInvalid(true);
-      setCredentialStatus("error", `Enter the ${directProviderLabel(provider)} credential before saving.`);
+      setCredentialStatus(
+        "error",
+        `Enter the ${directProviderLabel(provider)} credential before saving.`,
+      );
       return;
     }
 
@@ -466,7 +482,10 @@
       event.key.startsWith(directConfigStorageKeys.apiKeyPrefix)
     ) {
       syncDirectConfigFromStorage();
-      if (event.key === connectionStorageKeys.mode || event.key === connectionStorageKeys.proxyUrl) {
+      if (
+        event.key === connectionStorageKeys.mode ||
+        event.key === connectionStorageKeys.proxyUrl
+      ) {
         syncConnectionFromStorage();
         applyModeUi();
       }
@@ -629,7 +648,7 @@
   const btnOpenConfig = $("btn-open-config");
   if (btnOpenConfig) {
     btnOpenConfig.addEventListener("click", () => {
-      window.open("info.html#settings-configuration", "_blank", "noopener,noreferrer");
+      window.open(settingsUrlWithReturnPath(), "_blank", "noopener,noreferrer");
     });
   }
 
@@ -787,8 +806,18 @@
 
   function normalizeReferenceCache(stored) {
     const version = Array.isArray(stored) ? 0 : Number(stored?.schemaVersion ?? 0);
-    if (!stored || (typeof stored !== "object" && !Array.isArray(stored)) || !Number.isInteger(version) || version < 0 || version > BROWSER_REFERENCE_SCHEMA_VERSION) return null;
-    return { schemaVersion: version, items: Array.isArray(stored) ? stored : Array.isArray(stored.items) ? stored.items : [] };
+    if (
+      !stored ||
+      (typeof stored !== "object" && !Array.isArray(stored)) ||
+      !Number.isInteger(version) ||
+      version < 0 ||
+      version > BROWSER_REFERENCE_SCHEMA_VERSION
+    )
+      return null;
+    return {
+      schemaVersion: version,
+      items: Array.isArray(stored) ? stored : Array.isArray(stored.items) ? stored.items : [],
+    };
   }
   async function restorePersistedReferences() {
     let stored;
@@ -1101,17 +1130,11 @@
     let message = policy.modelLabel + " permits " + limit + ".";
     if (policy.imageMax === 0) {
       message =
-        policy.modelLabel +
-        " does not accept reference images. Remove them before processing.";
+        policy.modelLabel + " does not accept reference images. Remove them before processing.";
     } else if (used || excess) {
       message += " " + used + " will be used";
       if (excess) {
-        message +=
-          "; " +
-          excess +
-          " excess image" +
-          (excess === 1 ? "" : "s") +
-          " must be deleted";
+        message += "; " + excess + " excess image" + (excess === 1 ? "" : "s") + " must be deleted";
       }
       message += ".";
     }
@@ -1120,11 +1143,7 @@
     }
     if (invalid) {
       message +=
-        " " +
-        invalid +
-        " invalid reference" +
-        (invalid === 1 ? "" : "s") +
-        " must be removed.";
+        " " + invalid + " invalid reference" + (invalid === 1 ? "" : "s") + " must be removed.";
     }
 
     notice.textContent = message;
@@ -1359,6 +1378,7 @@
    * @param {unknown} error
    */
   function formatModelWarning(modality, provider, error) {
+    if (isProxyAuthError(error)) return proxyAuthDisplayMessage(error);
     const code =
       error && typeof error === "object" && typeof error.code === "string"
         ? ` (${error.code})`
@@ -1374,7 +1394,13 @@
               : "Model list unavailable."
           : "Model list unavailable.";
     const providerLabel = provider || "default provider";
-    const recoveryHint = error && typeof error === "object" && typeof error.code === "string" && error.code === "PROVIDER_INACTIVE" ? "Configure that provider on the proxy and try again." : "Keeping the current selection until the server recovers.";
+    const recoveryHint =
+      error &&
+      typeof error === "object" &&
+      typeof error.code === "string" &&
+      error.code === "PROVIDER_INACTIVE"
+        ? "Configure that provider on the proxy and try again."
+        : "Keeping the current selection until the server recovers.";
     return `Could not refresh ${modality} models for ${providerLabel}${code}: ${detail} ${recoveryHint}`;
   }
 
@@ -1589,9 +1615,7 @@
       (max, requirement) => Math.max(max, Number(requirement.max ?? 0)),
       0,
     );
-    const label = document.querySelector(
-      'label[for="' + inputId + '"]',
-    );
+    const label = document.querySelector('label[for="' + inputId + '"]');
     if (label) {
       label.textContent = maxReferences
         ? activeLabel + " (up to " + maxReferences + ")"
@@ -1744,7 +1768,15 @@
         providerHint !== undefined ? providerHint : (videoProviderSelect?.value ?? "");
       let url = base + "/models?modality=video";
       if (provider) url += "&provider=" + provider;
-      const models = await fetch(url).then((r) => r.json());
+      const response = await fetch(url, {
+        headers: SETTINGS.proxyHeaders(provider || SETTINGS.readState().provider, base),
+      });
+      if (!response.ok) {
+        const error = await proxyErrorFromResponse(response);
+        if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+        throw error;
+      }
+      const models = await response.json();
       videoModelsCache = Array.isArray(models) ? models : [];
 
       if (videoModelSelect) {
@@ -1800,6 +1832,7 @@
         mode: "proxy",
         proxyUrl: currentProxyUrl(),
         providerCredential: SETTINGS.credentialForRequest(settings.provider),
+        callerCredential: SETTINGS.callerCredentialForRequest(),
       });
     }
 
@@ -1844,12 +1877,88 @@
     el.appendChild(s);
   }
 
+  function proxyAuthCode(err) {
+    return err && typeof err === "object" && typeof err.code === "string"
+      ? err.code
+      : err && typeof err === "object" && err.statusCode === 401
+        ? "AUTH_INVALID_KEY"
+        : err && typeof err === "object" && err.statusCode === 403
+          ? "AUTH_INSUFFICIENT_SCOPE"
+          : "";
+  }
+
+  function isProxyAuthError(err) {
+    const code = proxyAuthCode(err);
+    return (
+      code === "AUTH_MISSING" ||
+      code === "AUTH_INVALID_TOKEN" ||
+      code === "AUTH_INVALID_KEY" ||
+      code === "AUTH_INSUFFICIENT_SCOPE"
+    );
+  }
+
+  function proxyAuthMessage(err) {
+    switch (proxyAuthCode(err)) {
+      case "AUTH_MISSING":
+        return "Proxy access requires a caller credential. ";
+      case "AUTH_INVALID_TOKEN":
+        return "The proxy caller credential is invalid or expired. ";
+      case "AUTH_INVALID_KEY":
+        return "The proxy caller credential was rejected or revoked. ";
+      case "AUTH_INSUFFICIENT_SCOPE":
+        return "The proxy caller credential lacks permission for this action. ";
+      default:
+        return "The proxy connection could not be authenticated. ";
+    }
+  }
+
+  function proxyAuthDisplayMessage(err) {
+    return (
+      proxyAuthMessage(err) +
+      (proxyAuthCode(err) === "AUTH_MISSING"
+        ? "Open Settings / Configuration to connect."
+        : "Open Settings / Configuration to update it.")
+    );
+  }
+
+  function showProxyAuthGuidance(err) {
+    if (!globalErrorToast || !globalErrorMsg) return;
+    globalErrorMsg.replaceChildren();
+    globalErrorMsg.id = "proxy-auth-guidance";
+    globalErrorMsg.appendChild(document.createTextNode(proxyAuthMessage(err)));
+    const link = document.createElement("a");
+    link.href = settingsUrlWithReturnPath();
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent =
+      proxyAuthCode(err) === "AUTH_MISSING"
+        ? "Open Settings / Configuration to connect."
+        : "Open Settings / Configuration to update it.";
+    globalErrorMsg.appendChild(link);
+    document
+      .querySelectorAll(".tab-panel button, .tab-panel input, .tab-panel select")
+      .forEach((control) => {
+        const describedBy = new Set(
+          (control.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean),
+        );
+        describedBy.add("proxy-auth-guidance");
+        control.setAttribute("aria-describedby", [...describedBy].join(" "));
+      });
+    globalErrorToast.className = "global-error global-error--error";
+    globalErrorToast.classList.remove("hidden");
+    clearTimeout(showGlobalError._timer);
+    showGlobalError._timer = setTimeout(clearGlobalError, 15000);
+  }
+
   function showError(el, err) {
     if (!el) return;
+    if (isProxyAuthError(err)) showProxyAuthGuidance(err);
     el.innerHTML = "";
     const s = document.createElement("span");
     s.className = "error-msg";
-    s.textContent = "Error: " + (err instanceof Error ? err.message : String(err));
+    s.textContent = isProxyAuthError(err)
+      ? proxyAuthDisplayMessage(err)
+      : "Error: " + (err instanceof Error ? err.message : String(err));
     el.appendChild(s);
   }
 
@@ -2199,11 +2308,23 @@
      * @param {number} statusCode  HTTP status code from the proxy
      * @param {string} message     Human-readable error text from the JSON body
      */
-    constructor(statusCode, message) {
+    constructor(statusCode, message, code = "") {
       super(message);
       this.name = "ProxyError";
       this.statusCode = statusCode;
+      this.code = code;
     }
+  }
+
+  async function proxyErrorFromResponse(resp) {
+    let message = "Server error " + resp.status;
+    let code = "";
+    try {
+      const payload = await resp.json();
+      message = payload.error ?? payload.message ?? message;
+      code = typeof payload.code === "string" ? payload.code : "";
+    } catch (_) {}
+    return new ProxyError(resp.status, message, code);
   }
 
   /* ── Proxy fetch helpers ─────────────────────────────────── */
@@ -2229,11 +2350,15 @@
 
     if (!resp.ok) {
       let msg = `Server error ${resp.status}`;
+      let code = "";
       try {
         const j = await resp.json();
         msg = j.error ?? j.message ?? msg;
+        code = typeof j.code === "string" ? j.code : "";
       } catch (_) {}
-      throw new ProxyError(resp.status, msg);
+      const error = new ProxyError(resp.status, msg, code);
+      if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+      throw error;
     }
     return resp.json();
   }
@@ -2253,13 +2378,35 @@
     }
     if (!resp.ok) {
       let msg = `Server error ${resp.status}`;
+      let code = "";
       try {
         const j = await resp.json();
         msg = j.error ?? j.message ?? msg;
+        code = typeof j.code === "string" ? j.code : "";
       } catch (_) {}
-      throw new ProxyError(resp.status, msg);
+      const error = new ProxyError(resp.status, msg, code);
+      if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+      throw error;
     }
     return resp; // caller reads resp.body
+  }
+
+  function proxyMediaHeaders(resourceUrl) {
+    const base = currentProxyUrl();
+    try {
+      if (!SETTINGS.isTrustedProxyUrl(base)) return {};
+      if (new URL(resourceUrl, base).origin !== new URL(base).origin) return {};
+      return SETTINGS.callerHeaders(base);
+    } catch {
+      return {};
+    }
+  }
+
+  async function fetchProxyMedia(resourceUrl, init = {}) {
+    return fetch(resourceUrl, {
+      ...init,
+      headers: { ...proxyMediaHeaders(resourceUrl), ...(init.headers || {}) },
+    });
   }
 
   /**
@@ -2361,7 +2508,14 @@
 
     let resp;
     try {
-      resp = await fetch(base + "/upload", { method: "POST", body: formData });
+      resp = await fetch(base + "/upload", {
+        method: "POST",
+        headers: SETTINGS.proxyHeaders(provider || SETTINGS.readState().provider, base, {
+          includeContentType: false,
+          includeProvider: false,
+        }),
+        body: formData,
+      });
     } catch (_networkErr) {
       throw new Error(
         "Cannot reach proxy server at " + base + ". " + "Start it with: npm run serve",
@@ -2371,15 +2525,19 @@
       // Parse JSON error body (e.g. { error: "Unsupported file type…" }) so the
       // user sees a plain sentence rather than a raw JSON string.
       let msg = `Server error ${resp.status}`;
+      let code = "";
       try {
         const j = await resp.json();
         msg = j.error ?? msg;
+        code = typeof j.code === "string" ? j.code : "";
       } catch (_) {
         try {
           msg = (await resp.text()) || msg;
         } catch (_2) {}
       }
-      throw new Error(msg);
+      const error = new ProxyError(resp.status, msg, code);
+      if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+      throw error;
     }
     const { fileRef } = await resp.json();
     currentFileRef = fileRef;
@@ -2443,17 +2601,28 @@
     if (provider) formData.append("provider", provider);
     let resp;
     try {
-      resp = await fetch(base + "/upload", { method: "POST", body: formData });
+      resp = await fetch(base + "/upload", {
+        method: "POST",
+        headers: SETTINGS.proxyHeaders(provider || SETTINGS.readState().provider, base, {
+          includeContentType: false,
+          includeProvider: false,
+        }),
+        body: formData,
+      });
     } catch (_) {
       throw new Error("Cannot reach the configured proxy server at " + base + ".");
     }
     if (!resp.ok) {
       let msg = `Server error ${resp.status}`;
+      let code = "";
       try {
         const j = await resp.json();
         msg = j.error ?? msg;
+        code = typeof j.code === "string" ? j.code : "";
       } catch (_) {}
-      throw new Error(msg);
+      const error = new ProxyError(resp.status, msg, code);
+      if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+      throw error;
     }
     const { fileRef } = await resp.json();
     return fileRef;
@@ -2755,9 +2924,7 @@
       moveReference,
       retryPending: () =>
         Promise.all(
-          items
-            .filter((item) => item.uploadState === "pending")
-            .map((item) => uploadItem(item)),
+          items.filter((item) => item.uploadState === "pending").map((item) => uploadItem(item)),
         ),
     };
   }
@@ -2813,7 +2980,13 @@
       }
 
       if (!resp.ok) {
-        showModelWarning(selectEl, formatModelWarning(modality, provider, models));
+        const error = new ProxyError(
+          resp.status,
+          typeof models?.error === "string" ? models.error : "Model list unavailable.",
+          typeof models?.code === "string" ? models.code : "",
+        );
+        if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+        showModelWarning(selectEl, formatModelWarning(modality, provider, error));
         return;
       }
 
@@ -2850,7 +3023,13 @@
           return;
         }
         if (!resp.ok) {
-          showModelWarning(selectEl, formatModelWarning(modality, provider, models));
+          const error = new ProxyError(
+            resp.status,
+            typeof models?.error === "string" ? models.error : "Model list unavailable.",
+            typeof models?.code === "string" ? models.code : "",
+          );
+          if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+          showModelWarning(selectEl, formatModelWarning(modality, provider, error));
           return;
         }
       }
@@ -2869,6 +3048,11 @@
         selectEl.appendChild(opt);
       });
     } catch (_networkErr) {
+      if (isProxyAuthError(_networkErr)) {
+        showProxyAuthGuidance(_networkErr);
+        showModelWarning(selectEl, formatModelWarning(modality, provider, _networkErr));
+        return;
+      }
       clearModelWarning(selectEl);
       if (selectEl.options.length === 1) {
         selectEl.options[0].text = "Default (server unreachable)";
@@ -2915,8 +3099,7 @@
     if (currentMode() !== "proxy") return false;
 
     const state = tabState.get(modality) ?? {};
-    const provider =
-      providerOverride !== undefined ? providerOverride : state.provider || "";
+    const provider = providerOverride !== undefined ? providerOverride : state.provider || "";
     const modelSel = MODEL_SELECTS[modality];
     if (!modelSel) return false;
 
@@ -2966,13 +3149,11 @@
 
     const currentState = tabState.get(modality) ?? {};
     const currentModel =
-      providerOverride === undefined
-        ? modelSel.value || currentState.model || preferredModel
-        : "";
+      providerOverride === undefined ? modelSel.value || currentState.model || preferredModel : "";
     const model =
       currentModel && modelList.some((candidate) => candidate.id === currentModel)
         ? currentModel
-        : autoSelectCheapest(modelList) ?? "";
+        : (autoSelectCheapest(modelList) ?? "");
 
     populateModelSelect(modelSel, modelList, "No compatible models", model);
     modelSel.value = model;
@@ -3150,7 +3331,15 @@
     if (currentMode() !== "proxy") return;
     const base = currentProxyUrl();
     try {
-      const data = await fetch(base + "/providers").then((r) => r.json());
+      const response = await fetch(base + "/providers", {
+        headers: SETTINGS.proxyHeaders(SETTINGS.readState().provider, base),
+      });
+      if (!response.ok) {
+        const error = await proxyErrorFromResponse(response);
+        if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+        throw error;
+      }
+      const data = await response.json();
       allProviders = data; // cache full list (including inactive) for modality filtering
 
       // TASK-13 (Phase 4): Populate all five per-tab provider <select> elements as
@@ -3162,6 +3351,10 @@
       }
       clearGlobalError();
     } catch (err) {
+      if (isProxyAuthError(err)) {
+        showProxyAuthGuidance(err);
+        return;
+      }
       if (err instanceof TypeError) {
         showGlobalError(`Cannot reach proxy at ${base} — start it with: npm run serve`);
       } else {
@@ -3285,21 +3478,24 @@
     }
     if (isProxy) loadProviders();
   }
-  if (modeSelect) modeSelect.addEventListener("change", () => {
-    safeSetItem(localStorage,
-      connectionStorageKeys.mode,
-      modeSelect.value === "direct" ? "direct" : "proxy",
-    );
-    applyModeUi();
-  });
+  if (modeSelect)
+    modeSelect.addEventListener("change", () => {
+      safeSetItem(
+        localStorage,
+        connectionStorageKeys.mode,
+        modeSelect.value === "direct" ? "direct" : "proxy",
+      );
+      applyModeUi();
+    });
 
   // Reload providers when proxy URL changes (debounced)
   let _proxyUrlTimer = null;
-  if (proxyUrlInput) proxyUrlInput.addEventListener("input", () => {
-    safeSetItem(localStorage, connectionStorageKeys.proxyUrl, proxyUrlInput.value.trim());
-    clearTimeout(_proxyUrlTimer);
-    _proxyUrlTimer = setTimeout(loadProviders, 600);
-  });
+  if (proxyUrlInput)
+    proxyUrlInput.addEventListener("input", () => {
+      safeSetItem(localStorage, connectionStorageKeys.proxyUrl, proxyUrlInput.value.trim());
+      clearTimeout(_proxyUrlTimer);
+      _proxyUrlTimer = setTimeout(loadProviders, 600);
+    });
   // ── Per-tab provider change listeners (TASK-09) ──────────────────────────────
   // One listener per modality.  When the user picks a different provider:
   //   1. Fetch + repopulate only that tab's model select via loadTabModels.
@@ -3690,7 +3886,12 @@
   }
 
   function sanitizeHistoryValue(value) {
-    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
       return typeof value === "string" ? sanitizeHistoryText(value) : value;
     }
     if (Array.isArray(value)) return value.map((entry) => sanitizeHistoryValue(entry));
@@ -4000,7 +4201,8 @@
     if (value instanceof Node) {
       dd.appendChild(value);
     } else {
-      dd.textContent = value === null || value === undefined || value === "" ? "Not recorded" : String(value);
+      dd.textContent =
+        value === null || value === undefined || value === "" ? "Not recorded" : String(value);
     }
     container.append(dt, dd);
   }
@@ -4008,7 +4210,8 @@
   function appendHistoryDetails(container, record) {
     const event = historyEventForRecord(record);
     const requested = event.requested && typeof event.requested === "object" ? event.requested : {};
-    const options = requested.options && typeof requested.options === "object" ? requested.options : {};
+    const options =
+      requested.options && typeof requested.options === "object" ? requested.options : {};
     const result = event.result && typeof event.result === "object" ? event.result : {};
     const routing = event.routing && typeof event.routing === "object" ? event.routing : {};
     const error = event.error && typeof event.error === "object" ? event.error : null;
@@ -4024,14 +4227,40 @@
     effectivePrompt.textContent = requested.effectivePrompt ?? record.prompt ?? "";
     appendHistoryField(grid, "Effective prompt", effectivePrompt);
     appendHistoryField(grid, "Negative prompt", options.negativePrompt ?? null);
-    appendHistoryField(grid, "Provider", `${routing.providerRequested ?? record.provider ?? "Not recorded"} -> ${routing.providerUsed ?? record.provider ?? "Not recorded"}`);
-    appendHistoryField(grid, "Model", `${routing.modelRequested ?? record.model ?? "Not recorded"} -> ${routing.modelUsed ?? record.model ?? "Not recorded"}`);
-    appendHistoryField(grid, "Seed", Object.prototype.hasOwnProperty.call(options, "seed") ? options.seed : record.seed);
-    appendHistoryField(grid, "Requested duration", Object.prototype.hasOwnProperty.call(options, "duration") ? options.duration : record.duration);
+    appendHistoryField(
+      grid,
+      "Provider",
+      `${routing.providerRequested ?? record.provider ?? "Not recorded"} -> ${routing.providerUsed ?? record.provider ?? "Not recorded"}`,
+    );
+    appendHistoryField(
+      grid,
+      "Model",
+      `${routing.modelRequested ?? record.model ?? "Not recorded"} -> ${routing.modelUsed ?? record.model ?? "Not recorded"}`,
+    );
+    appendHistoryField(
+      grid,
+      "Seed",
+      Object.prototype.hasOwnProperty.call(options, "seed") ? options.seed : record.seed,
+    );
+    appendHistoryField(
+      grid,
+      "Requested duration",
+      Object.prototype.hasOwnProperty.call(options, "duration")
+        ? options.duration
+        : record.duration,
+    );
     appendHistoryField(grid, "Result duration", result.actualDuration ?? null);
-    appendHistoryField(grid, "Elapsed processing", event.elapsedMs === null || event.elapsedMs === undefined ? null : `${event.elapsedMs} ms`);
+    appendHistoryField(
+      grid,
+      "Elapsed processing",
+      event.elapsedMs === null || event.elapsedMs === undefined ? null : `${event.elapsedMs} ms`,
+    );
     appendHistoryField(grid, "Aspect ratio", options.aspectRatio ?? record.aspectRatio);
-    appendHistoryField(grid, "Dimensions", options.width || options.height ? `${options.width ?? "?"} x ${options.height ?? "?"}` : null);
+    appendHistoryField(
+      grid,
+      "Dimensions",
+      options.width || options.height ? `${options.width ?? "?"} x ${options.height ?? "?"}` : null,
+    );
     appendHistoryField(grid, "Resolution", options.resolution ?? record.resolution);
     appendHistoryField(grid, "Quality", options.quality ?? record.quality);
     appendHistoryField(grid, "FPS", options.fps ?? record.fps);
@@ -4071,8 +4300,17 @@
     );
     appendHistoryField(grid, "Usage", result.usage ? JSON.stringify(result.usage) : null);
     appendHistoryField(grid, "Cost", result.cost ? JSON.stringify(result.cost) : null);
-    appendHistoryField(grid, "Routing", `${routing.sentReferenceCount ?? 0} of ${routing.requestedReferenceCount ?? references.length} references sent`);
-    if (error) appendHistoryField(grid, "Error", `${error.code ?? "PROCESSING_ERROR"}: ${error.message ?? "Unknown error"}`);
+    appendHistoryField(
+      grid,
+      "Routing",
+      `${routing.sentReferenceCount ?? 0} of ${routing.requestedReferenceCount ?? references.length} references sent`,
+    );
+    if (error)
+      appendHistoryField(
+        grid,
+        "Error",
+        `${error.code ?? "PROCESSING_ERROR"}: ${error.message ?? "Unknown error"}`,
+      );
     container.appendChild(grid);
   }
 
@@ -4661,7 +4899,7 @@
         if (imgResult.data && imgResult.data.startsWith("data:")) {
           blob = dataUriToBlob(imgResult.data);
         } else if (imgResult.data && /^https?:\/\//.test(imgResult.data)) {
-          const imgResp = await fetch(imgResult.data);
+          const imgResp = await fetchProxyMedia(imgResult.data);
           blob = await imgResp.blob();
         } else if (imgResult.b64_json) {
           blob = base64ToBlob(imgResult.b64_json, imgResult.mimeType || "image/png");
@@ -4721,7 +4959,9 @@
           artifactBlob: blob,
           artifactFileName,
           artifactMimeType: blob.type || imgResult?.mimeType || "image/png",
-          artifactUrl: imgResult?.url ?? (imgResult?.data && /^https?:\/\//.test(imgResult.data) ? imgResult.data : null),
+          artifactUrl:
+            imgResult?.url ??
+            (imgResult?.data && /^https?:\/\//.test(imgResult.data) ? imgResult.data : null),
         }),
       });
     } catch (err) {
@@ -4987,34 +5227,28 @@
       const transcriptBlob = new Blob([text], { type: "text/plain" });
       const completedAt = new Date().toISOString();
       const artifactFileName = "transcript.txt";
-      await persistArtifactRecord(
-        "audio",
+      await persistArtifactRecord("audio", originalPrompt, text, transcriptBlob, {
         originalPrompt,
-        text,
-        transcriptBlob,
-        {
+        fileName: artifactFileName,
+        mimeType: "text/plain",
+        preview: transcriptBlob,
+        actualProvider: transcribeResult?.provider,
+        actualModel: transcribeResult?.model,
+        historyEvent: buildHistoryEvent({
+          modality: "audio",
           originalPrompt,
-          fileName: artifactFileName,
-          mimeType: "text/plain",
-          preview: transcriptBlob,
-          actualProvider: transcribeResult?.provider,
-          actualModel: transcribeResult?.model,
-          historyEvent: buildHistoryEvent({
-            modality: "audio",
-            originalPrompt,
-            effectivePrompt: originalPrompt,
-            requestPayload: transcribeRequestPayload,
-            requestedProvider,
-            requestedModel,
-            startedAt,
-            completedAt,
-            response: transcribeResult,
-            artifactBlob: transcriptBlob,
-            artifactFileName,
-            artifactMimeType: "text/plain",
-          }),
-        },
-      );
+          effectivePrompt: originalPrompt,
+          requestPayload: transcribeRequestPayload,
+          requestedProvider,
+          requestedModel,
+          startedAt,
+          completedAt,
+          response: transcribeResult,
+          artifactBlob: transcriptBlob,
+          artifactFileName,
+          artifactMimeType: "text/plain",
+        }),
+      });
     } catch (err) {
       await persistArtifactRecord("audio", originalPrompt, "", null, {
         status: "error",
@@ -5432,8 +5666,8 @@
   const BATCH_PREFLIGHT_WARNING =
     "Batch compatibility check unavailable. Server-side validation will still run.";
   const BATCH_PREFLIGHT_UNVERIFIED_WARNING =
-    'Some image URLs returned 405 to HEAD, so the browser demo retried GET. ' +
-    'Those shots are unverified, but Run stays enabled.';
+    "Some image URLs returned 405 to HEAD, so the browser demo retried GET. " +
+    "Those shots are unverified, but Run stays enabled.";
 
   function showBatchPreflightWarning(message) {
     renderBatchWarning("batch-preflight-warning", message);
@@ -5507,7 +5741,10 @@
       }
       const base = currentProxyUrl();
       const url = `${base}/pricing?modality=video&model=${encodeURIComponent(model)}`;
-      const res = await fetch(url, { signal: preflightAbortController.signal });
+      const res = await fetch(url, {
+        headers: SETTINGS.proxyHeaders(SETTINGS.readState().provider, base),
+        signal: preflightAbortController.signal,
+      });
       if (!res.ok) return null;
       const data = await res.json();
       const rate = data?.perVideoUsd ?? data?.pricePerUnit;
@@ -5657,7 +5894,9 @@
     if (currentMode() === "proxy") {
       const base = currentProxyUrl();
       try {
-        const resp = await fetch(`${base}/providers`);
+        const resp = await fetch(`${base}/providers`, {
+          headers: SETTINGS.proxyHeaders(SETTINGS.readState().provider, base),
+        });
         if (resp.ok) {
           const all = await resp.json();
           liveProviders = all
@@ -5702,17 +5941,17 @@
             const headAc = new AbortController();
             const headTimer = setTimeout(() => headAc.abort(), 5000);
             try {
-              const headResponse = await fetch(url, { method: 'HEAD', signal: headAc.signal });
+              const headResponse = await fetch(url, { method: "HEAD", signal: headAc.signal });
               if (headResponse.ok) {
-                return { state: 'ok' };
+                return { state: "ok" };
               }
               if (headResponse.status === 405) {
                 const getAc = new AbortController();
                 const getTimer = setTimeout(() => getAc.abort(), 5000);
                 try {
-                  const getResponse = await fetch(url, { method: 'GET', signal: getAc.signal });
+                  const getResponse = await fetch(url, { method: "GET", signal: getAc.signal });
                   if (getResponse.ok) {
-                    return { state: 'unverified' };
+                    return { state: "unverified" };
                   }
                 } catch {
                   /* GET fallback failed, treat the URL as blocked */
@@ -5720,18 +5959,18 @@
                   clearTimeout(getTimer);
                 }
               }
-              return { state: 'blocked' };
+              return { state: "blocked" };
             } catch {
-              return { state: 'blocked' };
+              return { state: "blocked" };
             } finally {
               clearTimeout(headTimer);
             }
           }),
         );
-        const anyBlocked = urlResults.some((result) => result.state === 'blocked');
-        const anyUnverified = urlResults.some((result) => result.state === 'unverified');
-        const firstBadIdx = urlResults.findIndex((result) => result.state === 'blocked');
-        const firstUnverifiedIdx = urlResults.findIndex((result) => result.state === 'unverified');
+        const anyBlocked = urlResults.some((result) => result.state === "blocked");
+        const anyUnverified = urlResults.some((result) => result.state === "unverified");
+        const firstBadIdx = urlResults.findIndex((result) => result.state === "blocked");
+        const firstUnverifiedIdx = urlResults.findIndex((result) => result.state === "unverified");
         const routing = selectI2VProvider(selectedProvider, urls.length, liveProviders);
         const noLiveProvider = !liveProviders.length;
 
@@ -5740,32 +5979,34 @@
           title,
           isBlocker = false;
         if (anyBlocked) {
-          icon = '❌';
+          icon = "❌";
           isBlocker = true;
-          title = 'Image URL unreachable: ' + urls[firstBadIdx];
+          title = "Image URL unreachable: " + urls[firstBadIdx];
         } else if (noLiveProvider && urls.length > 0) {
-          icon = '❌';
+          icon = "❌";
           isBlocker = true;
-          title = 'No live video provider available — start the proxy with a valid API key';
+          title = "No live video provider available — start the proxy with a valid API key";
         } else if (anyUnverified) {
-          icon = '⚠️';
-          title = 'HEAD returned 405; GET succeeded, so this URL is only unverified: ' + urls[firstUnverifiedIdx];
+          icon = "⚠️";
+          title =
+            "HEAD returned 405; GET succeeded, so this URL is only unverified: " +
+            urls[firstUnverifiedIdx];
           if (routing.warning) {
-            title += ' · ' + routing.warning;
+            title += " · " + routing.warning;
             if (routing.alternativeProviders && routing.alternativeProviders.length) {
-              title += ' (alternatives: ' + routing.alternativeProviders.join(', ') + ')';
+              title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
             }
           }
           hasUnverifiedUrl = true;
         } else if (routing.warning) {
-          icon = '⚠️';
+          icon = "⚠️";
           title = routing.warning;
           if (routing.alternativeProviders && routing.alternativeProviders.length) {
-            title += ' (alternatives: ' + routing.alternativeProviders.join(', ') + ')';
+            title += " (alternatives: " + routing.alternativeProviders.join(", ") + ")";
           }
         } else {
-          icon = '✅';
-          title = 'Provider: ' + routing.provider + ' · ' + urls.length + ' image(s) accepted';
+          icon = "✅";
+          title = "Provider: " + routing.provider + " · " + urls.length + " image(s) accepted";
         }
         if (isBlocker) hasBlockingError = true;
 
@@ -6157,7 +6398,7 @@ ${combinedSection}${shotCards}
     });
   }
 
-    /* ── STITCH VIDEOS ────────────────────────────────────────── */
+  /* ── STITCH VIDEOS ────────────────────────────────────────── */
 
   /**
    * Concatenate all successful video clips in `resultItems` with the browser
@@ -6246,7 +6487,9 @@ ${combinedSection}${shotCards}
     const ffmpeg = new window._FFmpeg();
     const progressHandler = ({ progress }) => {
       if (!combinedVideoStatus) return;
-      const pct = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress * 100))) : 0;
+      const pct = Number.isFinite(progress)
+        ? Math.max(0, Math.min(100, Math.round(progress * 100)))
+        : 0;
       combinedVideoStatus.textContent = `Stitching ${clips.length} clips… ${pct}%`;
     };
     ffmpeg.on("progress", progressHandler);
@@ -6254,7 +6497,8 @@ ${combinedSection}${shotCards}
     const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.10/dist/umd";
 
     try {
-      if (combinedVideoStatus) combinedVideoStatus.textContent = `Loading FFmpeg for ${clips.length} clips…`;
+      if (combinedVideoStatus)
+        combinedVideoStatus.textContent = `Loading FFmpeg for ${clips.length} clips…`;
       await ffmpeg.load({
         coreURL: await window._toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
         wasmURL: await window._toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
@@ -6271,7 +6515,8 @@ ${combinedSection}${shotCards}
         clips.map((clip) => `file ${clip.inputName}`).join("\n") + "\n",
       );
 
-      if (combinedVideoStatus) combinedVideoStatus.textContent = `Stitching ${clips.length} clips… 0%`;
+      if (combinedVideoStatus)
+        combinedVideoStatus.textContent = `Stitching ${clips.length} clips… 0%`;
 
       const exitCode = await ffmpeg.exec([
         "-y",
@@ -6290,7 +6535,8 @@ ${combinedSection}${shotCards}
       }
 
       const combinedFile = await ffmpeg.readFile("combined.mp4");
-      const bytes = combinedFile instanceof Uint8Array ? combinedFile : new Uint8Array(combinedFile);
+      const bytes =
+        combinedFile instanceof Uint8Array ? combinedFile : new Uint8Array(combinedFile);
       const blob = new Blob([bytes], { type: "video/mp4" });
       const dataUri = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -6323,7 +6569,7 @@ ${combinedSection}${shotCards}
         }
       }
     }
-  }/* ── DURATION ERROR MESSAGING (spec: duration-error-messaging/spec.md) ── */
+  } /* ── DURATION ERROR MESSAGING (spec: duration-error-messaging/spec.md) ── */
 
   /**
    * Format a video API error body into a human-readable message.
@@ -6517,18 +6763,25 @@ ${combinedSection}${shotCards}
     try {
       const resp = await fetch(proxyBase + "/batch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: SETTINGS.proxyHeaders(
+          payload.provider || SETTINGS.readState().provider,
+          proxyBase,
+        ),
         body: JSON.stringify(payload),
         signal: batchAbortController.signal,
       });
 
       if (!resp.ok) {
         let msg = resp.statusText;
+        let code = "";
         try {
           const j = await resp.json();
           msg = j.error || msg;
+          code = typeof j.code === "string" ? j.code : "";
         } catch (_) {}
-        throw new Error("HTTP " + resp.status + ": " + msg);
+        const error = new ProxyError(resp.status, "HTTP " + resp.status + ": " + msg, code);
+        if (isProxyAuthError(error)) showProxyAuthGuidance(error);
+        throw error;
       }
 
       // Read NDJSON stream
@@ -6810,7 +7063,7 @@ ${combinedSection}${shotCards}
       } else if (videoResult.b64_json) {
         blob = base64ToBlob(videoResult.b64_json, videoResult.mimeType || "video/mp4");
       } else if (videoResult.url) {
-        const vidResp = await fetch(videoResult.url);
+        const vidResp = await fetchProxyMedia(videoResult.url);
         blob = await vidResp.blob();
       } else {
         throw new Error("No video data returned from proxy.");
@@ -6991,8 +7244,15 @@ ${combinedSection}${shotCards}
       renderJson(structuredOutput, structuredResult.data);
       addUsage(structuredResult?.usage ?? null, structuredResult?.cost ?? null);
       const providerModel =
-        "Provider: " + (structuredResult.provider || "—") + " · Model: " + (structuredResult.model || "—");
-      setUsageText(structuredUsage, structuredResult?.usage ?? null, structuredResult?.cost ?? null);
+        "Provider: " +
+        (structuredResult.provider || "—") +
+        " · Model: " +
+        (structuredResult.model || "—");
+      setUsageText(
+        structuredUsage,
+        structuredResult?.usage ?? null,
+        structuredResult?.cost ?? null,
+      );
       structuredUsage.textContent =
         (structuredUsage.textContent ? structuredUsage.textContent + " · " : "") + providerModel;
       const structuredText =
@@ -7254,7 +7514,7 @@ ${combinedSection}${shotCards}
       } else if (descriptor.modality === "image") {
         const blob = descriptor.dataUrl
           ? dataUrlToBlob(descriptor.dataUrl)
-          : await fetch(descriptor.srcUrl).then((r) => r.blob());
+          : await fetchProxyMedia(descriptor.srcUrl).then((r) => r.blob());
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         showToolbarFeedback(btn, "✓ Copied");
       }
@@ -7272,7 +7532,7 @@ ${combinedSection}${shotCards}
       if (descriptor.dataUrl) {
         blob = dataUrlToBlob(descriptor.dataUrl);
       } else if (descriptor.srcUrl) {
-        const resp = await fetch(descriptor.srcUrl);
+        const resp = await fetchProxyMedia(descriptor.srcUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         blob = await resp.blob();
       } else if (descriptor.text) {
@@ -7791,14 +8051,3 @@ ${combinedSection}${shotCards}
   // Spec bd-95zq: initMicButtons() SHALL be called during page initialisation.
   initMicButtons();
 })(); // end IIFE
-
-
-
-
-
-
-
-
-
-
-

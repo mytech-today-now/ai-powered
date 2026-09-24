@@ -66,7 +66,7 @@
             </div>
             <div class="settings-actions">
               <button id="btn-reset-settings" class="btn btn-ghost" type="button">Reset</button>
-              <a class="btn btn-ghost" href="index.html">Open app</a>
+              <a id="open-app-link" class="btn btn-ghost" href="index.html">Open app</a>
             </div>
           </div>
 
@@ -87,8 +87,47 @@
               />
             </div>
             <p class="hint">
-              Proxy mode keeps provider keys on the server. Leave the URL blank to fall back to
-              the local proxy endpoint.
+              Proxy mode keeps provider keys on the server. Leave the URL blank to fall back to the
+              local proxy endpoint.
+            </p>
+            <div class="direct-row settings-credential-row">
+              <label for="caller-credential-type">Caller credential type:</label>
+              <select id="caller-credential-type">
+                <option value="agent-key">Agent API key</option>
+                <option value="bearer">Bearer JWT</option>
+                <option value="api-key">Service API key</option>
+              </select>
+              <label for="caller-credential-input">Caller credential:</label>
+              <input
+                id="caller-credential-input"
+                type="password"
+                placeholder="Enter the proxy caller credential"
+                spellcheck="false"
+                autocomplete="off"
+                aria-describedby="caller-credential-status"
+              />
+              <div class="settings-credential-actions">
+                <button id="btn-save-caller-credential" class="btn btn-primary" type="button">
+                  Save caller credential
+                </button>
+                <button id="btn-clear-caller-credential" class="btn btn-ghost" type="button">
+                  Clear
+                </button>
+                <span
+                  id="caller-credential-status"
+                  class="info-status credential-status"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  data-state="idle"
+                >
+                  Enter a caller credential to access a protected proxy.
+                </span>
+              </div>
+            </div>
+            <p class="hint">
+              Caller identity is separate from provider credentials and is sent only to a trusted
+              proxy origin. It is never added to request bodies, URLs, or public HTML.
             </p>
           </div>
 
@@ -124,9 +163,7 @@
                 autocomplete="off"
               />
               <div class="settings-credential-actions">
-                <button id="btn-verify-settings" class="btn btn-ghost" type="button">
-                  Verify
-                </button>
+                <button id="btn-verify-settings" class="btn btn-ghost" type="button">Verify</button>
                 <button id="btn-save-settings" class="btn btn-primary" type="button">Save</button>
                 <span
                   id="credential-status"
@@ -155,8 +192,8 @@
               Never use a production key here. Use proxy mode in production environments.
             </div>
             <p class="hint">
-              Changes are stored locally in this browser and will update the main app in other
-              tabs on the same origin.
+              Changes are stored locally in this browser and will update the main app in other tabs
+              on the same origin.
             </p>
           </div>
         </section>
@@ -168,4 +205,3 @@
     <script src="info.js"></script>
   </body>
 </html>
-

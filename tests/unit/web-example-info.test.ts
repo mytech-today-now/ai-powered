@@ -42,6 +42,17 @@ function renderInfoDom(): void {
               />
             </div>
             <p class="hint">Proxy mode keeps provider keys on the server.</p>
+            <label for="caller-credential-type">Caller credential type:</label>
+            <select id="caller-credential-type">
+              <option value="agent-key">Agent API key</option>
+              <option value="bearer">Bearer JWT</option>
+              <option value="api-key">Service API key</option>
+            </select>
+            <label for="caller-credential-input">Caller credential:</label>
+            <input id="caller-credential-input" type="password" aria-describedby="caller-credential-status" />
+            <button id="btn-save-caller-credential" type="button">Save caller credential</button>
+            <button id="btn-clear-caller-credential" type="button">Clear</button>
+            <span id="caller-credential-status" role="status" aria-live="polite" aria-atomic="true"></span>
           </div>
           <div class="connection-config direct-config">
             <div class="direct-row settings-credential-row">
@@ -82,7 +93,7 @@ function renderInfoDom(): void {
               <input id="direct-budget" type="number" />
             </div>
             <button id="btn-reset-settings" type="button">Reset</button>
-            <a class="btn btn-ghost" href="index.html">Open app</a>
+            <a id="open-app-link" class="btn btn-ghost" href="index.html">Open app</a>
             <div class="security-warning">
               ⚠ WARNING: Direct mode exposes your API key in browser DevTools and network traffic.
               Never use a production key here. Use proxy mode in production environments.
@@ -114,6 +125,15 @@ function getSettingsElements() {
     proxyUrlInput: document.getElementById("proxy-url") as HTMLInputElement,
     providerSelect: document.getElementById("provider-select") as HTMLSelectElement,
     credentialInput: document.getElementById("api-key-input") as HTMLInputElement,
+    callerCredentialType: document.getElementById("caller-credential-type") as HTMLSelectElement,
+    callerCredentialInput: document.getElementById("caller-credential-input") as HTMLInputElement,
+    saveCallerCredentialButton: document.getElementById(
+      "btn-save-caller-credential",
+    ) as HTMLButtonElement,
+    clearCallerCredentialButton: document.getElementById(
+      "btn-clear-caller-credential",
+    ) as HTMLButtonElement,
+    callerCredentialStatus: document.getElementById("caller-credential-status") as HTMLSpanElement,
     budgetInput: document.getElementById("direct-budget") as HTMLInputElement,
     verifyButton: document.getElementById("btn-verify-settings") as HTMLButtonElement,
     saveButton: document.getElementById("btn-save-settings") as HTMLButtonElement,
@@ -367,5 +387,62 @@ describe("web-example info page", () => {
     expect(getSettingsElements().proxyUrlInput.value).toBe("http://localhost:3001");
     expect(getSettingsElements().providerSelect.value).toBe("openai");
     expect(getSettingsElements().credentialInput.value).toBe("");
+  });
+
+  it("stores caller identity separately and exposes only trusted caller headers", async () => {
+    await mountInfoPage();
+    await settle();
+
+    const {
+      callerCredentialType,
+      callerCredentialInput,
+      saveCallerCredentialButton,
+      callerCredentialStatus,
+    } = getSettingsElements();
+    callerCredentialType.value = "api-key";
+    callerCredentialInput.value = "service-caller-secret";
+    callerCredentialInput.dispatchEvent(new Event("input", { bubbles: true }));
+    saveCallerCredentialButton.click();
+    await settle();
+
+    expect(window.localStorage.getItem("ai-powered:proxy:caller-credential")).toBe(
+      "service-caller-secret",
+    );
+    expect(window.localStorage.getItem("ai-powered:proxy:caller-credential-type")).toBe("api-key");
+    expect(callerCredentialStatus.getAttribute("role")).toBe("status");
+    expect(callerCredentialInput.getAttribute("aria-describedby")).toContain(
+      "caller-credential-status",
+    );
+
+    const settings = (
+      window as unknown as {
+        AiPoweredSettings: {
+          proxyHeaders: (provider: string, proxyUrl: string) => Record<string, string>;
+        };
+      }
+    ).AiPoweredSettings;
+    expect(settings.proxyHeaders("openai", "http://localhost:3001")).toMatchObject({
+      "X-AI-API-Key": "service-caller-secret",
+    });
+    expect(settings.proxyHeaders("openai", "https://untrusted.example")).toEqual({
+      "Content-Type": "application/json",
+    });
+    expect(
+      JSON.stringify(settings.proxyHeaders("openai", "https://untrusted.example")),
+    ).not.toContain("service-caller-secret");
+  });
+
+  it("keeps the settings return link same-origin and relative", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/info.html?returnTo=%2Findex.html%3Ftab%3Dvideo%23single%26prompt%3Dkept#settings-configuration",
+    );
+    await mountInfoPage();
+    await settle();
+
+    const link = document.getElementById("open-app-link") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/index.html?tab=video#single&prompt=kept");
+    expect(new URL(link.href).origin).toBe(window.location.origin);
   });
 });

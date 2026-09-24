@@ -49,6 +49,11 @@
   const proxyUrlInput = document.getElementById("proxy-url");
   const providerSelect = document.getElementById("provider-select");
   const credentialInput = document.getElementById("api-key-input");
+  const callerCredentialType = document.getElementById("caller-credential-type");
+  const callerCredentialInput = document.getElementById("caller-credential-input");
+  const callerCredentialStatus = document.getElementById("caller-credential-status");
+  const saveCallerCredentialButton = document.getElementById("btn-save-caller-credential");
+  const clearCallerCredentialButton = document.getElementById("btn-clear-caller-credential");
   const directBudgetInput = document.getElementById("direct-budget");
   const verifyButton = document.getElementById("btn-verify-settings");
   const saveButton = document.getElementById("btn-save-settings");
@@ -58,6 +63,7 @@
   const readmeStatus = document.getElementById("readme-status");
   const tabButtons = Array.from(document.querySelectorAll(".info-tab-btn, .tab-btn"));
   const tabPanels = Array.from(document.querySelectorAll(".info-panel, .tab-panel"));
+  const openAppLink = document.getElementById("open-app-link");
 
   function normalizeProvider(provider) {
     return typeof provider === "string" && KNOWN_PROVIDERS.has(provider)
@@ -104,7 +110,8 @@
     try {
       return storage.getItem(key);
     } catch {
-      credentialStorageState = credentialStorageState === "available" ? "session" : credentialStorageState;
+      credentialStorageState =
+        credentialStorageState === "available" ? "session" : credentialStorageState;
       return null;
     }
   }
@@ -148,6 +155,59 @@
     if (storedProxyUrl === null) {
       safeSetItem(localStorage, STORAGE_KEYS.proxyUrl, proxyUrl);
     }
+  }
+
+  function setCallerCredentialStatus(state, message) {
+    if (!callerCredentialStatus) return;
+    callerCredentialStatus.dataset.state = state;
+    callerCredentialStatus.textContent = message;
+  }
+
+  function syncCallerCredentialFromStorage() {
+    const credential = SETTINGS.callerCredentialForRequest();
+    if (callerCredentialType) {
+      callerCredentialType.value = credential?.type ?? "agent-key";
+    }
+    if (callerCredentialInput) {
+      callerCredentialInput.value = credential?.value ?? "";
+      setCallerCredentialStatus(
+        credential ? "saved" : "idle",
+        credential
+          ? "Caller credential saved in this browser."
+          : "Enter a caller credential to access a protected proxy.",
+      );
+    }
+  }
+
+  function storeCallerCredential(type, value) {
+    const credentialType = SETTINGS.normalizeCallerCredentialType(type);
+    const trimmed = value.trim();
+    const localValue = safeSetItem(localStorage, STORAGE_KEYS.callerCredential, trimmed);
+    const localType = safeSetItem(localStorage, STORAGE_KEYS.callerCredentialType, credentialType);
+    if (localValue && localType) {
+      safeRemoveItem(sessionStorage, STORAGE_KEYS.callerCredential);
+      safeRemoveItem(sessionStorage, STORAGE_KEYS.callerCredentialType);
+      return "local";
+    }
+    const sessionValue = safeSetItem(sessionStorage, STORAGE_KEYS.callerCredential, trimmed);
+    const sessionType = safeSetItem(
+      sessionStorage,
+      STORAGE_KEYS.callerCredentialType,
+      credentialType,
+    );
+    if (sessionValue && sessionType) {
+      credentialStorageState = "session";
+      return "session";
+    }
+    return "memory";
+  }
+
+  function clearCallerCredential() {
+    safeRemoveItem(localStorage, STORAGE_KEYS.callerCredential);
+    safeRemoveItem(localStorage, STORAGE_KEYS.callerCredentialType);
+    safeRemoveItem(sessionStorage, STORAGE_KEYS.callerCredential);
+    safeRemoveItem(sessionStorage, STORAGE_KEYS.callerCredentialType);
+    syncCallerCredentialFromStorage();
   }
 
   function resolveCredential(provider) {
@@ -247,10 +307,7 @@
     }
 
     if (credentialStorageState === "available") {
-      setCredentialStatus(
-        "idle",
-        `${providerLabel(provider)} credential ready to verify or save.`,
-      );
+      setCredentialStatus("idle", `${providerLabel(provider)} credential ready to verify or save.`);
     } else {
       setCredentialStatus(
         "warning",
@@ -264,6 +321,7 @@
     const storedBudget = safeGetItem(localStorage, STORAGE_KEYS.budget);
 
     syncConnectionFromStorage();
+    syncCallerCredentialFromStorage();
 
     if (providerSelect) {
       providerSelect.value = storedProvider;
@@ -410,21 +468,44 @@
     persistProxyUrl();
   }
 
+  function handleCallerCredentialInput() {
+    if (!callerCredentialInput) return;
+    setCallerCredentialStatus(
+      callerCredentialInput.value.trim() ? "idle" : "warning",
+      callerCredentialInput.value.trim()
+        ? "Caller credential ready to save."
+        : "Enter a caller credential to access a protected proxy.",
+    );
+  }
+
+  function handleCallerCredentialSave() {
+    if (!callerCredentialInput || !callerCredentialType) return;
+    const value = callerCredentialInput.value.trim();
+    if (!value) {
+      callerCredentialInput.setAttribute("aria-invalid", "true");
+      setCallerCredentialStatus("error", "Enter a caller credential before saving.");
+      return;
+    }
+    callerCredentialInput.setAttribute("aria-invalid", "false");
+    const storage = storeCallerCredential(callerCredentialType.value, value);
+    callerCredentialInput.value = value;
+    setCallerCredentialStatus(
+      storage === "local" ? "saved" : "warning",
+      storage === "local"
+        ? "Caller credential saved in this browser."
+        : "Caller credential saved for this session only because browser storage is unavailable.",
+    );
+  }
+
   function handleCredentialInput() {
     if (!credentialInput || !providerSelect) return;
     setCredentialInvalid(false);
     const provider = normalizeProvider(providerSelect.value);
     const value = credentialInput.value.trim();
     if (value) {
-      setCredentialStatus(
-        "idle",
-        `${providerLabel(provider)} credential ready to verify or save.`,
-      );
+      setCredentialStatus("idle", `${providerLabel(provider)} credential ready to verify or save.`);
     } else {
-      setCredentialStatus(
-        "idle",
-        `Enter a new ${providerLabel(provider)} credential.`,
-      );
+      setCredentialStatus("idle", `Enter a new ${providerLabel(provider)} credential.`);
     }
   }
 
@@ -509,6 +590,7 @@
     localStorage.removeItem(STORAGE_KEYS.proxyUrl);
     localStorage.removeItem(STORAGE_KEYS.provider);
     localStorage.removeItem(STORAGE_KEYS.budget);
+    clearCallerCredential();
     for (const provider of DIRECT_PROVIDER_NAMES) {
       localStorage.removeItem(credentialStorageKey(provider));
       sessionStorage.removeItem(credentialStorageKey(provider));
@@ -529,6 +611,8 @@
       event.key === STORAGE_KEYS.proxyUrl ||
       event.key === STORAGE_KEYS.provider ||
       event.key === STORAGE_KEYS.budget ||
+      event.key === STORAGE_KEYS.callerCredential ||
+      event.key === STORAGE_KEYS.callerCredentialType ||
       event.key.startsWith(STORAGE_KEYS.apiKeyPrefix)
     ) {
       syncSettingsFromStorage();
@@ -540,6 +624,15 @@
   }
   if (proxyUrlInput) {
     proxyUrlInput.addEventListener("input", handleProxyUrlInput);
+  }
+  if (callerCredentialInput) {
+    callerCredentialInput.addEventListener("input", handleCallerCredentialInput);
+  }
+  if (saveCallerCredentialButton) {
+    saveCallerCredentialButton.addEventListener("click", handleCallerCredentialSave);
+  }
+  if (clearCallerCredentialButton) {
+    clearCallerCredentialButton.addEventListener("click", clearCallerCredential);
   }
   if (providerSelect) {
     providerSelect.addEventListener("change", handleProviderChange);
@@ -573,16 +666,23 @@
 
   window.addEventListener("storage", handleStorageEvent);
 
+  function validatedReturnPath() {
+    const raw = new URLSearchParams(window.location.search).get("returnTo");
+    if (!raw || /^[A-Za-z][A-Za-z0-9+.-]*:|^\/\//.test(raw)) return "index.html";
+    try {
+      const target = new URL(raw, window.location.origin);
+      if (target.origin !== window.location.origin) return "index.html";
+      return target.pathname + target.search + target.hash;
+    } catch {
+      return "index.html";
+    }
+  }
+
+  if (openAppLink) {
+    openAppLink.setAttribute("href", validatedReturnPath());
+  }
+
   syncSettingsFromStorage();
   setActiveTab(getTabFromHash(), false);
   void renderReadmeOverview();
 })();
-
-
-
-
-
-
-
-
-
