@@ -54,8 +54,10 @@ import {
 import {
   BudgetExceededError,
   AllProvidersExhaustedError,
+  CircuitOpenError,
   ProviderCapabilityError,
   ProviderError,
+  ValidationError,
 } from "../types.js";
 import { getLogger, serializePublicConfig } from "../utils.js";
 import { LimitsValidator } from "../limits-validator.js";
@@ -71,12 +73,20 @@ import {
   stitchLimitError,
   type ResourcePolicy,
 } from "./resource-policy.js";
+import {
+  getRequestId,
+  sendPublicError,
+  serializeErrorForLog,
+  serializePublicError,
+} from "./error-contract.js";
 import { selectI2VProvider } from "./smart-default.js";
 import { mountCompatRoutes } from "./compat/index.js";
 import { inferProviderFromModel } from "./compat/model-router.js";
 import {
   createProviderFileCapability,
   deleteAuthorizedFileRef,
+  assertFileRefCapacity,
+  FileRefCapacityError,
   lookupAuthorizedFileRef,
   lookupProviderFileCapability,
   buildFileContentBlock,
@@ -480,8 +490,10 @@ const StitchBodySchema = z.object({
 function parseBody<T>(schema: z.ZodSchema<T>, req: Request, res: Response): T | null {
   const result = schema.safeParse(req.body);
   if (!result.success) {
-    res.status(400).json({
-      error: "Validation error",
+    sendPublicError(res, result.error, {
+      statusCode: 400,
+      code: "VALIDATION_ERROR",
+      message: "Validation error",
       issues: result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
     });
     return null;
@@ -539,9 +551,11 @@ function readRequestProviderCredentials(
     if (Object.keys(credentials).length === 0) throw new Error("empty credential object");
     return credentials;
   } catch {
-    res
-      .status(400)
-      .json({ error: "Invalid provider credential header.", code: "INVALID_CREDENTIALS" });
+    sendPublicError(res, undefined, {
+      statusCode: 400,
+      code: "INVALID_CREDENTIALS",
+      message: "Invalid provider credential header.",
+    });
     return null;
   }
 }
@@ -583,30 +597,17 @@ function buildOverrides(
 
 /** Map domain errors to appropriate HTTP status codes. */
 function mapError(err: unknown, res: Response): boolean {
-  if (err instanceof ResourcePolicyError) {
-    if (err.code === "REQUEST_ABORTED") return true;
-    res.status(err.statusCode).json({
-      error: err.message,
-      code: err.code,
-      limit: err.limit,
-    });
-    return true;
-  }
-  if (err instanceof BudgetExceededError) {
-    res.status(402).json({ error: err.message, code: "BUDGET_EXCEEDED" });
-    return true;
-  }
-  if (err instanceof AllProvidersExhaustedError) {
-    res.status(503).json({ error: err.message, code: "ALL_PROVIDERS_EXHAUSTED" });
-    return true;
-  }
   if (
-    err instanceof ProviderError &&
-    err.statusCode !== undefined &&
-    err.statusCode >= 400 &&
-    err.statusCode < 500
+    err instanceof ResourcePolicyError ||
+    err instanceof BudgetExceededError ||
+    err instanceof AllProvidersExhaustedError ||
+    err instanceof CircuitOpenError ||
+    err instanceof ProviderCapabilityError ||
+    err instanceof ProviderError ||
+    err instanceof ValidationError
   ) {
-    res.status(err.statusCode).json({ error: err.message, code: err.code });
+    if (err instanceof ResourcePolicyError && err.code === "REQUEST_ABORTED") return true;
+    sendPublicError(res, err);
     return true;
   }
   return false;
@@ -630,8 +631,14 @@ function providerSetupErrorMessage(providerId: string | undefined, err: unknown)
 }
 
 function modelListErrorMessage(err: unknown): string {
-  if (err instanceof ProviderError) {
-    return err.message.replace(/^\[[^\]]+\]\s*/, "");
+  if (err instanceof ProviderError && (err.statusCode === 401 || err.statusCode === 403)) {
+    return "The provider rejected the configured credentials. Check Settings / Configuration and try again.";
+  }
+  if (err instanceof ProviderError && err.statusCode === 429) {
+    return "The provider is rate limiting model discovery. Wait and try again.";
+  }
+  if (err instanceof ProviderError && err.statusCode !== undefined && err.statusCode >= 500) {
+    return "The provider is temporarily unavailable for model discovery. Wait and try again.";
   }
   return "Model listing failed.";
 }
@@ -702,7 +709,8 @@ function resolveFileRef(
   if (!entry) {
     return {
       status: 400,
-      error: "Attachment was not found or expired. Re-upload the file and try again.",
+      error:
+        "Attachment was not found or expired. The proxy may have restarted, or this ref may have expired. Re-upload the file and try again.",
     };
   }
   try {
@@ -939,8 +947,14 @@ export function createRouter(
       const cfg = loadConfig({ flags: overrides as never });
       res.json(serializePublicConfig(cfg));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ error: msg });
+      const publicError = sendPublicError(res, err, {
+        code: "CONFIG_ERROR",
+        message: "Configuration could not be loaded. Try again later.",
+      });
+      getLogger().error(
+        { requestId: publicError.body.requestId, error: serializeErrorForLog(err) },
+        "GET /config failed",
+      );
     }
   });
 
@@ -954,9 +968,15 @@ export function createRouter(
         res.setHeader("Cache-Control", "no-store");
         res.type("text/markdown; charset=utf-8").send(markdown);
       } catch (err) {
-        res.status(502).json({
-          error: err instanceof Error ? err.message : String(err),
+        const publicError = sendPublicError(res, err, {
+          statusCode: 502,
+          code: "INFO_README_UNAVAILABLE",
+          message: "The local README is temporarily unavailable. Try again later.",
         });
+        getLogger().error(
+          { requestId: publicError.body.requestId, error: serializeErrorForLog(err) },
+          "GET /info/readme failed",
+        );
       }
     }),
   );
@@ -1190,15 +1210,29 @@ export function createRouter(
       return;
     }
 
-    const fileRef = storeFileRef({
-      ownerId,
-      filename: file.originalname,
-      mimeType,
-      sizeBytes: file.size,
-      base64Content,
-      provider,
-      ...(model ? { model } : {}),
-    });
+    let fileRef: string;
+    try {
+      // Check before the entry is added to the store. The store repeats this
+      // check so direct callers and future async upload paths remain safe.
+      assertFileRefCapacity(ownerId, file.size);
+      fileRef = storeFileRef({
+        ownerId,
+        filename: file.originalname,
+        mimeType,
+        sizeBytes: file.size,
+        base64Content,
+        provider,
+        ...(model ? { model } : {}),
+      });
+    } catch (err) {
+      if (!(err instanceof FileRefCapacityError)) throw err;
+      getLogger().warn(
+        { principalId: ownerId, sizeBytes: file.size, reason: err.reason },
+        "POST /upload: file storage capacity exceeded",
+      );
+      res.status(413).json({ error: err.message, code: err.code });
+      return;
+    }
 
     getLogger().info(
       { principalId: ownerId, mimeType, sizeBytes: file.size, provider },
@@ -1334,8 +1368,8 @@ export function createRouter(
       } catch (err) {
         if (mapError(err, res)) return;
         // Send error as SSE event before closing the stream
-        const msg = err instanceof Error ? err.message : String(err);
-        res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+        const publicError = serializePublicError(err, getRequestId(res));
+        res.write(`data: ${JSON.stringify(publicError.body)}\n\n`);
         res.end();
         next(err);
       }
@@ -1878,7 +1912,7 @@ export function createRouter(
           );
         } catch (err) {
           // Per-item errors are written as NDJSON lines — they do NOT abort the stream.
-          const msg = err instanceof Error ? err.message : String(err);
+          const publicError = serializePublicError(err, getRequestId(res));
           res.write(
             JSON.stringify({
               index: i,
@@ -1886,7 +1920,11 @@ export function createRouter(
               modality: item.modality,
               prompt,
               status: "error",
-              error: msg,
+              error: publicError.body.error,
+              code: publicError.body.code,
+              errorStatus: publicError.body.status,
+              requestId: publicError.body.requestId,
+              retryable: publicError.body.retryable,
             }) + "\n",
           );
           // Still propagate budget/exhaustion errors so the caller can decide.

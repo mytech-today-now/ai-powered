@@ -33,7 +33,7 @@ import { maskApiKey, estimateCost, estimateTokens, initLogger } from "../utils.j
 import { ValidationError } from "../types.js";
 import { listTemplates, getTemplate, renderTemplate } from "../templates/index.js";
 import { runWizard } from "./wizard.js";
-import { startServer } from "../server/index.js";
+import { closeServer, startServer } from "../server/index.js";
 
 // ---------------------------------------------------------------------------
 // Exit-code constants
@@ -1357,7 +1357,7 @@ const serveCmd = new Command("serve")
       const onShutdown = (): void => {
         process.off("SIGINT", onShutdown);
         process.off("SIGTERM", onShutdown);
-        resolve();
+        void closeServer().then(resolve, resolve);
       };
       process.once("SIGINT", onShutdown);
       process.once("SIGTERM", onShutdown);

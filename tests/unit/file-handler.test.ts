@@ -11,11 +11,15 @@
 
 import {
   buildFileContentBlock,
+  createFileRefStore,
+  FILE_REF_BUFFER_CACHE_MAX_BYTES,
   FILE_REF_TTL_MS,
+  FileRefCapacityError,
   _clearFileRefStore,
   _getFileRefStoreSize,
   deleteFileRef,
   getFileRefCacheStats,
+  getFileRefStoreStats,
   lookupFileRef,
   normalizeStoredFilename,
   readFileRefBuffer,
@@ -539,6 +543,8 @@ describe("file ref cache + path safety", () => {
       misses: 0,
       fileRefs: 1,
       bufferEntries: 0,
+      storedBytes: 1024,
+      bufferBytes: 0,
     });
 
     const first = readFileRefBuffer(token);
@@ -552,6 +558,8 @@ describe("file ref cache + path safety", () => {
       misses: 1,
       fileRefs: 1,
       bufferEntries: 1,
+      storedBytes: 1024,
+      bufferBytes: 4,
     });
 
     expect(deleteFileRef(token)).toBe(true);
@@ -561,6 +569,178 @@ describe("file ref cache + path safety", () => {
       misses: 2,
       fileRefs: 0,
       bufferEntries: 0,
+      storedBytes: 0,
+      bufferBytes: 0,
     });
+  });
+});
+
+describe("bounded file ref stores", () => {
+  const entry = (ownerId: string, sizeBytes: number, content = B64) => ({
+    filename: "bounded.png",
+    mimeType: PNG_MIME,
+    sizeBytes,
+    base64Content: content,
+    ownerId,
+    provider: "openai",
+  });
+
+  it("rejects aggregate count and byte quotas before storing a new ref", () => {
+    const countStore = createFileRefStore({
+      maxCount: 1,
+      maxBytes: 100,
+      maxCountPerOwner: 10,
+      maxBytesPerOwner: 100,
+      bufferCacheMaxBytes: 4,
+    });
+    countStore.storeFileRef(entry("owner-a", 1));
+    expect(() => countStore.storeFileRef(entry("owner-b", 1))).toThrow(FileRefCapacityError);
+    expect(() => countStore.storeFileRef(entry("owner-b", 1))).toThrow(
+      expect.objectContaining({ reason: "global-count" }),
+    );
+    expect(countStore.getFileRefStoreStats().fileRefs).toBe(1);
+    countStore.clear();
+
+    const byteStore = createFileRefStore({
+      maxCount: 10,
+      maxBytes: 5,
+      maxCountPerOwner: 10,
+      maxBytesPerOwner: 5,
+      bufferCacheMaxBytes: 4,
+    });
+    byteStore.storeFileRef(entry("owner-a", 5));
+    expect(() => byteStore.storeFileRef(entry("owner-b", 1))).toThrow(
+      expect.objectContaining({ reason: "global-bytes" }),
+    );
+    expect(getFileRefStoreStats().storedBytes).toBe(0);
+    expect(byteStore.getFileRefStoreStats().storedBytes).toBe(5);
+    byteStore.clear();
+  });
+
+  it("enforces per-principal count and byte quotas", () => {
+    const byteStore = createFileRefStore({
+      maxCount: 10,
+      maxBytes: 100,
+      maxCountPerOwner: 10,
+      maxBytesPerOwner: 5,
+      bufferCacheMaxBytes: 4,
+    });
+    byteStore.storeFileRef(entry("owner-a", 5));
+    expect(() => byteStore.storeFileRef(entry("owner-a", 1))).toThrow(
+      expect.objectContaining({ reason: "principal-bytes" }),
+    );
+    byteStore.clear();
+
+    const countStore = createFileRefStore({
+      maxCount: 10,
+      maxBytes: 100,
+      maxCountPerOwner: 1,
+      maxBytesPerOwner: 100,
+      bufferCacheMaxBytes: 4,
+    });
+    countStore.storeFileRef(entry("owner-a", 1));
+    expect(() => countStore.storeFileRef(entry("owner-a", 1))).toThrow(
+      expect.objectContaining({ reason: "principal-count" }),
+    );
+    countStore.clear();
+  });
+
+  it("keeps concurrent uploads within the principal quota", async () => {
+    const store = createFileRefStore({
+      maxCount: 25,
+      maxBytes: 100,
+      maxCountPerOwner: 20,
+      maxBytesPerOwner: 100,
+      bufferCacheMaxBytes: 4,
+    });
+    const results = await Promise.allSettled(
+      Array.from({ length: 25 }, () =>
+        Promise.resolve().then(() => store.storeFileRef(entry("owner-a", 1))),
+      ),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(20);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(5);
+    expect(store.getFileRefStoreStats().fileRefs).toBe(20);
+    store.clear();
+  });
+
+  it("eagerly expires refs and evicts decoded buffers", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const store = createFileRefStore({
+      maxCount: 10,
+      maxBytes: 100,
+      maxCountPerOwner: 10,
+      maxBytesPerOwner: 100,
+      bufferCacheMaxBytes: 4,
+    });
+    const token = store.storeFileRef(entry("owner-a", 4));
+    expect(store.readFileRefBuffer(token)).toBeDefined();
+    expect(store.getFileRefCacheStats().bufferEntries).toBe(1);
+
+    vi.advanceTimersByTime(FILE_REF_TTL_MS + 1);
+
+    expect(store.lookupFileRef(token)).toBeUndefined();
+    expect(store.getFileRefCacheStats()).toEqual({
+      hits: 0,
+      misses: 1,
+      fileRefs: 0,
+      bufferEntries: 0,
+      storedBytes: 0,
+      bufferBytes: 0,
+    });
+    store.clear();
+    vi.useRealTimers();
+  });
+
+  it("evicts the least recently used decoded buffer at its byte ceiling", () => {
+    const store = createFileRefStore({
+      maxCount: 10,
+      maxBytes: 100,
+      maxCountPerOwner: 10,
+      maxBytesPerOwner: 100,
+      bufferCacheMaxBytes: 4,
+    });
+    const first = store.storeFileRef(entry("owner-a", 4, B64));
+    const second = store.storeFileRef(entry("owner-a", 4, "bW9yZQ=="));
+
+    expect(store.readFileRefBuffer(first)).toBeDefined();
+    expect(store.readFileRefBuffer(second)).toBeDefined();
+    expect(store.getFileRefCacheStats().bufferEntries).toBe(1);
+    expect(store.getFileRefCacheStats().bufferBytes).toBe(4);
+    expect(store.readFileRefBuffer(first)).toBeDefined();
+    expect(store.getFileRefCacheStats().bufferEntries).toBe(1);
+    store.clear();
+  });
+
+  it("does not share refs between isolated instances and reset clears a store", () => {
+    const first = createFileRefStore({
+      maxCount: 2,
+      maxBytes: 10,
+      maxCountPerOwner: 2,
+      maxBytesPerOwner: 10,
+    });
+    const second = createFileRefStore({
+      maxCount: 2,
+      maxBytes: 10,
+      maxCountPerOwner: 2,
+      maxBytesPerOwner: 10,
+    });
+    const token = first.storeFileRef(entry("owner-a", 1));
+
+    expect(first.lookupFileRef(token)).toBeDefined();
+    expect(second.lookupFileRef(token)).toBeUndefined();
+    first.clear();
+    expect(first.lookupFileRef(token)).toBeUndefined();
+    second.clear();
+  });
+
+  it("exposes the configured storage and buffer ceilings", () => {
+    const stats = getFileRefStoreStats();
+    expect(stats.maxCount).toBeGreaterThan(0);
+    expect(stats.maxBytes).toBeGreaterThan(0);
+    expect(stats.maxCountPerOwner).toBeGreaterThan(0);
+    expect(stats.maxBytesPerOwner).toBeGreaterThan(0);
+    expect(stats.bufferCacheMaxBytes).toBe(FILE_REF_BUFFER_CACHE_MAX_BYTES);
   });
 });

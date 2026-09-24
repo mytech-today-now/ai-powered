@@ -7,9 +7,9 @@
  *   MIME_ALLOWLIST            – Set of accepted MIME types
  *   FILE_REF_TTL_MS           – In-memory retention window for uploaded refs
  *   FileRefEntry              – Interface for stored file reference data
- *   storeFileRef()            – Store a file ref in the in-memory map; return UUID token
+ *   storeFileRef()            – Store a file ref in the bounded in-memory map; return UUID token
  *   lookupFileRef()           – Retrieve a file ref by UUID token
- *   readFileRefBuffer()       – Retrieve cached decoded bytes for a UUID token
+ *   readFileRefBuffer()       – Retrieve bounded cached decoded bytes for a UUID token
  *   validateMimeType()        – Check if a MIME type is in the allowlist
  *   validateFileSize()        – Check if a file size is within the 50 MiB limit
  *   FileInput                 – Interface for the file descriptor passed to buildFileContentBlock()
@@ -49,11 +49,54 @@ const VIDEO_MIMES = new Set(["video/mp4", "video/webm", "video/quicktime", "vide
 const MAX_FILE_BYTES = 52_428_800;
 
 // ---------------------------------------------------------------------------
-// File reference store (in-memory; v2 will swap to persistent storage)
+// File reference store (bounded in-memory; persistent storage is not implied)
 // ---------------------------------------------------------------------------
 
-/** File refs are retained for 1 hour, then pruned on lookup or the next write. */
+/** File refs are retained for 1 hour unless explicitly deleted first. */
 export const FILE_REF_TTL_MS = 60 * 60 * 1000;
+
+const DEFAULT_FILE_REF_MAX_COUNT = 100;
+const DEFAULT_FILE_REF_MAX_BYTES = 256 * 1024 * 1024;
+const DEFAULT_FILE_REF_MAX_COUNT_PER_OWNER = 20;
+const DEFAULT_FILE_REF_MAX_BYTES_PER_OWNER = 64 * 1024 * 1024;
+const DEFAULT_FILE_REF_BUFFER_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+/** Maximum live refs in the default process-local store. */
+export const FILE_REF_MAX_COUNT = readPositiveIntegerEnv(
+  "AIPOWERED_FILE_MAX_COUNT",
+  DEFAULT_FILE_REF_MAX_COUNT,
+);
+
+/** Maximum declared attachment bytes in the default process-local store. */
+export const FILE_REF_MAX_BYTES = readPositiveIntegerEnv(
+  "AIPOWERED_FILE_MAX_BYTES",
+  DEFAULT_FILE_REF_MAX_BYTES,
+);
+
+/** Maximum live refs owned by one principal in the default store. */
+export const FILE_REF_MAX_COUNT_PER_OWNER = readPositiveIntegerEnv(
+  "AIPOWERED_FILE_MAX_COUNT_PER_OWNER",
+  DEFAULT_FILE_REF_MAX_COUNT_PER_OWNER,
+);
+
+/** Maximum declared attachment bytes owned by one principal in the default store. */
+export const FILE_REF_MAX_BYTES_PER_OWNER = readPositiveIntegerEnv(
+  "AIPOWERED_FILE_MAX_BYTES_PER_OWNER",
+  DEFAULT_FILE_REF_MAX_BYTES_PER_OWNER,
+);
+
+/** Maximum decoded bytes retained by the default LRU buffer cache. */
+export const FILE_REF_BUFFER_CACHE_MAX_BYTES = readPositiveIntegerEnv(
+  "AIPOWERED_FILE_BUFFER_CACHE_MAX_BYTES",
+  DEFAULT_FILE_REF_BUFFER_CACHE_MAX_BYTES,
+);
 
 /** Provider fetch capabilities are intentionally shorter-lived than file refs. */
 export const FILE_PROVIDER_CAPABILITY_TTL_MS = 5 * 60 * 1000;
@@ -77,18 +120,71 @@ export interface FileRefEntry {
 interface StoredFileRefEntry {
   entry: FileRefEntry;
   expiresAt: number;
+  cleanupTimer?: ReturnType<typeof setTimeout>;
 }
 
-const fileRefStore = new Map<string, StoredFileRefEntry>();
-const fileRefBufferCache = new Map<string, Buffer>();
-let fileRefBufferCacheHits = 0;
-let fileRefBufferCacheMisses = 0;
+export type FileRefCapacityReason =
+  "global-count" | "global-bytes" | "principal-count" | "principal-bytes";
+
+/** Stable error raised when an upload would exceed a configured store quota. */
+export class FileRefCapacityError extends Error {
+  readonly code = "FILE_REF_CAPACITY_EXCEEDED" as const;
+
+  constructor(
+    readonly reason: FileRefCapacityReason,
+    readonly limit: number,
+    readonly current: number,
+    readonly requested: number,
+  ) {
+    super(
+      "Attachment storage capacity is full or the principal quota was exceeded. " +
+        "Delete an existing attachment or wait for expiry, then retry.",
+    );
+    this.name = "FileRefCapacityError";
+  }
+}
+
+export interface FileRefStoreOptions {
+  maxCount?: number;
+  maxBytes?: number;
+  maxCountPerOwner?: number;
+  maxBytesPerOwner?: number;
+  bufferCacheMaxBytes?: number;
+}
 
 export interface FileRefCacheStats {
   hits: number;
   misses: number;
   fileRefs: number;
   bufferEntries: number;
+  storedBytes: number;
+  bufferBytes: number;
+}
+
+export interface FileRefStoreStats {
+  fileRefs: number;
+  storedBytes: number;
+  maxCount: number;
+  maxBytes: number;
+  maxCountPerOwner: number;
+  maxBytesPerOwner: number;
+  bufferBytes: number;
+  bufferCacheMaxBytes: number;
+}
+
+export interface FileRefStore {
+  storeFileRef(entry: FileRefEntry): string;
+  assertFileRefCapacity(ownerId: string, sizeBytes: number): void;
+  lookupFileRef(token: string): FileRefEntry | undefined;
+  lookupAuthorizedFileRef(token: string, ownerId: string | undefined): FileRefEntry | undefined;
+  readFileRefBuffer(token: string): Buffer | undefined;
+  deleteFileRef(token: string): boolean;
+  deleteAuthorizedFileRef(token: string, ownerId: string | undefined): boolean;
+  getFileRefCacheStats(): FileRefCacheStats;
+  getFileRefStoreStats(): FileRefStoreStats;
+  clearCache(): void;
+  clear(): void;
+  getSize(): number;
 }
 
 /** Normalize a filename so uploads stay path-safe across platforms. */
@@ -101,99 +197,306 @@ export function normalizeStoredFilename(filename: string): string {
   return baseName;
 }
 
-/** Remove expired entries so the in-memory store stays bounded. */
-function pruneExpiredFileRefs(now = Date.now()): void {
-  for (const [token, stored] of fileRefStore) {
-    if (now >= stored.expiresAt) {
-      fileRefStore.delete(token);
-      fileRefBufferCache.delete(token);
+function normalizeStoreLimit(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Create an isolated bounded store. The factory is used by tests to model
+ * process resets and two instances; production routes use the default store
+ * exported below.
+ */
+export function createFileRefStore(options: FileRefStoreOptions = {}): FileRefStore {
+  const maxCount = normalizeStoreLimit(options.maxCount, FILE_REF_MAX_COUNT);
+  const maxBytes = normalizeStoreLimit(options.maxBytes, FILE_REF_MAX_BYTES);
+  const maxCountPerOwner = normalizeStoreLimit(
+    options.maxCountPerOwner,
+    FILE_REF_MAX_COUNT_PER_OWNER,
+  );
+  const maxBytesPerOwner = normalizeStoreLimit(
+    options.maxBytesPerOwner,
+    FILE_REF_MAX_BYTES_PER_OWNER,
+  );
+  const bufferCacheMaxBytes = normalizeStoreLimit(
+    options.bufferCacheMaxBytes,
+    FILE_REF_BUFFER_CACHE_MAX_BYTES,
+  );
+
+  const fileRefStore = new Map<string, StoredFileRefEntry>();
+  const fileRefBufferCache = new Map<string, Buffer>();
+  const ownerUsage = new Map<string, { count: number; bytes: number }>();
+  let fileRefStoreBytes = 0;
+  let fileRefBufferCacheBytes = 0;
+  let fileRefBufferCacheHits = 0;
+  let fileRefBufferCacheMisses = 0;
+
+  function deleteCachedBuffer(token: string): void {
+    const cached = fileRefBufferCache.get(token);
+    if (!cached) return;
+    fileRefBufferCache.delete(token);
+    fileRefBufferCacheBytes -= cached.length;
+  }
+
+  function removeStoredFileRef(token: string, stored: StoredFileRefEntry): void {
+    if (fileRefStore.get(token) !== stored) return;
+    fileRefStore.delete(token);
+    if (stored.cleanupTimer) clearTimeout(stored.cleanupTimer);
+    fileRefStoreBytes -= stored.entry.sizeBytes;
+
+    const usage = ownerUsage.get(stored.entry.ownerId);
+    if (usage) {
+      usage.count -= 1;
+      usage.bytes -= stored.entry.sizeBytes;
+      if (usage.count <= 0) ownerUsage.delete(stored.entry.ownerId);
+    }
+    deleteCachedBuffer(token);
+  }
+
+  /** Remove expired entries immediately, including their decoded buffers. */
+  function pruneExpiredFileRefs(now = Date.now()): void {
+    for (const [token, stored] of fileRefStore) {
+      if (now >= stored.expiresAt) removeStoredFileRef(token, stored);
     }
   }
-}
 
-/**
- * Persist a file reference in the in-memory store.
- * @returns A UUID token that can be passed back to callers as `fileRef`.
- */
-export function storeFileRef(entry: FileRefEntry): string {
-  pruneExpiredFileRefs();
-  const ownerId = entry.ownerId.trim();
-  if (!ownerId) throw new Error("File reference owner is required.");
-  const token = randomUUID();
-  fileRefStore.set(token, {
-    entry: {
-      ...entry,
-      ownerId,
-      filename: normalizeStoredFilename(entry.filename),
+  function assertFileRefCapacity(ownerId: string, sizeBytes: number): void {
+    pruneExpiredFileRefs();
+    const normalizedOwnerId = ownerId.trim();
+    if (!normalizedOwnerId) throw new Error("File reference owner is required.");
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
+      throw new Error("File reference size must be a non-negative integer.");
+    }
+
+    const usage = ownerUsage.get(normalizedOwnerId) ?? { count: 0, bytes: 0 };
+    if (usage.count + 1 > maxCountPerOwner) {
+      throw new FileRefCapacityError("principal-count", maxCountPerOwner, usage.count, 1);
+    }
+    if (usage.bytes + sizeBytes > maxBytesPerOwner) {
+      throw new FileRefCapacityError("principal-bytes", maxBytesPerOwner, usage.bytes, sizeBytes);
+    }
+    if (fileRefStore.size + 1 > maxCount) {
+      throw new FileRefCapacityError("global-count", maxCount, fileRefStore.size, 1);
+    }
+    if (fileRefStoreBytes + sizeBytes > maxBytes) {
+      throw new FileRefCapacityError("global-bytes", maxBytes, fileRefStoreBytes, sizeBytes);
+    }
+  }
+
+  function storeFileRef(entry: FileRefEntry): string {
+    const ownerId = entry.ownerId.trim();
+    assertFileRefCapacity(ownerId, entry.sizeBytes);
+    const token = randomUUID();
+    const stored: StoredFileRefEntry = {
+      entry: {
+        ...entry,
+        ownerId,
+        filename: normalizeStoredFilename(entry.filename),
+      },
+      expiresAt: Date.now() + FILE_REF_TTL_MS,
+    };
+    fileRefStore.set(token, stored);
+    fileRefStoreBytes += entry.sizeBytes;
+    const usage = ownerUsage.get(ownerId) ?? { count: 0, bytes: 0 };
+    usage.count += 1;
+    usage.bytes += entry.sizeBytes;
+    ownerUsage.set(ownerId, usage);
+    stored.cleanupTimer = setTimeout(() => {
+      const current = fileRefStore.get(token);
+      if (current === stored && Date.now() >= stored.expiresAt) {
+        removeStoredFileRef(token, stored);
+      }
+    }, FILE_REF_TTL_MS);
+    stored.cleanupTimer.unref?.();
+    return token;
+  }
+
+  function lookupFileRef(token: string): FileRefEntry | undefined {
+    pruneExpiredFileRefs();
+    return fileRefStore.get(token)?.entry;
+  }
+
+  function lookupAuthorizedFileRef(
+    token: string,
+    ownerId: string | undefined,
+  ): FileRefEntry | undefined {
+    const entry = lookupFileRef(token);
+    return entry && ownerId !== undefined && entry.ownerId === ownerId ? entry : undefined;
+  }
+
+  function cacheBuffer(token: string, buffer: Buffer): void {
+    if (buffer.length > bufferCacheMaxBytes) return;
+    deleteCachedBuffer(token);
+    while (fileRefBufferCacheBytes + buffer.length > bufferCacheMaxBytes) {
+      const oldestToken = fileRefBufferCache.keys().next().value as string | undefined;
+      if (!oldestToken) break;
+      deleteCachedBuffer(oldestToken);
+    }
+    fileRefBufferCache.set(token, buffer);
+    fileRefBufferCacheBytes += buffer.length;
+  }
+
+  function readFileRefBuffer(token: string): Buffer | undefined {
+    pruneExpiredFileRefs();
+    const cached = fileRefBufferCache.get(token);
+    if (cached) {
+      fileRefBufferCacheHits += 1;
+      fileRefBufferCache.delete(token);
+      fileRefBufferCache.set(token, cached);
+      return cached;
+    }
+
+    const entry = fileRefStore.get(token)?.entry;
+    if (!entry) {
+      fileRefBufferCacheMisses += 1;
+      return undefined;
+    }
+
+    fileRefBufferCacheMisses += 1;
+    const buffer = Buffer.from(entry.base64Content, "base64");
+    cacheBuffer(token, buffer);
+    return buffer;
+  }
+
+  function deleteFileRef(token: string): boolean {
+    pruneExpiredFileRefs();
+    const stored = fileRefStore.get(token);
+    if (!stored) {
+      deleteCachedBuffer(token);
+      return false;
+    }
+    removeStoredFileRef(token, stored);
+    return true;
+  }
+
+  function deleteAuthorizedFileRef(token: string, ownerId: string | undefined): boolean {
+    const entry = lookupAuthorizedFileRef(token, ownerId);
+    return entry ? deleteFileRef(token) : false;
+  }
+
+  function getFileRefCacheStats(): FileRefCacheStats {
+    pruneExpiredFileRefs();
+    return {
+      hits: fileRefBufferCacheHits,
+      misses: fileRefBufferCacheMisses,
+      fileRefs: fileRefStore.size,
+      bufferEntries: fileRefBufferCache.size,
+      storedBytes: fileRefStoreBytes,
+      bufferBytes: fileRefBufferCacheBytes,
+    };
+  }
+
+  function getFileRefStoreStats(): FileRefStoreStats {
+    pruneExpiredFileRefs();
+    return {
+      fileRefs: fileRefStore.size,
+      storedBytes: fileRefStoreBytes,
+      maxCount,
+      maxBytes,
+      maxCountPerOwner,
+      maxBytesPerOwner,
+      bufferBytes: fileRefBufferCacheBytes,
+      bufferCacheMaxBytes,
+    };
+  }
+
+  function clearCache(): void {
+    fileRefBufferCache.clear();
+    fileRefBufferCacheBytes = 0;
+    fileRefBufferCacheHits = 0;
+    fileRefBufferCacheMisses = 0;
+  }
+
+  function clear(): void {
+    for (const stored of fileRefStore.values()) {
+      if (stored.cleanupTimer) clearTimeout(stored.cleanupTimer);
+    }
+    fileRefStore.clear();
+    ownerUsage.clear();
+    fileRefStoreBytes = 0;
+    clearCache();
+  }
+
+  return {
+    storeFileRef,
+    assertFileRefCapacity,
+    lookupFileRef,
+    lookupAuthorizedFileRef,
+    readFileRefBuffer,
+    deleteFileRef,
+    deleteAuthorizedFileRef,
+    getFileRefCacheStats,
+    getFileRefStoreStats,
+    clearCache,
+    clear,
+    getSize: () => {
+      pruneExpiredFileRefs();
+      return fileRefStore.size;
     },
-    expiresAt: Date.now() + FILE_REF_TTL_MS,
-  });
-  fileRefBufferCache.delete(token);
-  return token;
+  };
 }
 
-/**
- * Retrieve a previously stored file reference by its UUID token.
- * Returns `undefined` if the token is not found.
- */
+const defaultFileRefStore = createFileRefStore();
+
+export function assertFileRefCapacity(ownerId: string, sizeBytes: number): void {
+  defaultFileRefStore.assertFileRefCapacity(ownerId, sizeBytes);
+}
+
+/** Persist a file reference in the bounded process-local store. */
+export function storeFileRef(entry: FileRefEntry): string {
+  return defaultFileRefStore.storeFileRef(entry);
+}
+
+/** Retrieve a previously stored file reference by UUID token. */
 export function lookupFileRef(token: string): FileRefEntry | undefined {
-  pruneExpiredFileRefs();
-  return fileRefStore.get(token)?.entry;
+  return defaultFileRefStore.lookupFileRef(token);
 }
 
-/**
- * Retrieve a ref only when it belongs to the authenticated caller.
- * Missing, expired, and cross-principal refs intentionally share `undefined`.
- */
+/** Retrieve a ref only when it belongs to the authenticated caller. */
 export function lookupAuthorizedFileRef(
   token: string,
   ownerId: string | undefined,
 ): FileRefEntry | undefined {
-  const entry = lookupFileRef(token);
-  return entry && ownerId !== undefined && entry.ownerId === ownerId ? entry : undefined;
+  return defaultFileRefStore.lookupAuthorizedFileRef(token, ownerId);
 }
 
-/**
- * Retrieve the decoded bytes for a stored file reference.
- *
- * The first access decodes the base64 payload and caches the Buffer. Subsequent
- * reads hit the cache until the ref expires or is invalidated.
- */
+/** Retrieve decoded bytes from the bounded LRU cache or decode the stored payload. */
 export function readFileRefBuffer(token: string): Buffer | undefined {
-  pruneExpiredFileRefs();
-  const cached = fileRefBufferCache.get(token);
-  if (cached) {
-    fileRefBufferCacheHits += 1;
-    return cached;
-  }
-
-  const entry = fileRefStore.get(token)?.entry;
-  if (!entry) {
-    fileRefBufferCacheMisses += 1;
-    return undefined;
-  }
-
-  fileRefBufferCacheMisses += 1;
-  const buffer = Buffer.from(entry.base64Content, "base64");
-  fileRefBufferCache.set(token, buffer);
-  return buffer;
+  return defaultFileRefStore.readFileRefBuffer(token);
 }
 
-/**
- * Invalidate a single file ref and its cached bytes.
- * Returns `true` when an entry was removed.
- */
+/** Invalidate a single file ref and its cached bytes. */
 export function deleteFileRef(token: string): boolean {
-  pruneExpiredFileRefs();
-  const removed = fileRefStore.delete(token);
-  fileRefBufferCache.delete(token);
-  return removed;
+  return defaultFileRefStore.deleteFileRef(token);
 }
 
 /** Delete a ref only when the authenticated caller owns it. */
 export function deleteAuthorizedFileRef(token: string, ownerId: string | undefined): boolean {
-  const entry = lookupAuthorizedFileRef(token, ownerId);
-  return entry ? deleteFileRef(token) : false;
+  return defaultFileRefStore.deleteAuthorizedFileRef(token, ownerId);
+}
+
+/** Clear only the decoded-byte cache. For use in unit tests only. */
+export function _clearFileRefCache(): void {
+  defaultFileRefStore.clearCache();
+}
+
+/** Return cache counters and bounded storage bytes for diagnostics and tests. */
+export function getFileRefCacheStats(): FileRefCacheStats {
+  return defaultFileRefStore.getFileRefCacheStats();
+}
+
+/** Return current storage usage and the configured capacity ceilings. */
+export function getFileRefStoreStats(): FileRefStoreStats {
+  return defaultFileRefStore.getFileRefStoreStats();
+}
+
+/** Clear the default file ref store. For use in unit tests only. */
+export function _clearFileRefStore(): void {
+  defaultFileRefStore.clear();
+}
+
+/** Return the number of live file refs in the default store. */
+export function _getFileRefStoreSize(): number {
+  return defaultFileRefStore.getSize();
 }
 
 function capabilitySecret(): string {
@@ -271,43 +574,6 @@ export function lookupProviderFileCapability(
   } catch {
     return undefined;
   }
-}
-
-/** Clear only the decoded-byte cache. For use in unit tests only. */
-export function _clearFileRefCache(): void {
-  fileRefBufferCache.clear();
-  fileRefBufferCacheHits = 0;
-  fileRefBufferCacheMisses = 0;
-}
-
-/** Return cache counters for tests and diagnostics. */
-export function getFileRefCacheStats(): FileRefCacheStats {
-  pruneExpiredFileRefs();
-  return {
-    hits: fileRefBufferCacheHits,
-    misses: fileRefBufferCacheMisses,
-    fileRefs: fileRefStore.size,
-    bufferEntries: fileRefBufferCache.size,
-  };
-}
-
-/**
- * Clear the file ref store. For use in unit tests only.
- * @internal
- */
-export function _clearFileRefStore(): void {
-  fileRefStore.clear();
-  _clearFileRefCache();
-}
-
-/**
- * Returns the current number of live file refs in the in-memory store.
- * For use in unit tests only.
- * @internal
- */
-export function _getFileRefStoreSize(): number {
-  pruneExpiredFileRefs();
-  return fileRefStore.size;
 }
 
 // ---------------------------------------------------------------------------

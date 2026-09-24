@@ -288,6 +288,100 @@ interface DirectTextAdapter {
   parseStreamEvent(payload: Record<string, unknown>): DirectStreamEvent | undefined;
 }
 
+/**
+ * Incrementally parses SSE data fields without assuming that fetch chunks
+ * align with UTF-8, line, or event boundaries.
+ *
+ * A provider may close the response immediately after its final data field,
+ * so finish() dispatches both the decoder's final text and an unterminated
+ * event. Malformed JSON is handled by the caller so the existing direct-mode
+ * policy remains: skip that event and continue with later provider events.
+ */
+class DirectSseParser {
+  private readonly decoder = new TextDecoder();
+  private buffer = "";
+  private dataLines: string[] = [];
+
+  push(value: Uint8Array): string[] {
+    return this.consumeText(this.decoder.decode(value, { stream: true }));
+  }
+
+  finish(): string[] {
+    const events = this.consumeText(this.decoder.decode());
+    if (this.buffer.length > 0) {
+      this.consumeLine(this.buffer.replace(/\r$/, ""), events);
+      this.buffer = "";
+    }
+
+    const finalEvent = this.dispatchEvent();
+    if (finalEvent !== undefined) events.push(finalEvent);
+    return events;
+  }
+
+  private consumeText(text: string): string[] {
+    this.buffer += text;
+    const events: string[] = [];
+    let newlineIndex = this.buffer.indexOf("\n");
+
+    while (newlineIndex >= 0) {
+      const line = this.buffer.slice(0, newlineIndex).replace(/\r$/, "");
+      this.buffer = this.buffer.slice(newlineIndex + 1);
+      this.consumeLine(line, events);
+      newlineIndex = this.buffer.indexOf("\n");
+    }
+
+    return events;
+  }
+
+  private consumeLine(line: string, events: string[]): void {
+    if (line === "") {
+      const event = this.dispatchEvent();
+      if (event !== undefined) events.push(event);
+      return;
+    }
+
+    if (line.startsWith("data:")) {
+      const value = line.startsWith("data: ") ? line.slice(6) : line.slice(5);
+      this.dataLines.push(value);
+    }
+    // event:, id:, retry:, and comment fields do not affect JSON data parsing.
+  }
+
+  private dispatchEvent(): string | undefined {
+    if (this.dataLines.length === 0) return undefined;
+    const event = this.dataLines.join("\n");
+    this.dataLines = [];
+    return event;
+  }
+}
+
+function parseDirectSsePayload(provider: string, payload: string): DirectStreamEvent | undefined {
+  const normalized = payload.trim();
+  if (normalized === "[DONE]") return { done: true };
+
+  try {
+    return directTextAdapter(provider).parseStreamEvent(
+      JSON.parse(normalized) as Record<string, unknown>,
+    );
+  } catch {
+    // Malformed provider events are skipped, not converted into assistant text.
+    return undefined;
+  }
+}
+
+function consumeDirectSsePayloads(
+  provider: string,
+  payloads: string[],
+): { text: string[]; done: boolean } {
+  const text: string[] = [];
+  for (const payload of payloads) {
+    const streamEvent = parseDirectSsePayload(provider, payload);
+    if (streamEvent?.text !== undefined) text.push(streamEvent.text);
+    if (streamEvent?.done) return { text, done: true };
+  }
+  return { text, done: false };
+}
+
 const OPENAI_COMPATIBLE_DIRECT_TEXT_ADAPTER: DirectTextAdapter = {
   buildRequest({ baseUrl, model, prompt, options, stream }): DirectTextRequest {
     const messages: Array<{ role: string; content: string }> = [];
@@ -609,12 +703,14 @@ function formatHistoryPrompt(history: WebMessage[]): string {
  * fallback when browser storage is malformed or blocked.
  *
  * History is keyed as `ai-session:<id>` and persisted for the tab lifetime.
- * Each call to `send()` prepends the accumulated history so the model has
- * full context, then appends both the user prompt and assistant reply.
+ * Each call to `send()` or `stream()` builds a prompt from committed history
+ * plus a local pending user turn. The user and assistant turns are committed
+ * together only after provider work completes successfully.
  */
 export class BrowserConversationSession {
   private readonly storageKey: string;
   private history: WebMessage[];
+  private operationTail: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly sessionId: string,
@@ -629,9 +725,13 @@ export class BrowserConversationSession {
     return cloneHistory(this.history);
   }
 
-  /** Append a message to the persistent history. */
-  private appendMessage(msg: WebMessage): void {
-    this.history = [...this.history, { role: msg.role, content: msg.content }];
+  /** Commit a complete turn to memory and sessionStorage in one history write. */
+  private commitTurn(userMessage: string, assistantMessage: string): void {
+    this.history = [
+      ...this.history,
+      { role: "user", content: userMessage },
+      { role: "assistant", content: assistantMessage },
+    ];
     SESSION_HISTORY_CACHE.set(this.sessionId, cloneHistory(this.history));
     if (persistHistory(this.storageKey, this.history)) {
       markSessionStorageHealthy(this.sessionId);
@@ -665,32 +765,55 @@ export class BrowserConversationSession {
     return history;
   }
 
-  /** Format the current history into the single-turn prompt shape. */
-  private buildHistoryPrompt(): string {
-    return formatHistoryPrompt(this.history);
+  /**
+   * Serialize turns so concurrent sends cannot build prompts from the same
+   * committed snapshot or commit replies out of order.
+   */
+  private acquireOperation(): Promise<() => void> {
+    const previous = this.operationTail;
+    let release!: () => void;
+    this.operationTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return previous.then(() => release);
   }
 
   /**
    * Send a user message, building on the accumulated history.
-   * Returns the assistant reply text and persists both turns.
+   * Returns the assistant reply text and persists both turns only on success.
+   * Provider failures and cancellation leave no committed trace of the turn.
    */
   async send(userMessage: string, options?: WebCallOptions): Promise<string> {
-    this.appendMessage({ role: "user", content: userMessage });
-    const result = await this.client.generateText(this.buildHistoryPrompt(), options);
-    const reply = result.content;
-    this.appendMessage({ role: "assistant", content: reply });
-    return reply;
+    const release = await this.acquireOperation();
+    try {
+      const prompt = formatHistoryPrompt([...this.history, { role: "user", content: userMessage }]);
+      const result = await this.client.generateText(prompt, options);
+      const reply = result.content;
+      this.commitTurn(userMessage, reply);
+      return reply;
+    } finally {
+      release();
+    }
   }
 
-  /** Stream the assistant reply, persisting both turns on completion. */
+  /**
+   * Stream the assistant reply, persisting both turns on completion.
+   * Chunks already yielded before a failure or cancellation remain caller-owned
+   * output only; the incomplete turn is intentionally discarded from history.
+   */
   async *stream(userMessage: string, options?: WebCallOptions): AsyncIterable<string> {
-    this.appendMessage({ role: "user", content: userMessage });
-    const chunks: string[] = [];
-    for await (const chunk of this.client.streamText(this.buildHistoryPrompt(), options)) {
-      chunks.push(chunk);
-      yield chunk;
+    const release = await this.acquireOperation();
+    try {
+      const prompt = formatHistoryPrompt([...this.history, { role: "user", content: userMessage }]);
+      const chunks: string[] = [];
+      for await (const chunk of this.client.streamText(prompt, options)) {
+        chunks.push(chunk);
+        yield chunk;
+      }
+      this.commitTurn(userMessage, chunks.join(""));
+    } finally {
+      release();
     }
-    this.appendMessage({ role: "assistant", content: chunks.join("") });
   }
 
   /** Clear session history from sessionStorage. */
@@ -974,8 +1097,9 @@ export class WebAiClient {
   private async assertOk(res: Response, provider?: string): Promise<void> {
     if (res.ok) return;
     const body = await res.text().catch(() => "");
-    let message = body.trim();
+    let message = `HTTP ${res.status}`;
     let code = "PROXY_ERROR";
+    let requestId = res.headers.get("X-Request-ID") ?? undefined;
     if (message) {
       try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
@@ -992,9 +1116,13 @@ export class WebAiClient {
         } else if (typeof parsed["message"] === "string") {
           message = parsed["message"];
         }
-        if (typeof parsed["code"] === "string") code = parsed["code"];
+        if (typeof parsed["code"] === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(parsed["code"])) {
+          code = parsed["code"];
+        }
+        if (typeof parsed["requestId"] === "string") requestId = parsed["requestId"];
       } catch {
-        // Keep the raw text body when the error payload is not JSON.
+        // Keep only the HTTP status when the error payload is not JSON. A
+        // reverse proxy or upstream body is not a safe browser diagnostic.
       }
     }
     if (code === "AUTH_MISSING") {
@@ -1010,7 +1138,7 @@ export class WebAiClient {
       message =
         "The proxy caller credential lacks permission for this action. Open Settings / Configuration to update it.";
     }
-    throw new WebProxyError(message || `HTTP ${res.status}`, code, res.status);
+    throw new WebProxyError(message, code, res.status, requestId);
   }
 
   /**
@@ -1268,30 +1396,19 @@ export class WebAiClient {
 
     const reader = res.body?.getReader();
     if (!reader) return;
-    const decoder = new TextDecoder();
-    let buffer = "";
+    const parser = new DirectSseParser();
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = line.slice(6).trim();
-        if (payload === "[DONE]") return;
-        try {
-          const evt = JSON.parse(payload) as Record<string, unknown>;
-          const streamEvent = directTextAdapter(provider).parseStreamEvent(evt);
-          if (streamEvent?.text !== undefined) yield streamEvent.text;
-          if (streamEvent?.done) return;
-        } catch {
-          // Malformed SSE chunk — skip
-        }
-      }
+      const parsed = consumeDirectSsePayloads(provider, parser.push(value));
+      for (const text of parsed.text) yield text;
+      if (parsed.done) return;
     }
+
+    const final = consumeDirectSsePayloads(provider, parser.finish());
+    for (const text of final.text) yield text;
+    if (final.done) return;
   }
 
   // -------------------------------------------------------------------------
@@ -1930,11 +2047,13 @@ export function createWebClient(opts: WebClientOptions): WebAiClient {
 export class WebProxyError extends Error {
   readonly code: string;
   readonly statusCode?: number;
+  readonly requestId?: string;
 
-  constructor(message: string, code = "PROXY_ERROR", statusCode?: number) {
+  constructor(message: string, code = "PROXY_ERROR", statusCode?: number, requestId?: string) {
     super(message);
     this.name = "ProxyError";
     this.code = code;
     if (statusCode !== undefined) this.statusCode = statusCode;
+    if (requestId !== undefined) this.requestId = requestId;
   }
 }

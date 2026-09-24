@@ -12,7 +12,7 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response } from "express";
 import { getAiClient } from "../../index.js";
 import type { TextResult } from "../../types.js";
 import {
@@ -22,6 +22,8 @@ import {
 } from "../../types.js";
 import type { ProviderCallOptions } from "../../providers/base.js";
 import type { ServeOptions } from "../index.js";
+import { getLogger } from "../../utils.js";
+import { getRequestId, serializeErrorForLog, serializePublicError } from "../error-contract.js";
 import { inferProviderFromModel } from "./model-router.js";
 
 // ---------------------------------------------------------------------------
@@ -225,8 +227,9 @@ export function toAnthropicResponse(result: TextResult): object {
 export function toAnthropicErrorEnvelope(err: unknown, status: number): object {
   void status; // used by caller to set HTTP status; not part of Anthropic wire format
 
+  const publicError = serializePublicError(err, "compat-anthropic");
   let errorType: string;
-  let message: string;
+  let message = publicError.body.error;
 
   if (err instanceof BudgetExceededError) {
     errorType = "permission_error";
@@ -237,18 +240,28 @@ export function toAnthropicErrorEnvelope(err: unknown, status: number): object {
   } else if (err instanceof ProviderCapabilityError) {
     errorType = "invalid_request_error";
     message = err.message;
-  } else if (err instanceof Error) {
-    errorType = "api_error";
-    message = err.message;
   } else {
     errorType = "api_error";
-    message = String(err);
   }
 
   return {
     type: "error",
     error: { type: errorType, message },
   };
+}
+
+function respondAnthropicUnexpectedError(res: Response, error: unknown): void {
+  const publicError = serializePublicError(error, getRequestId(res));
+  getLogger().error(
+    {
+      requestId: publicError.body.requestId,
+      publicCode: publicError.body.code,
+      status: publicError.statusCode,
+      error: serializeErrorForLog(error),
+    },
+    "Anthropic compatibility request failed",
+  );
+  res.status(publicError.statusCode).json(toAnthropicErrorEnvelope(error, publicError.statusCode));
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +276,7 @@ export function toAnthropicErrorEnvelope(err: unknown, status: number): object {
  * Not restricted to the Anthropic provider — any text-capable provider may be used.
  */
 export function handleAnthropicMessages(opts: ServeOptions) {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, res: Response): Promise<void> => {
     const parsed = AnthropicMessagesBodySchema.safeParse(req.body);
     if (!parsed.success) {
       const envelope = toAnthropicErrorEnvelope(
@@ -391,7 +404,7 @@ export function handleAnthropicMessages(opts: ServeOptions) {
       if (status !== 500) {
         res.status(status).json(toAnthropicErrorEnvelope(err, status));
       } else {
-        next(err);
+        respondAnthropicUnexpectedError(res, err);
       }
     }
   };

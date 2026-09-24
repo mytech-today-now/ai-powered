@@ -14,6 +14,26 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function streamingResponse(chunks: Array<string | Uint8Array>): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+function openAiData(content: string, terminator = "\n\n"): string {
+  return "data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + terminator;
+}
+
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   document.body.innerHTML = "";
@@ -92,6 +112,49 @@ describe("WebAiClient.listModels", () => {
 });
 
 describe("WebAiClient proxy caller authentication", () => {
+  it("parses the stable proxy envelope and preserves its correlation id", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: "The server could not complete the request. Try again later.",
+            message: "The server could not complete the request. Try again later.",
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+            requestId: "browser-error-123",
+            retryable: false,
+          }),
+          { status: 500, headers: { "X-Request-ID": "browser-error-123" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({ mode: "proxy", proxyUrl: "http://localhost:3001" });
+    await expect(client.generateText("hello")).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      statusCode: 500,
+      requestId: "browser-error-123",
+      message: "The server could not complete the request. Try again later.",
+    });
+  });
+
+  it("does not reflect a malformed non-JSON proxy body", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          "C:\\private\\provider.json https://callback.example/hook?token=secret sk-browser-secret",
+          { status: 502 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({ mode: "proxy", proxyUrl: "http://localhost:3001" });
+    const error = await client.generateText("hello").catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "PROXY_ERROR", statusCode: 502, message: "HTTP 502" });
+    expect(String((error as Error).message)).not.toContain("callback.example");
+    expect(String((error as Error).message)).not.toContain("sk-browser-secret");
+  });
+
   it.each([
     ["bearer", "Bearer browser-jwt"],
     ["agent-key", "browser-agent-key"],
@@ -409,6 +472,163 @@ describe("WebAiClient direct text adapters", () => {
     }
 
     expect(chunks).toEqual(["Hello", " world"]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["a trailing newline", "\n"],
+    ["an unterminated final line", ""],
+  ])("flushes the final direct SSE event with %s", async (_description, terminator) => {
+    const fetchMock = vi.fn(async () =>
+      streamingResponse([openAiData("Hello"), openAiData(" world", terminator)]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText("hello", { model: "gpt-test" })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["Hello", " world"]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("preserves exact text across split JSON and UTF-8 decoder boundaries", async () => {
+    const body = openAiData("café");
+    const encoded = new TextEncoder().encode(body);
+    const jsonSplit = body.indexOf('"delta"') + 3;
+    const utf8Start = new TextEncoder().encode(body.slice(0, body.indexOf("é"))).byteLength;
+    const fetchMock = vi.fn(async () =>
+      streamingResponse([
+        encoded.slice(0, jsonSplit),
+        encoded.slice(jsonSplit, utf8Start + 1),
+        encoded.slice(utf8Start + 1),
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText("hello", { model: "gpt-test" })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["café"]);
+  });
+
+  it("handles CRLF event boundaries and blank SSE lines deterministically", async () => {
+    const fetchMock = vi.fn(async () =>
+      streamingResponse([
+        "event: message\r\n",
+        openAiData("one", "\r\n"),
+        "\r\n",
+        openAiData("two", "\r\n"),
+        "\r\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText("hello", { model: "gpt-test" })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["one", "two"]);
+  });
+
+  it("stops at [DONE] after yielding prior content", async () => {
+    const fetchMock = vi.fn(async () =>
+      streamingResponse([openAiData("before") + "data: [DONE]\n\n" + openAiData("after")]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText("hello", { model: "gpt-test" })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["before"]);
+  });
+
+  it("skips malformed direct events and recovers with the next valid event", async () => {
+    const fetchMock = vi.fn(async () =>
+      streamingResponse(["data: {not-json}\n\n" + openAiData("recovered")]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    const chunks: string[] = [];
+    for await (const chunk of client.streamText("hello", { model: "gpt-test" })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["recovered"]);
+  });
+
+  it("propagates abort while reading a direct SSE stream", async () => {
+    const controller = new AbortController();
+    const cancellation = new Error("cancelled");
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBe(controller.signal);
+      const stream = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          streamController.enqueue(new TextEncoder().encode(openAiData("before")));
+          controller.signal.addEventListener(
+            "abort",
+            () => streamController.error(controller.signal.reason ?? cancellation),
+            { once: true },
+          );
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWebClient({
+      mode: "direct",
+      provider: "openai",
+      apiKey: "openai-test-key",
+    });
+    const chunks: string[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of client.streamText("hello", {
+          model: "gpt-test",
+          signal: controller.signal,
+        })) {
+          chunks.push(chunk);
+          controller.abort(cancellation);
+        }
+      })(),
+    ).rejects.toThrow("cancelled");
+
+    expect(chunks).toEqual(["before"]);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -867,6 +1087,197 @@ describe("WebAiClient proxy budget", () => {
   });
 });
 
+describe("BrowserConversationSession transactional history", () => {
+  function createSession(id: string) {
+    sessionStorage.clear();
+    const client = createWebClient({ mode: "proxy", proxyUrl: "http://localhost:3001" });
+    return { client, session: client.session(id) };
+  }
+
+  function textResult(content: string) {
+    return { content, model: "test-model", provider: "test-provider" };
+  }
+
+  it("commits one user and assistant turn after text success", async () => {
+    const { client, session } = createSession("text-success");
+    const generateText = vi.spyOn(client, "generateText").mockResolvedValue(textResult("answer"));
+
+    await expect(session.send("question")).resolves.toBe("answer");
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(generateText.mock.calls[0]?.[0]).toBe("User: question");
+    expect(session.getHistory()).toEqual([
+      { role: "user", content: "question" },
+      { role: "assistant", content: "answer" },
+    ]);
+    expect(sessionStorage.getItem("ai-session:text-success")).toBe(
+      JSON.stringify(session.getHistory()),
+    );
+  });
+
+  it("does not retain a failed text turn and retries with the same prompt", async () => {
+    const { client, session } = createSession("text-retry");
+    const generateText = vi
+      .spyOn(client, "generateText")
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce(textResult("recovered"));
+
+    await expect(session.send("try again")).rejects.toThrow("provider unavailable");
+    expect(session.getHistory()).toEqual([]);
+    expect(sessionStorage.getItem("ai-session:text-retry")).toBeNull();
+
+    await expect(session.send("try again")).resolves.toBe("recovered");
+    expect(generateText.mock.calls.map(([prompt]) => prompt)).toEqual([
+      "User: try again",
+      "User: try again",
+    ]);
+    expect(session.getHistory()).toEqual([
+      { role: "user", content: "try again" },
+      { role: "assistant", content: "recovered" },
+    ]);
+  });
+
+  it("commits one user and assistant turn after stream success", async () => {
+    const { client, session } = createSession("stream-success");
+    const streamText = vi.spyOn(client, "streamText").mockImplementation(async function* (prompt) {
+      expect(prompt).toBe("User: stream this");
+      yield "stream ";
+      yield "answer";
+    });
+    const chunks: string[] = [];
+
+    for await (const chunk of session.stream("stream this")) chunks.push(chunk);
+
+    expect(chunks).toEqual(["stream ", "answer"]);
+    expect(streamText).toHaveBeenCalledOnce();
+    expect(session.getHistory()).toEqual([
+      { role: "user", content: "stream this" },
+      { role: "assistant", content: "stream answer" },
+    ]);
+  });
+
+  it("discards partial stream output when the provider fails", async () => {
+    const { client, session } = createSession("stream-failure");
+    const streamText = vi.spyOn(client, "streamText").mockImplementation(async function* () {
+      yield "partial";
+      throw new Error("stream disconnected");
+    });
+    const chunks: string[] = [];
+
+    await expect(
+      (async () => {
+        for await (const chunk of session.stream("stream question")) chunks.push(chunk);
+      })(),
+    ).rejects.toThrow("stream disconnected");
+
+    expect(chunks).toEqual(["partial"]);
+    expect(streamText).toHaveBeenCalledOnce();
+    expect(session.getHistory()).toEqual([]);
+    expect(sessionStorage.getItem("ai-session:stream-failure")).toBeNull();
+  });
+
+  it("discards a cancelled text turn without changing history", async () => {
+    const { client, session } = createSession("text-cancel");
+    const controller = new AbortController();
+    const cancellation = new Error("cancelled");
+    const generateText = vi
+      .spyOn(client, "generateText")
+      .mockImplementation(async (_prompt, options) => {
+        expect(options?.signal).toBe(controller.signal);
+        controller.abort(cancellation);
+        throw cancellation;
+      });
+
+    await expect(session.send("cancel this", { signal: controller.signal })).rejects.toThrow(
+      "cancelled",
+    );
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(session.getHistory()).toEqual([]);
+  });
+
+  it("writes a successful turn once and preserves it after reload", async () => {
+    const { client, session } = createSession("reload");
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    vi.spyOn(client, "generateText").mockResolvedValue(textResult("saved"));
+
+    await session.send("persist me");
+    expect(setItem).toHaveBeenCalledOnce();
+    expect(setItem.mock.calls[0]?.[0]).toBe("ai-session:reload");
+    expect(setItem.mock.calls[0]?.[1]).toBe(JSON.stringify(session.getHistory()));
+
+    const reloaded = client.session("reload");
+    expect(reloaded.getHistory()).toEqual(session.getHistory());
+  });
+
+  it("keeps committed history in memory and reports storage fallback failures", async () => {
+    const storage = {
+      getItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+      setItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+      removeItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+    };
+    vi.stubGlobal("sessionStorage", storage);
+    const client = createWebClient({ mode: "proxy", proxyUrl: "http://localhost:3001" });
+    const session = client.session("storage-fallback");
+    vi.spyOn(client, "generateText").mockResolvedValue(textResult("memory only"));
+
+    await session.send("remember in memory");
+
+    expect(session.getHistory()).toEqual([
+      { role: "user", content: "remember in memory" },
+      { role: "assistant", content: "memory only" },
+    ]);
+    expect(storage.setItem).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain(
+      "Conversation history is temporary in this browser",
+    );
+
+    const reloaded = client.session("storage-fallback");
+    expect(reloaded.getHistory()).toEqual(session.getHistory());
+  });
+
+  it("serializes concurrent sends and builds each prompt from committed history", async () => {
+    const { client, session } = createSession("concurrent");
+    let releaseFirst!: () => void;
+    const firstFinished = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const prompts: string[] = [];
+    const generateText = vi.spyOn(client, "generateText").mockImplementation(async (prompt) => {
+      prompts.push(prompt);
+      if (prompts.length === 1) {
+        await firstFinished;
+        return textResult("first answer");
+      }
+      return textResult("second answer");
+    });
+
+    const first = session.send("first question");
+    const second = session.send("second question");
+    await vi.waitFor(() => expect(prompts).toEqual(["User: first question"]));
+    expect(prompts).toEqual(["User: first question"]);
+
+    releaseFirst();
+    await expect(Promise.all([first, second])).resolves.toEqual(["first answer", "second answer"]);
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(prompts).toEqual([
+      "User: first question",
+      "User: first question\nAssistant: first answer\nUser: second question",
+    ]);
+    expect(session.getHistory()).toEqual([
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "second question" },
+      { role: "assistant", content: "second answer" },
+    ]);
+  });
+});
 describe("WebAiClient retry classification", () => {
   it("does not repeat a generation POST after a post-acceptance 503", async () => {
     const fetchMock = vi.fn(async () =>

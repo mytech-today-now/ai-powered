@@ -26,7 +26,8 @@ import express, { type Request, type Response, type NextFunction } from "express
 import cors from "cors";
 import helmet from "helmet";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
-import { BudgetExceededError, AllProvidersExhaustedError } from "../types.js";
+import type { Server } from "node:http";
+import { BudgetExceededError } from "../types.js";
 import { getLogger, initLogger } from "../utils.js";
 import { createRouter, shouldServeAppShell } from "./routes.js";
 import { authenticateProxyRequest, proxyAuthDecision, TEST_BYPASS_PRINCIPAL_ID } from "./auth.js";
@@ -39,6 +40,12 @@ import {
   type ResourcePolicy,
 } from "./resource-policy.js";
 import type { AiConfig } from "../index.js";
+import {
+  createRequestId,
+  getRequestId,
+  sendPublicError,
+  serializeErrorForLog,
+} from "./error-contract.js";
 
 // ---------------------------------------------------------------------------
 // Server options
@@ -77,6 +84,8 @@ export interface ResolvedServeBinding {
   port: number;
   host: string;
 }
+
+const activeServers = new Set<Server>();
 
 function parsePortValue(value: string | undefined, source: string): number | undefined {
   if (value === undefined) return undefined;
@@ -148,6 +157,16 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   const configuredOrigin = opts.corsOrigin ?? "http://localhost:5173";
   const rpm = opts.rateLimit ?? 60;
   const resourcePolicy: ResourcePolicy = createResourcePolicy(opts.resourceLimits);
+
+  // Establish one bounded correlation identifier before any middleware can
+  // reject the request. It is returned as a header for every response and is
+  // included in serialized JSON errors.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const requestId = createRequestId(req.get("X-Request-ID") ?? req.get("X-Correlation-ID"));
+    res.locals["requestId"] = requestId;
+    res.setHeader("X-Request-ID", requestId);
+    next();
+  });
 
   /** Test whether a request origin matches a configured pattern. */
   function originMatchesPattern(origin: string, pattern: string): boolean {
@@ -303,6 +322,7 @@ export function createServer(opts: ServeOptions = {}): express.Express {
           url: safeRequestLogPath(req),
           status: res.statusCode,
           ms: Date.now() - start,
+          requestId: getRequestId(res),
           ...(req.aiPrincipal
             ? {
                 principalId: req.aiPrincipal.id,
@@ -323,36 +343,35 @@ export function createServer(opts: ServeOptions = {}): express.Express {
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (isRequestBodyTooLargeError(err)) {
       const limitError = requestBodyLimitError();
-      logger.warn({ code: limitError.code, limit: limitError.limit }, limitError.message);
-      res.status(limitError.statusCode).json({
-        error: limitError.message,
-        code: limitError.code,
-        limit: limitError.limit,
-      });
+      logger.warn(
+        { requestId: getRequestId(res), error: serializeErrorForLog(limitError) },
+        "Proxy request rejected by body limit",
+      );
+      sendPublicError(res, limitError);
       return;
     }
-    if (err instanceof ResourcePolicyError) {
-      if (err.code === "REQUEST_ABORTED") return;
-      res.status(err.statusCode).json({
-        error: err.message,
-        code: err.code,
-        limit: err.limit,
-      });
+    if (err instanceof ResourcePolicyError && err.code === "REQUEST_ABORTED") {
       return;
     }
-    if (err instanceof BudgetExceededError) {
-      logger.warn({ code: "BUDGET_EXCEEDED" }, err.message);
-      res.status(402).json({ error: err.message, code: "BUDGET_EXCEEDED" });
+    if (res.headersSent) {
+      logger.error(
+        { requestId: getRequestId(res), error: serializeErrorForLog(err) },
+        "Proxy request failed after response started",
+      );
       return;
     }
-    if (err instanceof AllProvidersExhaustedError) {
-      logger.error({ code: "ALL_PROVIDERS_EXHAUSTED" }, err.message);
-      res.status(503).json({ error: err.message, code: "ALL_PROVIDERS_EXHAUSTED" });
-      return;
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err }, message);
-    res.status(500).json({ error: message });
+    const publicError = sendPublicError(res, err);
+    const logLevel =
+      err instanceof ResourcePolicyError || err instanceof BudgetExceededError ? "warn" : "error";
+    logger[logLevel](
+      {
+        requestId: publicError.body.requestId,
+        publicCode: publicError.body.code,
+        status: publicError.statusCode,
+        error: serializeErrorForLog(err),
+      },
+      "Proxy request failed",
+    );
   });
 
   return app;
@@ -362,10 +381,60 @@ export function createServer(opts: ServeOptions = {}): express.Express {
 export function startServer(opts: ServeOptions = {}): Promise<void> {
   const { port, host } = resolveServeBinding(opts);
   const app = createServer(opts);
-  return new Promise((resolve) => {
-    app.listen(port, host, () => {
+  return new Promise<void>((resolve, reject) => {
+    let server: Server | undefined;
+    let settled = false;
+
+    const cleanup = (): void => {
+      server?.off("listening", onListening);
+      server?.off("error", onError);
+    };
+
+    const onListening = (): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       getLogger().info(`ai-powered proxy server listening on :${port}`);
       resolve();
-    });
+    };
+
+    const onError = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (server) activeServers.delete(server);
+      reject(error);
+    };
+
+    try {
+      server = app.listen(port, host);
+      activeServers.add(server);
+      server.once("listening", onListening);
+      server.once("error", onError);
+    } catch (error) {
+      settled = true;
+      cleanup();
+      if (server) activeServers.delete(server);
+      reject(error);
+    }
   });
+}
+
+/** Close a started server, or all servers started through startServer in tests. */
+export function closeServer(server?: Server): Promise<void> {
+  const servers = server ? [server] : [...activeServers];
+  for (const activeServer of servers) activeServers.delete(activeServer);
+
+  return Promise.all(
+    servers.map(
+      (activeServer) =>
+        new Promise<void>((resolve, reject) => {
+          if (!activeServer.listening) {
+            resolve();
+            return;
+          }
+          activeServer.close((error) => (error ? reject(error) : resolve()));
+        }),
+    ),
+  ).then(() => undefined);
 }

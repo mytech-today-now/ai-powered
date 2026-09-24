@@ -353,7 +353,15 @@ describe("R11/R12 – GET /config redaction regression", () => {
       const body = (await readJson(res)) as Record<string, unknown>;
 
       expect(res.statusCode).toBe(500);
-      expect(body).toEqual({ error: "config blew up" });
+      expect(body).toMatchObject({
+        error: "Configuration could not be loaded. Try again later.",
+        message: "Configuration could not be loaded. Try again later.",
+        code: "CONFIG_ERROR",
+        status: 500,
+        retryable: false,
+      });
+      expect(typeof body.requestId).toBe("string");
+      expect(JSON.stringify(body)).not.toContain("config blew up");
     } finally {
       spy.mockRestore();
     }
@@ -501,7 +509,8 @@ describe("R13-R17 – GET /models diagnostics and regression coverage", () => {
 
     expect(res.statusCode).toBe(500);
     expect(body).toEqual({
-      error: "OpenAI-compatible model discovery failed: Unauthorized",
+      error:
+        "The provider rejected the configured credentials. Check Settings / Configuration and try again.",
       code: "MODEL_LIST_ERROR",
     });
     expect(getAiClientSpy).toHaveBeenCalledWith(

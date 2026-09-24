@@ -19,7 +19,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import multer from "multer";
-import type { Request, Response, NextFunction, RequestHandler } from "express";
+import type { Request, Response, RequestHandler } from "express";
 import { getAiClient } from "../../index.js";
 import type { TextResult, ImageResult } from "../../types.js";
 import {
@@ -29,6 +29,8 @@ import {
 } from "../../types.js";
 import type { StreamTextIterable } from "../../providers/index.js";
 import type { ServeOptions } from "../index.js";
+import { getLogger } from "../../utils.js";
+import { getRequestId, serializeErrorForLog, serializePublicError } from "../error-contract.js";
 import { inferProviderFromModel } from "./model-router.js";
 
 // ---------------------------------------------------------------------------
@@ -36,7 +38,32 @@ import { inferProviderFromModel } from "./model-router.js";
 // ---------------------------------------------------------------------------
 
 function openAiError(res: Response, status: number, message: string, type: string): void {
-  res.status(status).json({ error: { message, type, code: String(status) } });
+  const safeMessage =
+    status === 402 && message.startsWith("Budget exceeded")
+      ? message
+      : status === 400
+        ? message
+        : status === 422
+          ? "The provider rejected the request. Check the selected model and request options, then try again."
+          : status >= 500
+            ? "The provider is temporarily unavailable. Wait and try again."
+            : message;
+  res.status(status).json({ error: { message: safeMessage, type, code: String(status) } });
+}
+
+function respondOpenAiUnexpectedError(res: Response, error: unknown): void {
+  const publicError = serializePublicError(error, getRequestId(res));
+  getLogger().error(
+    {
+      requestId: publicError.body.requestId,
+      publicCode: publicError.body.code,
+      status: publicError.statusCode,
+      error: serializeErrorForLog(error),
+    },
+    "OpenAI compatibility request failed",
+  );
+  const type = publicError.statusCode >= 500 ? "server_error" : "invalid_request_error";
+  openAiError(res, publicError.statusCode, publicError.body.message, type);
 }
 
 function readFinishReason(source: { finishReason?: unknown } | null | undefined): string | null {
@@ -423,7 +450,7 @@ export function toOpenAiImageResponse(
  * Applies inferProviderFromModel() for automatic provider selection.
  */
 export function handleChatCompletions(opts: ServeOptions) {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, res: Response): Promise<void> => {
     const parsed = ChatCompletionsBodySchema.safeParse(req.body);
     if (!parsed.success) {
       openAiError(
@@ -543,7 +570,7 @@ export function handleChatCompletions(opts: ServeOptions) {
       } else if (err instanceof ProviderCapabilityError) {
         openAiError(res, 422, err.message, "invalid_request_error");
       } else {
-        next(err);
+        respondOpenAiUnexpectedError(res, err);
       }
     }
   };
@@ -560,7 +587,7 @@ export function handleChatCompletions(opts: ServeOptions) {
  * Applies inferProviderFromModel() for automatic provider selection.
  */
 export function handleImageGenerations(opts: ServeOptions) {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, res: Response): Promise<void> => {
     const parsed = ImageGenerationsBodySchema.safeParse(req.body);
     if (!parsed.success) {
       openAiError(
@@ -609,7 +636,7 @@ export function handleImageGenerations(opts: ServeOptions) {
       } else if (err instanceof ProviderCapabilityError) {
         openAiError(res, 422, err.message, "invalid_request_error");
       } else {
-        next(err);
+        respondOpenAiUnexpectedError(res, err);
       }
     }
   };
@@ -652,7 +679,7 @@ export const AudioSpeechBodySchema = z.object({
  * Only openai and mock providers support TTS; provider defaults to "openai".
  */
 export function handleAudioSpeech(opts: ServeOptions) {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, res: Response): Promise<void> => {
     const parsed = AudioSpeechBodySchema.safeParse(req.body);
     if (!parsed.success) {
       openAiError(
@@ -691,7 +718,7 @@ export function handleAudioSpeech(opts: ServeOptions) {
       } else if (err instanceof ProviderCapabilityError) {
         openAiError(res, 422, err.message, "invalid_request_error");
       } else {
-        next(err);
+        respondOpenAiUnexpectedError(res, err);
       }
     }
   };
@@ -722,7 +749,7 @@ const _upload = multer({ storage: multer.memoryStorage() });
  *   srt / vtt              → HTTP 501 (per-segment timestamps not available)
  */
 export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] {
-  const asyncHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const asyncHandler = async (req: Request, res: Response): Promise<void> => {
     // req.file is populated by multer.single("file") which runs before this handler.
     if (!req.file) {
       openAiError(
@@ -791,7 +818,7 @@ export function handleAudioTranscriptions(opts: ServeOptions): RequestHandler[] 
       } else if (err instanceof ProviderCapabilityError) {
         openAiError(res, 422, err.message, "invalid_request_error");
       } else {
-        next(err);
+        respondOpenAiUnexpectedError(res, err);
       }
     }
   };

@@ -93,6 +93,16 @@ and are not accepted by the ordinary download route. Request logging redacts
 file paths and capability query strings; upload logs omit file refs and private
 filenames.
 
+File refs are bounded per process by aggregate count and byte limits, per-
+principal count and byte limits, and a separate decoded-buffer cache ceiling.
+The defaults and environment overrides are documented in the README. Rejection
+is a recoverable capacity error; it does not bypass ownership or MIME checks.
+Refs expire after one hour and are removed eagerly with their decoded buffers.
+The store is process-local: a restart loses refs, and multiple instances do
+not share them. Deployments requiring restart or cross-instance continuity
+must add a shared durable store with equivalent ownership, cleanup, encryption,
+and private-cache controls before enabling that topology.
+
 ### Browser settings credentials
 
 The demo Settings / Configuration page stores provider-scoped credentials in

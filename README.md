@@ -444,6 +444,41 @@ The proxy applies bounded request allocation before provider or native ffmpeg wo
 Byte values are plain integers. These defaults apply to hosted and local runs; a local deployment can explicitly raise them through ServeOptions.resourceLimits or the environment variables when its measured capacity envelope supports it.
 Limit responses use status 413 for payload budgets, 429 for stitch concurrency, and 504 for an ffmpeg timeout. Each includes a stable code and limit field. A cancelled stitch kills the subprocess and cleans its UUID-scoped temporary directory.
 
+### Uploaded file storage and retention
+
+Uploaded `fileRef` values use a bounded process-local store. The store keeps the
+validated base64 payload for provider requests and retains decoded buffers only
+in a separate bounded LRU cache. The raw payload quota and decoded-buffer quota
+are independent because base64 has more in-memory overhead than the declared
+file size.
+
+| Limit                             | Default | Environment override                    |
+| --------------------------------- | ------: | --------------------------------------- |
+| Live file refs per process        |     100 | `AIPOWERED_FILE_MAX_COUNT`              |
+| Declared file bytes per process   | 256 MiB | `AIPOWERED_FILE_MAX_BYTES`              |
+| Live file refs per principal      |      20 | `AIPOWERED_FILE_MAX_COUNT_PER_OWNER`    |
+| Declared file bytes per principal |  64 MiB | `AIPOWERED_FILE_MAX_BYTES_PER_OWNER`    |
+| Decoded LRU buffer bytes          |  16 MiB | `AIPOWERED_FILE_BUFFER_CACHE_MAX_BYTES` |
+| Ref retention                     |  1 hour | not configurable in this contract       |
+
+Capacity rejection is HTTP 413 with code `FILE_REF_CAPACITY_EXCEEDED` and can
+be recovered by deleting a ref, waiting for expiry, or retrying with a smaller
+upload. Expiry removes the stored payload and decoded buffer eagerly. Missing
+refs during generation identify restart or expiry as possible causes and ask
+the client to re-upload.
+
+Deployment contract:
+
+- Local development and a single Render process share the same process-local
+  behavior and limits. `PROXY_PUBLIC_BASE_URL` provider URLs work only while
+  the ref remains live in that process.
+- A process restart loses all refs. Queued or in-flight work that still names a
+  lost ref receives a recoverable missing-attachment error.
+- Horizontal scaling is not a durable storage solution. Upload, generation,
+  and provider media fetches must stay on the same process to use this contract;
+  cross-instance ref continuity requires a future shared durable store with
+  ownership, cleanup, and encryption controls.
+
 ### `session` — Manage conversation sessions
 
 ```bash
