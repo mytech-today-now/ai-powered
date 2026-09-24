@@ -17,6 +17,26 @@ import { BudgetExceededError } from "../types.js";
 
 type WebRequestClass = "safe-read" | "generation";
 
+export type WebMediaKind = "image" | "audio" | "video";
+
+const MAX_SECONDARY_MEDIA_BYTES = 100 * 1024 * 1024;
+
+/** Safe, typed failure for a provider-returned media URL response. */
+export class WebMediaFetchError extends Error {
+  readonly code = "MEDIA_FETCH_ERROR";
+  readonly statusCode: number;
+  readonly operation: string;
+  readonly mediaKind: WebMediaKind;
+
+  constructor(operation: string, mediaKind: WebMediaKind, statusCode: number, message: string) {
+    super(message);
+    this.name = "WebMediaFetchError";
+    this.statusCode = statusCode;
+    this.operation = operation;
+    this.mediaKind = mediaKind;
+  }
+}
+
 /** Internal signal used to let the breaker observe a final 429/503 while the
  * public caller still receives the original Response for normal error mapping. */
 class RetryableResponseError extends Error {
@@ -1064,6 +1084,86 @@ export class WebAiClient {
     );
   }
 
+  /** Validate a provider-returned media URL before creating playable output. */
+  private async readMediaResponse(
+    response: Response,
+    operation: string,
+    mediaKind: WebMediaKind,
+  ): Promise<Blob> {
+    if (!response.ok) {
+      throw new WebMediaFetchError(
+        operation,
+        mediaKind,
+        response.status,
+        this.mediaStatusMessage(operation, response.status),
+      );
+    }
+
+    const contentTypeHeader = response.headers.get("content-type");
+    const contentType = contentTypeHeader?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    if (!contentType.startsWith(`${mediaKind}/`)) {
+      throw new WebMediaFetchError(
+        operation,
+        mediaKind,
+        response.status,
+        `${operation} returned an unsupported ${mediaKind} media type at the URL boundary. ` +
+          "The URL may have expired or authorization may have been rejected; reconnect credentials or retry generation.",
+      );
+    }
+
+    const declaredLength = response.headers.get("content-length");
+    const contentLength = declaredLength === null ? NaN : Number(declaredLength);
+    if (Number.isFinite(contentLength) && contentLength > MAX_SECONDARY_MEDIA_BYTES) {
+      throw new WebMediaFetchError(
+        operation,
+        mediaKind,
+        response.status,
+        `${operation} returned media larger than the browser safety limit. Retry generation with a smaller result.`,
+      );
+    }
+
+    const blob = await response.blob();
+    if (blob.size === 0) {
+      throw new WebMediaFetchError(
+        operation,
+        mediaKind,
+        response.status,
+        `${operation} returned an empty media body. Retry generation to obtain a fresh URL.`,
+      );
+    }
+    if (blob.size > MAX_SECONDARY_MEDIA_BYTES) {
+      throw new WebMediaFetchError(
+        operation,
+        mediaKind,
+        response.status,
+        `${operation} returned media larger than the browser safety limit. Retry generation with a smaller result.`,
+      );
+    }
+    return blob;
+  }
+
+  private mediaStatusMessage(operation: string, status: number): string {
+    if (status === 401 || status === 403) {
+      return (
+        `${operation} media URL authorization failed with HTTP ${status}. ` +
+        "The signed URL may have expired; reconnect credentials or retry generation."
+      );
+    }
+    if (status === 404) {
+      return (
+        `${operation} media URL was not found (HTTP 404). ` +
+        "The signed URL may have expired; retry generation to obtain a fresh URL."
+      );
+    }
+    if (status === 429 || status === 503) {
+      return (
+        `${operation} media URL fetch was temporarily unavailable (HTTP ${status}). ` +
+        "Retry the media request later."
+      );
+    }
+    return `${operation} media URL fetch failed with HTTP ${status}. Retry generation.`;
+  }
+
   private addProxyImageFields(body: Record<string, unknown>, options?: WebImageOptions): void {
     this.addProxyRoutingFields(body, options);
     this.setBodyField(body, "fileRefs", options?.fileRefs);
@@ -1448,7 +1548,7 @@ export class WebAiClient {
         // Capture into const so TypeScript preserves the string narrowing inside the closure.
         const imgUrl = data.url;
         const imgRes = await this.fetchProxyResource(imgUrl, options?.signal);
-        return imgRes.blob();
+        return this.readMediaResponse(imgRes, "generateImage", "image");
       }
       if (data.b64_json) {
         const bytes = Uint8Array.from(atob(data.b64_json), (c) => c.charCodeAt(0));
@@ -1507,7 +1607,7 @@ export class WebAiClient {
           options?.signal,
           "safe-read",
         );
-        return imgRes.blob();
+        return this.readMediaResponse(imgRes, "generateImage", "image");
       }
       const dataUri =
         item?.data ?? (typeof imageResult.data === "string" ? imageResult.data : undefined);
@@ -1550,7 +1650,7 @@ export class WebAiClient {
         options?.signal,
         "safe-read",
       );
-      return imgRes.blob();
+      return this.readMediaResponse(imgRes, "generateImage", "image");
     }
     throw new Error("generateImage: no image data in provider response");
   }
@@ -1742,7 +1842,7 @@ export class WebAiClient {
         // Capture into const so TypeScript preserves the string narrowing inside the closure.
         const vidUrl = data.url;
         const vidRes = await this.fetchProxyResource(vidUrl, options?.signal);
-        return vidRes.blob();
+        return this.readMediaResponse(vidRes, "generateVideo", "video");
       }
       if (data.b64_json) {
         const bytes = Uint8Array.from(atob(data.b64_json), (c) => c.charCodeAt(0));
@@ -1810,7 +1910,7 @@ export class WebAiClient {
     const mime = data.mimeType ?? "audio/mpeg";
     if (data.url) {
       const audioResponse = await this.fetchProxyResource(data.url, options?.signal);
-      audio = await audioResponse.blob();
+      audio = await this.readMediaResponse(audioResponse, "generateMusic", "audio");
     } else {
       const encoded = data.b64_json ?? data.data;
       if (!encoded) throw new Error("generateMusic: no audio data in proxy response");

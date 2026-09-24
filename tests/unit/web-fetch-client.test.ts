@@ -237,7 +237,10 @@ describe("WebAiClient proxy caller authentication", () => {
       )
       .mockImplementationOnce(async (_input: RequestInfo | URL, init?: RequestInit) => {
         expect(new Headers(init?.headers).get("X-AI-Agent-Key")).toBe("caller-secret");
-        return new Response(Uint8Array.from([1, 2, 3]), { status: 200 });
+        return new Response(Uint8Array.from([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
       })
       .mockImplementationOnce(async (_input: RequestInfo | URL) =>
         jsonResponse({
@@ -249,7 +252,10 @@ describe("WebAiClient proxy caller authentication", () => {
         const headers = new Headers(init?.headers);
         expect(headers.get("X-AI-Agent-Key")).toBeNull();
         expect(headers.get("X-AI-Provider-Credentials")).toBeNull();
-        return new Response(Uint8Array.from([4, 5, 6]), { status: 200 });
+        return new Response(Uint8Array.from([4, 5, 6]), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
       });
     vi.stubGlobal("fetch", fetchMock);
 

@@ -147,6 +147,7 @@ export {
   WebAiClient,
   BrowserConversationSession,
   WebProxyError,
+  WebMediaFetchError,
 } from "./fetch-client.js";
 
 export type {
@@ -165,6 +166,7 @@ export type {
   WebDirectOptions,
   WebClientOptions,
   WebMessage,
+  WebMediaKind,
 } from "./fetch-client.js";
 
 /** @internal Version sentinel consumed by the Vite build and dist-web bundle. */
